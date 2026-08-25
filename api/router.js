@@ -9,7 +9,7 @@ import {
   clearSessionCookie,
   sendJson,
   junctionIdFor,
-} from "../lib/supabaseServer.js";
+} from "../lib/supabaseServer.js" ;
 
 // Admin client for account confirmation only — separate from the shared
 // lib so this fix doesn't depend on lib/supabaseServer.js also being
