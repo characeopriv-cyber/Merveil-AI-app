@@ -1515,6 +1515,161 @@ export default async function handler(req, res) {
       return sendJson(res, 200, { events, jobs });
     }
 
+    // ----------------------------------------------------- /api/push
+    // Web Push subscriptions — alerts when the app is backgrounded/closed.
+    if (resource === "push") {
+      const pushAction = req.query.action || action;
+      if (pushAction === "vapid-public" && method === "GET") {
+        const pub = process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+        return sendJson(res, 200, { publicKey: pub, enabled: !!pub });
+      }
+      if (pushAction === "subscribe" && method === "POST") {
+        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        const body = await readBody(req);
+        const sub = body?.subscription;
+        if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
+          return sendJson(res, 400, { error: "Valid PushSubscription required." });
+        }
+        let svcPush;
+        try { svcPush = adminClient(); } catch (e) {
+          return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+        }
+        const row = {
+          user_id: user.id,
+          endpoint: String(sub.endpoint).slice(0, 2000),
+          p256dh: String(sub.keys.p256dh).slice(0, 512),
+          auth: String(sub.keys.auth).slice(0, 512),
+          user_agent: String(req.headers["user-agent"] || "").slice(0, 400),
+          updated_at: new Date().toISOString(),
+        };
+        const { data: existing } = await svcPush.from("push_subscriptions").select("id").eq("endpoint", row.endpoint).maybeSingle();
+        if (existing) {
+          await svcPush.from("push_subscriptions").update(row).eq("id", existing.id);
+        } else {
+          const { error } = await svcPush.from("push_subscriptions").insert({ ...row, created_at: new Date().toISOString() });
+          if (error) return sendJson(res, 400, { error: error.message });
+        }
+        return sendJson(res, 200, { ok: true });
+      }
+      if (pushAction === "unsubscribe" && method === "POST") {
+        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        const body = await readBody(req);
+        let svcPush;
+        try { svcPush = adminClient(); } catch (e) {
+          return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+        }
+        if (body?.endpoint) {
+          await svcPush.from("push_subscriptions").delete().eq("user_id", user.id).eq("endpoint", body.endpoint);
+        } else {
+          await svcPush.from("push_subscriptions").delete().eq("user_id", user.id);
+        }
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendJson(res, 404, { error: "Unknown push action." });
+    }
+
+    // ----------------------------------------------------- /api/invest
+    // LinkedIn-style capital / investor feed (property inventory stays on Pulse).
+    if (resource === "invest") {
+      const invAction = req.query.action || action;
+
+      if (method === "GET" && (!invAction || invAction === "list")) {
+        const { data, error } = await anonClient()
+          .from("invest_posts")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(120);
+        if (error) return sendJson(res, 400, { error: error.message });
+        const posts = data || [];
+        const ownerIds = [...new Set(posts.map((p) => p.owner_id).filter(Boolean))];
+        let ownerMap = {};
+        if (ownerIds.length) {
+          const { data: owners } = await anonClient().from("profiles").select("id, name, avatar_url, company_name, profession").in("id", ownerIds);
+          ownerMap = Object.fromEntries((owners || []).map((o) => [o.id, o]));
+        }
+        const enriched = posts.map((p) => ({
+          ...p,
+          owner_name: ownerMap[p.owner_id]?.name || null,
+          owner_avatar: ownerMap[p.owner_id]?.avatar_url || null,
+          owner_company: ownerMap[p.owner_id]?.company_name || null,
+          owner_profession: ownerMap[p.owner_id]?.profession || null,
+        }));
+        return sendJson(res, 200, { posts: enriched });
+      }
+
+      if (method === "GET" && invAction === "likes") {
+        if (!user) return sendJson(res, 200, { likedIds: [] });
+        const { data } = await sb.from("invest_likes").select("invest_post_id").eq("user_id", user.id);
+        return sendJson(res, 200, { likedIds: (data || []).map((r) => r.invest_post_id) });
+      }
+
+      if (method === "POST" && invAction === "like") {
+        if (!user) return sendJson(res, 401, { error: "Sign in to like." });
+        const body = await readBody(req);
+        if (!body.postId) return sendJson(res, 400, { error: "postId required" });
+        const { data: existing } = await sb.from("invest_likes").select("id").eq("invest_post_id", body.postId).eq("user_id", user.id).maybeSingle();
+        let svcL;
+        try { svcL = adminClient(); } catch { svcL = sb; }
+        if (existing) {
+          await svcL.from("invest_likes").delete().eq("id", existing.id);
+          const { data: post } = await svcL.from("invest_posts").select("likes_count").eq("id", body.postId).maybeSingle();
+          const next = Math.max(0, (post?.likes_count || 1) - 1);
+          await svcL.from("invest_posts").update({ likes_count: next }).eq("id", body.postId);
+          return sendJson(res, 200, { liked: false, likesCount: next });
+        }
+        await svcL.from("invest_likes").insert({ invest_post_id: body.postId, user_id: user.id });
+        const { data: post } = await svcL.from("invest_posts").select("likes_count").eq("id", body.postId).maybeSingle();
+        const next = (post?.likes_count || 0) + 1;
+        await svcL.from("invest_posts").update({ likes_count: next }).eq("id", body.postId);
+        return sendJson(res, 200, { liked: true, likesCount: next });
+      }
+
+      if (method === "DELETE") {
+        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        const body = await readBody(req);
+        if (!body.postId) return sendJson(res, 400, { error: "postId required" });
+        let svcD;
+        try { svcD = adminClient(); } catch (e) {
+          return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+        }
+        const { data: existing } = await svcD.from("invest_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
+        if (!existing || existing.owner_id !== user.id) return sendJson(res, 404, { error: "Post not found." });
+        const { error } = await svcD.from("invest_posts").delete().eq("id", body.postId);
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (method === "POST" && (!invAction || invAction === "create")) {
+        if (!user) return sendJson(res, 401, { error: "Sign in to post on Invest." });
+        const okRate = await checkRateLimit(anonClient(), `invest_post_${user.id}`, 30);
+        if (!okRate) return sendJson(res, 429, { error: "Too many Invest posts — wait a few minutes." });
+        const body = await readBody(req);
+        if (!body.title && !body.body) return sendJson(res, 400, { error: "title or body required" });
+        let svcI = sb;
+        try { svcI = adminClient(); } catch { /* user client */ }
+        const { data, error } = await svcI.from("invest_posts").insert({
+          owner_id: user.id,
+          title: body.title ? String(body.title).slice(0, 200) : null,
+          body: body.body ? String(body.body).slice(0, 8000) : null,
+          category: body.category || "General",
+          sector: body.sector || null,
+          stage: body.stage || null,
+          ticket_min: body.ticketMin != null ? Number(body.ticketMin) : null,
+          ticket_max: body.ticketMax != null ? Number(body.ticketMax) : null,
+          geography: body.geography || null,
+          intent: body.intent || "seeking",
+          media_url: body.mediaUrl || null,
+          likes_count: 0,
+          comments_count: 0,
+          reposts_count: 0,
+        }).select().maybeSingle();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { post: data });
+      }
+
+      return sendJson(res, 404, { error: "Unknown invest action." });
+    }
+
     // -------------------------------------------------- /api/privacy-center
     // Doc 2 §21 — "No hidden data experience." Assembles what's actually
     // stored about this citizen from the real tables, for them to see and
@@ -2761,9 +2916,45 @@ export default async function handler(req, res) {
         if (!user) return sendJson(res, 401, { error: "Sign in required." });
         const body = await readBody(req);
         if (!body.postId) return sendJson(res, 400, { error: "postId required" });
-        const { error } = await sb.from("world_posts").delete().eq("id", body.postId).eq("owner_id", user.id);
+        // Service role after ownership check — citizen RLS may block DELETE
+        let svcDel;
+        try { svcDel = adminClient(); } catch (e) {
+          return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+        }
+        const { data: existing } = await svcDel.from("world_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
+        if (!existing || existing.owner_id !== user.id) return sendJson(res, 404, { error: "Post not found." });
+        const { error } = await svcDel.from("world_posts").delete().eq("id", body.postId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
+      }
+
+      if (method === "POST" && action === "update") {
+        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        const body = await readBody(req);
+        if (!body.postId) return sendJson(res, 400, { error: "postId required" });
+        let svcUp;
+        try { svcUp = adminClient(); } catch (e) {
+          return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+        }
+        const { data: existing } = await svcUp.from("world_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
+        if (!existing || existing.owner_id !== user.id) return sendJson(res, 404, { error: "Post not found." });
+        const fields = { updated_at: new Date().toISOString() };
+        if (body.title !== undefined) fields.title = String(body.title).slice(0, 200);
+        if (body.topic !== undefined) fields.topic = body.topic || "Innovation";
+        if (body.country !== undefined) fields.country = body.country || "Global";
+        if (body.description !== undefined) fields.description = body.description ? String(body.description).slice(0, 5000) : null;
+        if (body.videoUrl !== undefined) {
+          fields.video_url = body.videoUrl || null;
+          fields.media_type = body.videoUrl ? "video" : (body.mediaType || "photo");
+        }
+        if (body.photoUrls !== undefined) {
+          fields.photo_url = body.photoUrls?.[0] || null;
+          fields.photo_urls = body.photoUrls || null;
+        }
+        if (body.mediaType !== undefined && body.videoUrl === undefined) fields.media_type = body.mediaType;
+        const { data, error } = await svcUp.from("world_posts").update(fields).eq("id", body.postId).select().maybeSingle();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { post: data });
       }
 
       if (method === "POST") {
@@ -2772,7 +2963,10 @@ export default async function handler(req, res) {
         if (!okRate) return sendJson(res, 429, { error: "Too many World posts — wait a few minutes." });
         const body = await readBody(req);
         if (!body.title) return sendJson(res, 400, { error: "title required" });
-        const { data, error } = await sb
+        // Prefer service role for insert after auth — avoids RLS surprises on world_posts
+        let svcIns = sb;
+        try { svcIns = adminClient(); } catch { /* fall back to user client */ }
+        const { data, error } = await svcIns
           .from("world_posts")
           .insert({
             owner_id: user.id,
@@ -3488,6 +3682,62 @@ export default async function handler(req, res) {
       return sendJson(res, 200, { ok: true });
     }
 
+    // Missed calls for the signed-in receiver (WhatsApp-style). When they
+    // were offline / didn't answer, status is "missed" on end. Listed for
+    // the last 7 days so coming online surfaces them in Notifications.
+    if (resource === "calls" && action === "missed" && method === "GET") {
+      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      let svcMissed;
+      try { svcMissed = adminClient(); } catch (e) {
+        return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+      }
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data, error } = await svcMissed.from("calls")
+        .select("id, caller_id, receiver_id, type, status, created_at, ended_at")
+        .eq("receiver_id", user.id)
+        .eq("status", "missed")
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(40);
+      if (error) return sendJson(res, 400, { error: error.message });
+      const callerIds = [...new Set((data || []).map((c) => c.caller_id).filter(Boolean))];
+      let nameMap = {};
+      if (callerIds.length) {
+        const { data: profiles } = await svcMissed.from("profiles").select("id, name, avatar_url").in("id", callerIds);
+        nameMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+      }
+      const calls = (data || []).map((c) => ({
+        ...c,
+        caller: nameMap[c.caller_id] || { id: c.caller_id, name: "Merveil Citizen" },
+      }));
+      return sendJson(res, 200, { calls });
+    }
+
+    // Also surface stale "ringing" rows older than 45s as missed (caller
+    // abandoned without a clean end, or receiver never came online).
+    if (resource === "calls" && action === "sweep-stale" && method === "POST") {
+      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      let svcSweep;
+      try { svcSweep = adminClient(); } catch (e) {
+        return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+      }
+      const cutoff = new Date(Date.now() - 45 * 1000).toISOString();
+      // Only rows where this user is a participant — receiver-side sweep when
+      // they open the app, so abandoned rings become missed.
+      const { data: stale } = await svcSweep.from("calls")
+        .select("id")
+        .eq("status", "ringing")
+        .or(`receiver_id.eq.${user.id},caller_id.eq.${user.id}`)
+        .lt("created_at", cutoff)
+        .limit(20);
+      if (stale?.length) {
+        await svcSweep.from("calls")
+          .update({ status: "missed", ended_at: new Date().toISOString() })
+          .in("id", stale.map((r) => r.id));
+      }
+      return sendJson(res, 200, { swept: stale?.length || 0 });
+    }
+
     if (resource === "calls" && (action === "accept" || action === "reject" || action === "end") && method === "POST") {
       if (!user) return sendJson(res, 401, { error: "Sign in required." });
       const body = await readBody(req);
@@ -3514,6 +3764,7 @@ export default async function handler(req, res) {
       } else {
         const endedAt = new Date();
         const duration = call.connected_at ? Math.max(0, Math.round((endedAt - new Date(call.connected_at)) / 1000)) : 0;
+        // Unanswered ring → missed (receiver offline or didn't pick up)
         const finalStatus = call.status === "ringing" ? "missed" : "ended";
         const { error } = await svc.from("calls").update({ status: finalStatus, ended_at: endedAt.toISOString(), duration_seconds: duration }).eq("id", call.id);
         if (error) return sendJson(res, 400, { error: error.message });
@@ -3715,7 +3966,7 @@ export default async function handler(req, res) {
         if (!userId) return sendJson(res, 400, { error: "userId required" });
         const { data, error } = await anonClient()
           .from("profiles")
-          .select("id, name, avatar_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name")
+          .select("id, name, avatar_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession")
           .eq("id", userId)
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
@@ -3728,8 +3979,26 @@ export default async function handler(req, res) {
           .order("created_at", { ascending: false })
           .limit(24);
 
-        const totalLikes = (listings || []).reduce((sum, l) => sum + (l.likes_count || 0), 0);
-        const totalViews = (listings || []).reduce((sum, l) => sum + (l.views || 0), 0);
+        // World reels / posts by this creator (TikTok-style profile grid)
+        const { data: worldPosts } = await anonClient()
+          .from("world_posts")
+          .select("id, title, topic, country, description, video_url, photo_url, photo_urls, media_type, views, likes_count, super_count, created_at")
+          .eq("owner_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(60);
+
+        // Connections (accepted) — Merveil says "connections", not followers
+        const { count: connectionsCount } = await anonClient()
+          .from("connections")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "accepted")
+          .or(`user_id.eq.${userId},connected_user_id.eq.${userId}`);
+
+        const listingLikes = (listings || []).reduce((sum, l) => sum + (l.likes_count || 0), 0);
+        const worldLikes = (worldPosts || []).reduce((sum, p) => sum + (p.likes_count || 0), 0);
+        const totalLikes = listingLikes + worldLikes;
+        const totalViews = (listings || []).reduce((sum, l) => sum + (l.views || 0), 0)
+          + (worldPosts || []).reduce((sum, p) => sum + (p.views || 0), 0);
 
         return sendJson(res, 200, {
           profile: data,
@@ -3738,7 +4007,19 @@ export default async function handler(req, res) {
             type: l.listing_type || "Sale", category: l.category,
             photo_url: l.photo_url, photo_urls: l.photo_urls, views: l.views || 0, likesCount: l.likes_count || 0,
           })),
-          stats: { listingCount: (listings || []).length, totalLikes, totalViews },
+          worldPosts: (worldPosts || []).map((p) => ({
+            id: p.id, title: p.title, topic: p.topic, country: p.country, description: p.description,
+            video_url: p.video_url, photo_url: p.photo_url, photo_urls: p.photo_urls,
+            media_type: p.media_type, views: p.views || 0, likes_count: p.likes_count || 0,
+            super_count: p.super_count || 0, created_at: p.created_at, owner_id: userId,
+          })),
+          stats: {
+            listingCount: (listings || []).length,
+            worldPostCount: (worldPosts || []).length,
+            totalLikes,
+            totalViews,
+            connectionsCount: connectionsCount || 0,
+          },
         });
       }
 
