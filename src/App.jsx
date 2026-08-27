@@ -9481,11 +9481,13 @@ const WORLD_REACTIONS = [
   { id: "meeting", label: "Request Meeting", icon: "📅" },
 ];
 
-function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpenCreator, connectState }) {
+function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpenCreator, connectState, currentUser, onEdit, onDelete }) {
   const grad = WORLD_CARD_GRADIENTS[Math.abs((post.id||"").split("").reduce((a,c)=>a+c.charCodeAt(0),0)) % WORLD_CARD_GRADIENTS.length];
   const cState = connectState || "idle"; // idle | pending | accepted | busy
+  const isOwner = currentUser && post.owner_id && String(currentUser.id) === String(post.owner_id);
+  const [showOwnerMenu, setShowOwnerMenu] = useState(false);
   return (
-    <div className="rounded-2xl border overflow-hidden mb-3 cursor-pointer"
+    <div className="rounded-2xl border overflow-hidden mb-3 cursor-pointer relative"
       style={{ borderColor:"#E5E7EB", background:"#fff" }} onClick={() => onOpen(post)}>
       <div className="h-2 w-full" style={{ background:`linear-gradient(90deg,${grad[0]},${grad[1]})` }}/>
       {post.photo_url && (
@@ -9498,22 +9500,56 @@ function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpe
           </span>
         </div>
       )}
+      {post.video_url && !post.photo_url && (
+        <div className="relative bg-black" style={{ height: 150 }}>
+          <video src={post.video_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+          <span className="absolute bottom-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>Reel</span>
+        </div>
+      )}
       <div className="p-4">
-        {(post.owner_name || post.owner_avatar) && (
-          <button onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
-            className="flex items-center gap-1.5 mb-2">
-            {post.owner_avatar
-              ? <img src={post.owner_avatar} alt="" className="w-5 h-5 rounded-full object-cover"/>
-              : <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white" style={{ background: "#1F2937" }}>{(post.owner_name||"?")[0]}</div>}
-            <span className="text-[11px] font-semibold" style={{ color: "#374151" }}>{post.owner_name || "Merveil Citizen"}</span>
-            {!post.photo_url && (
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-auto"
-                style={{ background: post.content_origin === "ai" ? "#7C3AED18" : "#1F293718", color: post.content_origin === "ai" ? "#7C3AED" : "#1F2937" }}>
-                {post.content_origin === "ai" ? "AI®" : "RH"}
-              </span>
-            )}
-          </button>
-        )}
+        <div className="flex items-start justify-between gap-2 mb-2">
+          {(post.owner_name || post.owner_avatar) ? (
+            <button onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
+              className="flex items-center gap-1.5 min-w-0">
+              {post.owner_avatar
+                ? <img src={post.owner_avatar} alt="" className="w-5 h-5 rounded-full object-cover shrink-0"/>
+                : <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ background: "#1F2937" }}>{(post.owner_name||"?")[0]}</div>}
+              <span className="text-[11px] font-semibold truncate" style={{ color: "#374151" }}>{post.owner_name || "Merveil Citizen"}</span>
+              {!post.photo_url && !post.video_url && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1 shrink-0"
+                  style={{ background: post.content_origin === "ai" ? "#7C3AED18" : "#1F293718", color: post.content_origin === "ai" ? "#7C3AED" : "#1F2937" }}>
+                  {post.content_origin === "ai" ? "AI®" : "RH"}
+                </span>
+              )}
+            </button>
+          ) : <div />}
+          {isOwner && (
+            <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button type="button" onClick={() => setShowOwnerMenu((v) => !v)}
+                className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "#F3F4F6" }}
+                aria-label="Post tools">
+                <MoreVertical size={14} style={{ color: "#6B7280" }} />
+              </button>
+              {showOwnerMenu && (
+                <div className="absolute right-0 top-9 z-20 rounded-xl overflow-hidden shadow-lg border" style={{ background: "#fff", borderColor: "#E5E7EB", minWidth: 140 }}>
+                  <button type="button" className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-left hover:bg-gray-50"
+                    style={{ color: "#1F2937" }}
+                    onClick={() => { setShowOwnerMenu(false); onEdit?.(post); }}>
+                    <Edit3 size={14} /> Edit
+                  </button>
+                  <button type="button" className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-left hover:bg-red-50"
+                    style={{ color: "#DC2626" }}
+                    onClick={() => {
+                      setShowOwnerMenu(false);
+                      if (window.confirm("Delete this World post permanently?")) onDelete?.(post);
+                    }}>
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
             style={{ background:"#0EA5E918", color:"#0369A1", border:"1px solid #0EA5E944" }}>
@@ -9681,7 +9717,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
               <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
                 <Eye size={18} color="#fff" />
               </div>
-              <span className="text-[10px] font-semibold text-white">{(post.views_count || 0).toLocaleString()}</span>
+              <span className="text-[10px] font-semibold text-white">{(post.views || post.views_count || 0).toLocaleString()}</span>
             </div>
             <button onClick={(e) => { e.stopPropagation(); currentUser ? setShowComments(true) : onRequireSignIn?.(); }} className="flex flex-col items-center gap-0.5">
               <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
@@ -9871,6 +9907,8 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
   const submit = async () => {
     if (!form.title.trim()) { setError("Give it a title first."); return; }
     if (uploading) { setError("Wait for the video upload to finish."); return; }
+    // World is reels-only — new posts need a video (edits may keep existing)
+    if (!isEdit && !form.videoUrl) { setError("Pick a video from your gallery to post a World reel."); return; }
     setBusy(true); setError("");
     try {
       await onPublish({
@@ -9911,9 +9949,14 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5" style={{ minHeight:0 }}>
-          {/* No capture= attribute — lets Android/iOS open the full gallery (all videos), not only the camera. */}
-          <input ref={videoInputRef} type="file" accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v,.mkv,.3gp"
-            className="hidden" onChange={onVideoPick} />
+          {/* Full gallery access: no capture= so phone opens all video folders (Camera, Downloads, WhatsApp, etc.). */}
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*,video/mp4,video/quicktime,video/webm,video/x-m4v,video/3gpp,video/x-matroska,.mp4,.mov,.webm,.m4v,.mkv,.3gp,.avi"
+            className="hidden"
+            onChange={onVideoPick}
+          />
           <button type="button" onClick={() => !uploading && videoInputRef.current?.click()}
             disabled={uploading}
             className="w-full rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 py-6"
@@ -9922,17 +9965,17 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
               <>
                 <video src={videoPreview} className="w-full max-h-40 rounded-xl object-cover" muted playsInline controls />
                 <div className="text-[11px] font-semibold" style={{ color: uploading ? "#7C3AED" : form.videoUrl ? "#1F7A4D" : "#6B7280" }}>
-                  {uploading ? "Uploading to Supabase…" : form.videoUrl ? "Ready — stored on Supabase" : "Preview only — upload failed"}
+                  {uploading ? "Uploading…" : form.videoUrl ? "Ready" : "Preview only — upload failed"}
                 </div>
-                <div className="text-[10px]" style={{ color: "#6B7280" }}>Tap to replace from gallery</div>
+                <div className="text-[10px]" style={{ color: "#6B7280" }}>Tap to replace — full gallery</div>
               </>
             ) : (
               <>
                 <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "#7C3AED" }}>
                   <Video size={22} color="#fff" />
                 </div>
-                <div className="text-sm font-bold" style={{ color: "#1F2937" }}>Choose video from gallery</div>
-                <div className="text-[11px]" style={{ color: "#6B7280" }}>MP4 / MOV / WEBM · max 60s · up to 80 MB · all folders</div>
+                <div className="text-sm font-bold" style={{ color: "#1F2937" }}>Choose any video from gallery</div>
+                <div className="text-[11px]" style={{ color: "#6B7280" }}>All folders · MP4 / MOV / WEBM · max 60s · up to 80 MB</div>
               </>
             )}
           </button>
@@ -9980,32 +10023,11 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
   const [posts, setPosts] = useState([]);
   const [likedIds, setLikedIds] = useState([]);
   const [showPost, setShowPost] = useState(false);
-  const [topicFilter, setTopicFilter] = useState("All");
-  const [countryFilter, setCountryFilter] = useState(null);
-  const [viewMode, setViewMode] = useState(() => {
-    // Always prefer TikTok-style full-screen reels on entry. Users can still
-    // switch to Feed / Map; we no longer restore a prior "list" preference
-    // so the experience matches the request: videos appear directly.
-    try {
-      const saved = localStorage.getItem("merveil_world_view");
-      if (saved === "map") return "map";
-    } catch {}
-    return "reels";
-  });
-  useEffect(() => {
-    try { localStorage.setItem("merveil_world_view", viewMode); } catch {}
-  }, [viewMode]);
+  // World is Reels-only (TikTok-style). Feed / Map removed.
   const [worldReelIndex, setWorldReelIndex] = useState(0);
-  const [openPost, setOpenPost] = useState(null);
   const [viewingCreatorId, setViewingCreatorId] = useState(null);
   const [editingPost, setEditingPost] = useState(null);
   const [loading, setLoading] = useState(true);
-  // Phone / browser Back exits full-screen reels → feed
-  useEffect(() => {
-    if (viewMode !== "reels") return;
-    pushLayer("world-reels", () => setViewMode("list"));
-    return () => popLayer("world-reels");
-  }, [viewMode, pushLayer, popLayer]);
   // Back closes creator profile
   useEffect(() => {
     if (!viewingCreatorId) return;
@@ -10019,16 +10041,21 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     return () => popLayer("world-post");
   }, [showPost, editingPost, pushLayer, popLayer]);
 
-  const loadPosts = () => {
-    setLoading(true);
-    fetch("/api/world")
+  const loadPosts = (silent = false) => {
+    if (!silent) setLoading(true);
+    fetch("/api/world", { credentials: "include" })
       .then(r => r.ok ? r.json() : { posts: [] })
       .then(data => setPosts(data.posts || []))
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
   };
 
-  useEffect(() => { loadPosts(); }, []);
+  useEffect(() => {
+    loadPosts(false);
+    // Scale: soft refresh every 45s while World is open (no full reload flash)
+    const id = setInterval(() => loadPosts(true), 45000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!currentUser?.id) { setLikedIds([]); return; }
@@ -10136,13 +10163,34 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
   const deleteWorldPost = async (post) => {
     if (!currentUser || !post?.id) return;
     try {
-      const res = await fetch("/api/world", {
+      // postId in query + body so DELETE works even if body parser misses
+      const res = await fetch(`/api/world?postId=${encodeURIComponent(post.id)}`, {
         method: "DELETE", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postId: post.id }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { alert(data.error || "Couldn't delete."); return; }
       setPosts((prev) => prev.filter((p) => p.id !== post.id));
+    } catch {
+      alert("Couldn't delete — check your connection.");
+    }
+  };
+
+  const deleteAllMyWorldPosts = async () => {
+    if (!currentUser) { onSignIn?.(); return; }
+    const mine = posts.filter((p) => p.owner_id && String(p.owner_id) === String(currentUser.id));
+    if (!mine.length) { alert("You have no World posts to delete."); return; }
+    if (!window.confirm(`Delete all ${mine.length} of your World posts/reels permanently? This cannot be undone.`)) return;
+    try {
+      const res = await fetch("/api/world?action=delete-mine", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || "Couldn't delete your posts."); return; }
+      setPosts((prev) => prev.filter((p) => !(p.owner_id && String(p.owner_id) === String(currentUser.id))));
+      setWorldReelIndex(0);
+      alert(data.deleted != null ? `Deleted ${data.deleted} World post(s).` : "Your World posts were deleted.");
     } catch {
       alert("Couldn't delete — check your connection.");
     }
@@ -10162,14 +10210,6 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       const data = await res.json();
       if (res.ok) setPosts(prev => prev.map(p => p.id === post.id ? { ...p, likes_count: data.likesCount } : p));
     } catch {}
-  };
-
-  const openDetail = (post) => {
-    setOpenPost(post);
-    fetch("/api/world?action=view", {
-      method: "POST", headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ postId: post.id, source: viewMode === "map" ? "world_map" : "world_feed" }),
-    }).catch(() => {});
   };
 
   const [connectStates, setConnectStates] = useState({}); // ownerId -> pending|accepted|busy
@@ -10206,9 +10246,6 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     }
   };
 
-  const filtered = posts
-    .filter(p => topicFilter === "All" || p.topic === topicFilter)
-    .filter(p => !countryFilter || p.country === countryFilter);
   const canPost = !!currentUser && minPassportPct >= 40; // 40% Passport — easy for new citizens
   const [postBlockedMsg, setPostBlockedMsg] = useState("");
 
@@ -10222,212 +10259,77 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     setShowPost(true);
   };
 
-  // Full-screen World Reels — true TikTok-style: edge-to-edge, covers
-  // header + bottom nav so the video is the only thing on screen.
-  if (viewMode === "reels") {
-    // Prefer videos; if none, still show photo/text posts as full-screen cards
-    const videoItems = rankWorldReels(filtered.filter((p) => p.video_url));
-    const reelItems = videoItems.length ? videoItems : rankWorldReels(filtered);
-    return (
-      <>
-        <div className="fixed inset-0 z-[60] tab-fade overflow-hidden"
-          style={{ background: "#000", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
-          {/* Top chrome — always above the video (z-[100]) */}
-          <div className="absolute left-0 right-0 z-[100] flex items-center justify-between gap-2 px-3 pointer-events-none"
-            style={{ top: "calc(10px + var(--safe-top))" }}>
-            <button type="button" onClick={() => setViewMode("list")}
-              className="pointer-events-auto flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full shadow-lg"
-              style={{ background: "rgba(0,0,0,0.72)", color: "#fff", border: "1px solid rgba(255,255,255,0.35)", backdropFilter: "blur(8px)" }}>
-              <ArrowLeft size={14} /> Back
-            </button>
-            <div className="pointer-events-auto flex items-center gap-1 rounded-full p-0.5" style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.2)" }}>
-              {[
-                { id: "reels", label: "Full" },
-                { id: "list", label: "Feed" },
-                { id: "map", label: "Map" },
-              ].map((m) => (
-                <button key={m.id} type="button" onClick={() => setViewMode(m.id)}
-                  className="text-[10px] font-bold px-2.5 py-1.5 rounded-full"
-                  style={{ background: viewMode === m.id ? "#7C3AED" : "transparent", color: "#fff" }}>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-            <button type="button" onClick={openPostReel}
-              className="pointer-events-auto flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-full shadow-lg"
-              style={{ background: "linear-gradient(135deg,#7C3AED,#1F2937)", color: "#fff" }}>
-              <Plus size={13} /> Post
-            </button>
-          </div>
-          {reelItems.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-sm px-6 text-center gap-3" style={{ color: "rgba(255,255,255,0.85)" }}>
-              <div className="text-base font-semibold">No World video reels yet</div>
-              <div className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>Post a video (max 60s) to appear here as a full-screen reel.</div>
-              <button type="button" onClick={openPostReel}
-                className="mt-2 text-xs font-bold px-4 py-2.5 rounded-full" style={{ background: "#7C3AED", color: "#fff" }}>
-                Post a World Reel
-              </button>
-            </div>
-          ) : (
-            <CircularReel
-              items={reelItems}
-              activeIndex={worldReelIndex}
-              onActiveChange={setWorldReelIndex}
-              getKey={(post) => post.id}
-              renderItem={(post, playState) => (
-                <WorldReelCard post={post} isActive={playState === "main"} forceMuted={playState === "satellite"} compact={playState === "satellite"}
-                  liked={likedIds.includes(post.id)}
-                  supered={superedIds.includes(post.id)}
-                  saved={savedIds.includes(post.id)}
-                  currentUser={currentUser}
-                  onRequireSignIn={onSignIn}
-                  onToggleLike={toggleLike} onToggleSuper={toggleSuper} onToggleSave={() => toggleSave(post)}
-                  onCall={(mode) => callPoster(post, mode)}
-                  onOpenCreator={(uid) => uid && setViewingCreatorId(uid)}
-                  onChat={() => connectWithPoster(post)}
-                  onEdit={(p) => { setEditingPost(p); setShowPost(true); }}
-                  onDelete={deleteWorldPost}
-                />
-              )}
-            />
-          )}
-        </div>
-        {(showPost || editingPost) && (canPost || editingPost) && (
-          <PostWorldModal
-            onClose={() => { setShowPost(false); setEditingPost(null); }}
-            onPublish={publish}
-            defaultAsReel
-            editPost={editingPost}
-          />
-        )}
-        {postBlockedMsg && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.6)" }}
-            onClick={() => setPostBlockedMsg("")}>
-            <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: "#fff" }} onClick={(e) => e.stopPropagation()}>
-              <div className="text-sm font-bold" style={{ color: T.ink }}>Passport needed to post</div>
-              <p className="text-xs mt-2" style={{ color: T.sub }}>{postBlockedMsg}</p>
-              <div className="flex gap-2 mt-4">
-                <button type="button" onClick={() => setPostBlockedMsg("")} className="flex-1 text-xs font-semibold py-2.5 rounded-xl" style={{ background: T.panel, color: T.sub }}>Close</button>
-                <button type="button" onClick={() => { setPostBlockedMsg(""); onChat?.(); /* parent may not switch tab */ window.dispatchEvent(new CustomEvent("merveil:goto-passport")); }}
-                  className="flex-1 text-xs font-bold py-2.5 rounded-xl text-white" style={{ background: T.ink }}>Open Passport</button>
-              </div>
-            </div>
-          </div>
-        )}
-        {viewingCreatorId && (
-          <CreatorProfileModal
-            userId={viewingCreatorId}
-            currentUser={currentUser}
-            onClose={() => setViewingCreatorId(null)}
-            onChat={() => { setViewingCreatorId(null); onChat?.(); }}
-            onOpenOwnPassport={() => {
-              setViewingCreatorId(null);
-              window.dispatchEvent(new CustomEvent("merveil:goto-passport"));
-            }}
-            onPlayPost={(post) => {
-              setViewingCreatorId(null);
-              const idx = posts.findIndex((p) => p.id === post.id);
-              if (idx >= 0) setWorldReelIndex(idx);
-              setViewMode("reels");
-            }}
-          />
-        )}
-        {worldActiveCall && (
-          <RealCallScreen
-            callId={worldActiveCall.callId}
-            role="caller"
-            mode={worldActiveCall.mode}
-            otherUser={{ name: worldActiveCall.otherName }}
-            onEnd={() => setWorldActiveCall(null)}
-          />
-        )}
-        {worldCallError && (
-          <div className="fixed left-1/2 -translate-x-1/2 z-[75] px-4 py-2 rounded-full text-xs font-semibold text-white" style={{ bottom: "calc(5rem + var(--safe-bottom))", background: T.signal }}>
-            {worldCallError}
-          </div>
-        )}
-      </>
-    );
-  }
+  // World = full-screen Reels only (TikTok-style). Videos preferred; photo posts still show if present.
+  const reelItems = rankWorldReels(posts.filter((p) => p.video_url).length
+    ? posts.filter((p) => p.video_url)
+    : posts);
 
   return (
-    <div className="pb-nav">
-      <div className="px-4 md:px-6 pt-4 pb-2 flex items-center justify-between">
-        <div>
-          <div className="text-lg font-bold flex items-center gap-1.5" style={{ fontFamily:"'Space Grotesk',sans-serif", color:"#1F2937" }}>
-            <Globe size={18}/> World
+    <>
+      <div className="fixed inset-0 z-[60] tab-fade overflow-hidden"
+        style={{ background: "#000", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
+        <div className="absolute left-0 right-0 z-[100] flex items-center justify-end gap-2 px-3 pointer-events-none"
+          style={{ top: "calc(10px + var(--safe-top))" }}>
+          <div className="pointer-events-auto text-[10px] font-bold px-2.5 py-1.5 rounded-full mr-auto"
+            style={{ background: "rgba(0,0,0,0.55)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }}>
+            World · Reels
           </div>
-          <div className="text-xs" style={{ color:"#6B7280" }}>Global networking — AI, investors, startups, government, universities</div>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setViewMode("reels")}
-            className="text-xs font-bold py-2 px-3 rounded-xl flex items-center gap-1.5"
-            style={{ background: "linear-gradient(135deg,#7C3AED,#1F2937)", color: "#fff" }}>
-            <PlayCircle size={13} /> Reels
-          </button>
-          <button onClick={() => setViewMode(v => v === "list" ? "map" : "list")}
-            className="text-xs font-bold py-2 px-3 rounded-xl flex items-center gap-1"
-            style={{ background: viewMode==="map" ? "#0EA5E9" : "#F9FAFB", color: viewMode==="map" ? "#FFFFFF" : "#6B7280" }}>
-            <Globe size={13}/> {viewMode === "list" ? "Map" : "List"}
-          </button>
+          {currentUser && posts.some((p) => p.owner_id && String(p.owner_id) === String(currentUser.id)) && (
+            <button type="button" onClick={deleteAllMyWorldPosts}
+              className="pointer-events-auto flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-full shadow-lg"
+              style={{ background: "rgba(220,38,38,0.9)", color: "#fff" }}
+              title="Delete all your World reels">
+              <Trash2 size={13} /> Clear mine
+            </button>
+          )}
           <button type="button" onClick={openPostReel}
-            className="text-xs font-bold py-2 px-3 rounded-xl flex items-center gap-1"
-            style={{ background:"#1F2937", color:"#fff" }}>
-            <Plus size={13}/> Post
+            className="pointer-events-auto flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-full shadow-lg"
+            style={{ background: "linear-gradient(135deg,#7C3AED,#1F2937)", color: "#fff" }}>
+            <Plus size={13} /> Post
           </button>
         </div>
-      </div>
-
-      {viewMode === "map" && (
-        <div className="px-4 md:px-6 pb-3">
-          <GlobalBusinessMap posts={posts} onCountryClick={(c) => { setCountryFilter(c); setViewMode("list"); }} />
-        </div>
-      )}
-
-      {countryFilter && (
-        <div className="px-4 md:px-6 pb-2">
-          <button onClick={() => setCountryFilter(null)}
-            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full flex items-center gap-1"
-            style={{ background:"#1F2937", color:"#fff" }}>
-            <Globe size={10}/> {countryFilter} <X size={10}/>
-          </button>
-        </div>
-      )}
-
-      <div className="flex items-center gap-1.5 px-4 md:px-6 pb-2 overflow-x-auto">
-        {["All", ...WORLD_TOPICS].map(t => (
-          <button key={t} onClick={() => setTopicFilter(t)}
-            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full shrink-0 whitespace-nowrap"
-            style={{
-              background: topicFilter===t ? "#1F2937" : "#F9FAFB",
-              color: topicFilter===t ? "#fff" : "#6B7280",
-            }}>{t}</button>
-        ))}
-      </div>
-
-      <div className="px-4 md:px-6 pt-2">
-        {loading && <div className="text-xs text-center py-8" style={{ color:"#6B7280" }}>Loading World…</div>}
-        {!loading && filtered.length === 0 && (
-          <div className="text-center py-14 px-6">
-            <Globe size={32} style={{ color:"#E5E7EB", margin:"0 auto 10px" }}/>
-            <div className="text-sm font-bold mb-1" style={{ color:"#1F2937" }}>Nothing here yet</div>
-            <div className="text-xs" style={{ color:"#6B7280" }}>Be the first to post a global opportunity, update, or connection request.</div>
+        {loading && reelItems.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>Loading World…</div>
+        ) : reelItems.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-sm px-6 text-center gap-3" style={{ color: "rgba(255,255,255,0.85)" }}>
+            <div className="text-base font-semibold">No World reels yet</div>
+            <div className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>Post any video from your gallery (max 60s) — people around the world will see it here.</div>
+            <button type="button" onClick={openPostReel}
+              className="mt-2 text-xs font-bold px-4 py-2.5 rounded-full" style={{ background: "#7C3AED", color: "#fff" }}>
+              Post a World Reel
+            </button>
           </div>
+        ) : (
+          <CircularReel
+            items={reelItems}
+            activeIndex={Math.min(worldReelIndex, Math.max(0, reelItems.length - 1))}
+            onActiveChange={setWorldReelIndex}
+            getKey={(post) => post.id}
+            renderItem={(post, playState) => (
+              <WorldReelCard post={post} isActive={playState === "main"} forceMuted={playState === "satellite"} compact={playState === "satellite"}
+                liked={likedIds.includes(post.id)}
+                supered={superedIds.includes(post.id)}
+                saved={savedIds.includes(post.id)}
+                currentUser={currentUser}
+                onRequireSignIn={onSignIn}
+                onToggleLike={toggleLike} onToggleSuper={toggleSuper} onToggleSave={() => toggleSave(post)}
+                onCall={(mode) => callPoster(post, mode)}
+                onOpenCreator={(uid) => uid && setViewingCreatorId(uid)}
+                onChat={() => connectWithPoster(post)}
+                onEdit={(p) => { setEditingPost(p); setShowPost(true); }}
+                onDelete={deleteWorldPost}
+              />
+            )}
+          />
         )}
-        <div className="md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4">
-          {filtered.map(post => (
-            <WorldCard key={post.id} post={post} liked={likedIds.includes(post.id)}
-              onToggleLike={toggleLike} onOpen={openDetail}
-              onChat={connectWithPoster}
-              onConnect={connectWithPoster}
-              connectState={post.owner_id ? (connectStates[String(post.owner_id)] || "idle") : "idle"}
-              onOpenCreator={(uid) => uid && setViewingCreatorId(uid)}/>
-          ))}
-        </div>
       </div>
-
-      {showPost && canPost && (
-        <PostWorldModal onClose={() => setShowPost(false)} onPublish={publish} defaultAsReel={viewMode === "reels"} />
+      {(showPost || editingPost) && (canPost || editingPost) && (
+        <PostWorldModal
+          onClose={() => { setShowPost(false); setEditingPost(null); }}
+          onPublish={publish}
+          defaultAsReel
+          editPost={editingPost}
+        />
       )}
       {postBlockedMsg && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.6)" }}
@@ -10443,50 +10345,23 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           </div>
         </div>
       )}
-
-      {openPost && (
-        <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center"
-          style={{ background:"rgba(0,0,0,.5)" }} onClick={() => setOpenPost(null)}>
-          <div className="w-full sm:w-[480px] sm:rounded-2xl rounded-t-2xl flex flex-col"
-            style={{ background:"#fff", maxHeight:"85vh" }} onClick={e => e.stopPropagation()}>
-            {openPost.photo_url && <img src={openPost.photo_url} alt="" className="w-full object-cover" style={{ height:200 }}/>}
-            <div className="p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                  style={{ background:"#0EA5E918", color:"#1F2937" }}>{openPost.topic}</span>
-                <button onClick={() => setOpenPost(null)}><X size={18} style={{ color:"#6B7280" }}/></button>
-              </div>
-              <div className="text-lg font-bold mb-1" style={{ color:"#1F2937" }}>{openPost.title}</div>
-              <div className="text-xs mb-3 flex items-center gap-1" style={{ color:"#6B7280" }}>
-                <Globe size={11}/> {openPost.country}
-              </div>
-              <p className="text-sm mb-4" style={{ color:"#3A4A5C" }}>{openPost.description}</p>
-              <WorldReactionsBar postId={openPost.id} currentUser={currentUser} onSignIn={onSignIn}/>
-              <button onClick={() => connectWithPoster(openPost)}
-                className="w-full text-sm font-bold py-3 rounded-xl flex items-center justify-center gap-1.5 mt-3"
-                style={{ background:"#1F2937", color:"#fff" }}>
-                <MessageCircle size={14}/> Connect
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {viewingCreatorId && (
         <CreatorProfileModal
           userId={viewingCreatorId}
           currentUser={currentUser}
           onClose={() => setViewingCreatorId(null)}
           onChat={() => { setViewingCreatorId(null); onChat?.(); }}
+          onOpenOwnPassport={() => {
+            setViewingCreatorId(null);
+            window.dispatchEvent(new CustomEvent("merveil:goto-passport"));
+          }}
           onPlayPost={(post) => {
             setViewingCreatorId(null);
-            const idx = posts.findIndex((p) => p.id === post.id);
+            const idx = reelItems.findIndex((p) => p.id === post.id);
             if (idx >= 0) setWorldReelIndex(idx);
-            setViewMode("reels");
           }}
         />
       )}
-
       {worldActiveCall && (
         <RealCallScreen
           callId={worldActiveCall.callId}
@@ -10501,7 +10376,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           {worldCallError}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -18917,15 +18792,43 @@ function AppInner() {
   // the httpOnly session is still valid.
   const [sessionReady, setSessionReady] = useState(false);
   const refreshSession = useCallback(() => {
+    // Never wipe a known-good local user on network blips or transient
+    // refresh-token races. Only clear when the server explicitly returns
+    // a successful JSON body with user: null (true signed-out state).
     return fetch("/api/auth/session", { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (!r.ok) {
+          // 5xx / gateway errors — keep currentUser; do not log out
+          if (r.status >= 500) return { keep: true };
+          // 401/403 with body — try parse; otherwise keep
+          try {
+            const body = await r.json();
+            if (body && body.user === null) return { user: null };
+            if (body?.user) return { user: body.user };
+          } catch {}
+          return { keep: true };
+        }
+        try {
+          return await r.json();
+        } catch {
+          return { keep: true };
+        }
+      })
       .then((body) => {
         if (!body) return null;
-        if (body.user) syncCurrentUser(body.user);
-        else syncCurrentUser(null);
-        return body.user || null;
+        if (body.keep) return null; // network/server hiccup — leave state alone
+        if (body.user) {
+          syncCurrentUser(body.user);
+          return body.user;
+        }
+        // Explicit { user: null } from a successful response
+        if (Object.prototype.hasOwnProperty.call(body, "user") && body.user === null) {
+          syncCurrentUser(null);
+          return null;
+        }
+        return null;
       })
-      .catch(() => null)
+      .catch(() => null) // network error — never force logout
       .finally(() => setSessionReady(true));
   }, []);
 
