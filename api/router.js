@@ -13,6 +13,40 @@ import {
   getAccessToken,
 } from "../lib/supabaseServer.js";
 
+// Server-side FCM (native) + Web Push (PWA). Path works when pushSend.js
+// sits next to the API router or under lib/.
+let pushSendMod = null;
+async function getPushSend() {
+  if (pushSendMod) return pushSendMod;
+  try {
+    pushSendMod = await import("./pushSend.js");
+  } catch {
+    try {
+      pushSendMod = await import("../lib/pushSend.js");
+    } catch {
+      pushSendMod = { sendToSubscriptions: async () => [], pushConfigured: () => ({ fcm: false, vapid: false, any: false }) };
+    }
+  }
+  return pushSendMod;
+}
+
+/** Notify a user on all registered devices (FCM + Web Push). Safe no-op if unconfigured. */
+export async function notifyUser(userId, payload) {
+  if (!userId) return { sent: 0, results: [] };
+  let svc;
+  try { svc = adminClient(); } catch { return { sent: 0, results: [], error: "no admin client" }; }
+  const { data: rows } = await svc.from("push_subscriptions").select("*").eq("user_id", userId);
+  if (!rows?.length) return { sent: 0, results: [] };
+  const mod = await getPushSend();
+  const results = await mod.sendToSubscriptions(rows, payload);
+  // Drop dead tokens (uninstalled app / expired web push)
+  const staleIds = results.filter((r) => r.stale && r.id).map((r) => r.id);
+  if (staleIds.length) {
+    await svc.from("push_subscriptions").delete().in("id", staleIds);
+  }
+  return { sent: results.filter((r) => r.ok).length, results };
+}
+
 // Admin client for account confirmation only — separate from the shared
 // lib so this fix doesn't depend on lib/supabaseServer.js also being
 // updated. Uses the same service-role key the rest of the backend relies
@@ -1141,9 +1175,9 @@ export default async function handler(req, res) {
         if (!ids.length) return sendJson(res, 200, { presence: {} });
         const { data } = await sb.from("presence").select("*").in("user_id", ids);
         const presence = {};
-        // 120s window — heartbeats fire ~8s; tolerates a few missed beats
-        // (tab backgrounded, brief network blip) before flipping offline.
-        const cutoff = Date.now() - 120 * 1000;
+        // 180s window — clients beat ~30s when visible / ~90s when away;
+        // tolerates several missed beats (background tab, flaky network).
+        const cutoff = Date.now() - 180 * 1000;
         for (const row of data || []) {
           const fresh = row.updated_at && new Date(row.updated_at).getTime() > cutoff;
           const st = (row.status || "online").toLowerCase();
@@ -1206,7 +1240,7 @@ export default async function handler(req, res) {
       }
 
       // Directory: browse ALL Merveil citizens (no friend requirement).
-      // Live presence: online if heartbeat within 5 minutes. Online users first.
+      // Live presence: online if heartbeat within 180s. Online users first.
       // Uses service role so RLS never hides other citizens; session race
       // still resolves caller via jwtSub when access token just rotated.
       if (method === "GET" && action === "directory") {
@@ -1225,7 +1259,7 @@ export default async function handler(req, res) {
         const visible = (people || []).filter((p) => p.discoverable !== false);
         const ids = visible.map((p) => p.id);
         let presenceMap = {};
-        const cutoff = Date.now() - 5 * 60 * 1000;
+        const cutoff = Date.now() - 180 * 1000;
         if (ids.length) {
           const { data: pres } = await svcDir.from("presence").select("*").in("user_id", ids);
           for (const row of pres || []) {
@@ -1551,6 +1585,33 @@ export default async function handler(req, res) {
       if (pushAction === "subscribe" && method === "POST") {
         if (!user) return sendJson(res, 401, { error: "Sign in required." });
         const body = await readBody(req);
+        const platform = String(body?.platform || "web").slice(0, 32);
+        // Native Capacitor: token-only path (FCM/APNs)
+        if (body?.token && (platform === "android" || platform === "ios" || platform === "native")) {
+          let svcPush;
+          try { svcPush = adminClient(); } catch (e) {
+            return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+          }
+          const token = String(body.token).slice(0, 512);
+          const endpoint = String(body?.subscription?.endpoint || `native://${platform}/${token}`).slice(0, 2000);
+          const row = {
+            user_id: user.id,
+            endpoint,
+            p256dh: "native",
+            auth: token,
+            user_agent: String(req.headers["user-agent"] || platform).slice(0, 400),
+            platform,
+            device_token: token,
+            updated_at: new Date().toISOString(),
+          };
+          const { data: existing } = await svcPush.from("push_subscriptions").select("id").eq("endpoint", endpoint).maybeSingle();
+          if (existing) await svcPush.from("push_subscriptions").update(row).eq("id", existing.id);
+          else {
+            const { error } = await svcPush.from("push_subscriptions").insert({ ...row, created_at: new Date().toISOString() });
+            if (error) return sendJson(res, 400, { error: error.message });
+          }
+          return sendJson(res, 200, { ok: true, platform });
+        }
         const sub = body?.subscription;
         if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
           return sendJson(res, 400, { error: "Valid PushSubscription required." });
@@ -1565,6 +1626,7 @@ export default async function handler(req, res) {
           p256dh: String(sub.keys.p256dh).slice(0, 512),
           auth: String(sub.keys.auth).slice(0, 512),
           user_agent: String(req.headers["user-agent"] || "").slice(0, 400),
+          platform: platform || "web",
           updated_at: new Date().toISOString(),
         };
         const { data: existing } = await svcPush.from("push_subscriptions").select("id").eq("endpoint", row.endpoint).maybeSingle();
@@ -1574,7 +1636,7 @@ export default async function handler(req, res) {
           const { error } = await svcPush.from("push_subscriptions").insert({ ...row, created_at: new Date().toISOString() });
           if (error) return sendJson(res, 400, { error: error.message });
         }
-        return sendJson(res, 200, { ok: true });
+        return sendJson(res, 200, { ok: true, platform: row.platform });
       }
       if (pushAction === "unsubscribe" && method === "POST") {
         if (!user) return sendJson(res, 401, { error: "Sign in required." });
@@ -1590,6 +1652,41 @@ export default async function handler(req, res) {
         }
         return sendJson(res, 200, { ok: true });
       }
+
+      // Status: which backends are configured (no secrets leaked)
+      if (pushAction === "status" && method === "GET") {
+        const mod = await getPushSend();
+        const cfg = mod.pushConfigured?.() || { fcm: false, vapid: false, any: false };
+        let deviceCount = 0;
+        if (user) {
+          try {
+            const svc = adminClient();
+            const { count } = await svc.from("push_subscriptions").select("*", { count: "exact", head: true }).eq("user_id", user.id);
+            deviceCount = count || 0;
+          } catch {}
+        }
+        return sendJson(res, 200, { ...cfg, deviceCount });
+      }
+
+      // Send to a user (self test or server-side notify). Body: { userId?, title, body, data, urgent }
+      // If userId omitted → send to current user (test notification).
+      if (pushAction === "send" && method === "POST") {
+        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        const body = await readBody(req);
+        const targetId = body.userId || user.id;
+        // Only allow messaging yourself unless service role path later expands this
+        if (String(targetId) !== String(user.id)) {
+          return sendJson(res, 403, { error: "Can only test-send to your own devices from the client." });
+        }
+        const result = await notifyUser(targetId, {
+          title: body.title || "Merveil AI",
+          body: body.body || "Test notification — push is working.",
+          data: body.data || { url: "/" },
+          urgent: !!body.urgent,
+        });
+        return sendJson(res, 200, result);
+      }
+
       return sendJson(res, 404, { error: "Unknown push action." });
     }
 
@@ -3976,6 +4073,16 @@ export default async function handler(req, res) {
       }
       const { data: call, error } = await svc.from("calls").insert({ caller_id: user.id, receiver_id: receiverId, type, status: "ringing" }).select("*").maybeSingle();
       if (error) return sendJson(res, 400, { error: error.message });
+      // FCM / Web Push to callee when app is backgrounded
+      try {
+        const callerName = parties?.find((p) => p.id === user.id)?.name || "Merveil Citizen";
+        notifyUser(receiverId, {
+          title: type === "video" ? "Incoming video call" : "Incoming call",
+          body: `${callerName} is calling you on Merveil`,
+          data: { url: "/?tab=messages", tag: `call-${call.id}`, callId: call.id, type },
+          urgent: true,
+        }).catch(() => {});
+      } catch {}
       return sendJson(res, 200, { call });
     }
 
@@ -4156,12 +4263,47 @@ export default async function handler(req, res) {
         const text = (body.body || "").trim();
         if (!text) return sendJson(res, 400, { error: "Comment can't be empty." });
         if (text.length > 1000) return sendJson(res, 400, { error: "Comment is too long." });
-        const { data, error } = await sb
+        // Prefer user-scoped client; fall back to service role if RLS blocks (table must still exist)
+        let data = null;
+        let error = null;
+        const ins = await sb
           .from("comments")
-          .insert({ target_type: body.targetType, target_id: body.targetId, user_id: user.id, body: text })
+          .insert({ target_type: body.targetType, target_id: String(body.targetId), user_id: user.id, body: text })
           .select()
           .maybeSingle();
-        if (error) return sendJson(res, 400, { error: error.message });
+        data = ins.data;
+        error = ins.error;
+        if (error && /relation .* does not exist|permission denied|row-level security/i.test(error.message || "")) {
+          try {
+            const svc = adminClient();
+            const retry = await svc
+              .from("comments")
+              .insert({ target_type: body.targetType, target_id: String(body.targetId), user_id: user.id, body: text })
+              .select()
+              .maybeSingle();
+            data = retry.data;
+            error = retry.error;
+          } catch (e) {
+            error = { message: e.message || error.message };
+          }
+        }
+        if (error) {
+          return sendJson(res, 400, {
+            error: error.message?.includes("does not exist")
+              ? "Comments table missing — run supabase-all-fixed.sql in Supabase SQL editor."
+              : error.message,
+          });
+        }
+        // Bump public comment counter on world reels
+        if (body.targetType === "world_post" && body.targetId) {
+          try {
+            const svc = adminClient();
+            const { data: wp } = await svc.from("world_posts").select("comments_count").eq("id", body.targetId).maybeSingle();
+            if (wp) {
+              await svc.from("world_posts").update({ comments_count: Math.max(0, (wp.comments_count || 0) + 1) }).eq("id", body.targetId);
+            }
+          } catch {}
+        }
         const { data: prof } = await anonClient().from("profiles").select("id, name, avatar_url").eq("id", user.id).maybeSingle();
         return sendJson(res, 200, { comment: { ...data, author: prof || null } });
       }
