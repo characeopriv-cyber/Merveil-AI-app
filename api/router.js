@@ -9,6 +9,8 @@ import {
   clearSessionCookie,
   sendJson,
   junctionIdFor,
+  decodeJwtSub,
+  getAccessToken,
 } from "../lib/supabaseServer.js";
 
 // Admin client for account confirmation only — separate from the shared
@@ -371,7 +373,11 @@ export default async function handler(req, res) {
     // MUST be defined here; previously calls threw "action is not defined".
     const action = req.query.action || segments[1] || "";
     const method = req.method;
-    const { token, user } = await getSession(req, res);
+    const sessionResult = await getSession(req, res);
+    const token = sessionResult.token;
+    const user = sessionResult.user;
+    // jwtSub survives refresh races so directory/Connect still know who is calling
+    const jwtSub = sessionResult.jwtSub || user?.id || (token ? null : null);
     const sb = token ? userClient(token) : anonClient();
 
     // ---------------------------------------------------------- /api/auth
@@ -391,8 +397,23 @@ export default async function handler(req, res) {
       // sign-in even though they were already signed in. This endpoint
       // is the actual source of truth the frontend should check first.
       if (sub === "session" && method === "GET") {
-        if (!user) return sendJson(res, 200, { user: null });
-        const { data: profile } = await sb.from("profiles").select("*").eq("id", user.id).maybeSingle();
+        // Prefer full session; if refresh race left us without a live token,
+        // still restore the UI from jwtSub via service role so the citizen
+        // is not bounced to "Sign in" every few minutes.
+        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "");
+        if (!uid) return sendJson(res, 200, { user: null });
+        let profile = null;
+        if (user && token) {
+          const { data } = await sb.from("profiles").select("*").eq("id", uid).maybeSingle();
+          profile = data;
+        }
+        if (!profile) {
+          try {
+            const svc = adminClient();
+            const { data } = await svc.from("profiles").select("*").eq("id", uid).maybeSingle();
+            profile = data;
+          } catch { /* no service role */ }
+        }
         return sendJson(res, 200, { user: profile ? mapAuthUser(profile) : null });
       }
 
@@ -1186,24 +1207,27 @@ export default async function handler(req, res) {
 
       // Directory: browse ALL Merveil citizens (no friend requirement).
       // Live presence: online if heartbeat within 5 minutes. Online users first.
+      // Uses service role so RLS never hides other citizens; session race
+      // still resolves caller via jwtSub when access token just rotated.
       if (method === "GET" && action === "directory") {
-        if (!user) return sendJson(res, 200, { users: [] });
+        const callerId = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "");
+        if (!callerId) return sendJson(res, 200, { users: [] });
         const q = (req.query.q || "").trim().toLowerCase();
-        // Show every citizen — friendship is not required to see presence
-        // or start a conversation. discoverable opt-out still respected if
-        // the column is explicitly false; null/true both appear.
-        let query = sb.from("profiles")
+        let svcDir;
+        try { svcDir = adminClient(); } catch (e) {
+          return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+        }
+        const { data: people, error } = await svcDir.from("profiles")
           .select("id,name,avatar_url,role_label,passport_tier,discoverable")
-          .neq("id", user.id)
-          .limit(300);
-        const { data: people, error } = await query;
+          .neq("id", callerId)
+          .limit(500);
         if (error) return sendJson(res, 400, { error: error.message });
         const visible = (people || []).filter((p) => p.discoverable !== false);
         const ids = visible.map((p) => p.id);
         let presenceMap = {};
-        const cutoff = Date.now() - 5 * 60 * 1000; // 5 min window so presence is visible
+        const cutoff = Date.now() - 5 * 60 * 1000;
         if (ids.length) {
-          const { data: pres } = await sb.from("presence").select("*").in("user_id", ids);
+          const { data: pres } = await svcDir.from("presence").select("*").in("user_id", ids);
           for (const row of pres || []) {
             const fresh = row.updated_at && new Date(row.updated_at).getTime() > cutoff;
             const st = (row.status || "online").toLowerCase();
