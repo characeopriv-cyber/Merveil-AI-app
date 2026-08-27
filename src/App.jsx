@@ -6789,16 +6789,21 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
-    fetch(`/api/conversations?action=directory`, { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data?.users) return;
-        setCitizens(data.users);
-        knownIdsRef.current = new Set(data.users.map((u) => String(u.id)));
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    const load = () => {
+      fetch(`/api/conversations?action=directory`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (cancelled || !data?.users) return;
+          setCitizens(data.users);
+          knownIdsRef.current = new Set(data.users.map((u) => String(u.id)));
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoading(false); });
+    };
+    load();
+    // New signups appear in Citizens within ~15s without a full reload
+    const id = setInterval(load, 15000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [currentUser?.id]);
 
   // A presence event for an id we haven't fetched yet (brand-new signup)
@@ -6994,15 +6999,18 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   // so conversations + online/offline citizens live in one Messenger-style list.
   useEffect(() => {
     if (!currentUser?.id) return;
-    setDirectoryLoading(true);
-    const t = setTimeout(() => {
+    let cancelled = false;
+    const load = () => {
+      setDirectoryLoading(true);
       fetch(`/api/conversations?action=directory&q=${encodeURIComponent(directoryQuery.trim())}`, { credentials: "include" })
         .then((r) => (r.ok ? r.json() : null))
-        .then((data) => setDirectory(data?.users || []))
+        .then((data) => { if (!cancelled) setDirectory(data?.users || []); })
         .catch(() => {})
-        .finally(() => setDirectoryLoading(false));
-    }, showNewChat ? 200 : 0);
-    return () => clearTimeout(t);
+        .finally(() => { if (!cancelled) setDirectoryLoading(false); });
+    };
+    const t = setTimeout(load, showNewChat ? 200 : 0);
+    const id = setInterval(load, 15000);
+    return () => { cancelled = true; clearTimeout(t); clearInterval(id); };
   }, [showNewChat, directoryQuery, currentUser?.id]);
 
   // Accepted connections = My Circle
@@ -18837,11 +18845,11 @@ function AppInner() {
     const onFocus = () => { if (document.visibilityState === "visible") refreshSession(); };
     document.addEventListener("visibilitychange", onFocus);
     window.addEventListener("focus", onFocus);
-    // Facebook-style proactive keep-alive: refresh every 4 minutes while
-    // the tab is visible so the ~1h access token never dies mid-session.
+    // Facebook-style keep-alive: every 90s while visible so the ~1h access
+    // token is rotated well before expiry (and before parallel API races).
     const keepAlive = setInterval(() => {
       if (document.visibilityState === "visible") refreshSession();
-    }, 4 * 60 * 1000);
+    }, 90 * 1000);
     return () => {
       document.removeEventListener("visibilitychange", onFocus);
       window.removeEventListener("focus", onFocus);
@@ -18852,9 +18860,18 @@ function AppInner() {
 
   // Guarded actions: re-validate session before opening AuthModal so a
   // stale React state never blocks a still-authenticated Citizen.
+  // If the server hiccups mid-refresh but this browser still has a cached
+  // citizen, keep them signed in — do not flash the auth modal.
   const requireSignIn = useCallback(async () => {
     const user = await refreshSession();
     if (user) return user;
+    try {
+      const cached = JSON.parse(localStorage.getItem("junction_user") || "null");
+      if (cached?.id) {
+        syncCurrentUser(cached);
+        return cached;
+      }
+    } catch {}
     setShowAuthModal(true);
     return null;
   }, [refreshSession]);
