@@ -5096,6 +5096,91 @@ function useIncomingCallListener(currentUser) {
   return [incoming, setIncoming];
 }
 
+/**
+ * Cross-platform key/value store.
+ * - Capacitor native: @capacitor/preferences (Keychain/Keystore-backed when available)
+ * - Optional SecureStoragePlugin if installed (true encrypted at rest)
+ * - Web/PWA: localStorage fallback (same keys — data still lives in Supabase)
+ *
+ * Use for cache only (last tab, presence preference, offline user snapshot).
+ * Auth source of truth remains httpOnly cookies + Supabase session APIs.
+ */
+const MerveilStore = {
+  async _nativePrefs() {
+    try {
+      if (typeof window === "undefined" || !window.Capacitor?.isNativePlatform?.()) return null;
+      const Cap = window.Capacitor;
+      if (Cap.Plugins?.Preferences) return Cap.Plugins.Preferences;
+      const mod = await import("@capacitor/preferences").catch(() => null);
+      return mod?.Preferences || null;
+    } catch { return null; }
+  },
+  async _securePlugin() {
+    try {
+      if (typeof window === "undefined" || !window.Capacitor?.isNativePlatform?.()) return null;
+      const Cap = window.Capacitor;
+      if (Cap.Plugins?.SecureStoragePlugin) return Cap.Plugins.SecureStoragePlugin;
+      return null;
+    } catch { return null; }
+  },
+  async get(key) {
+    try {
+      const secure = await this._securePlugin();
+      if (secure?.get) {
+        const r = await secure.get({ key });
+        return r?.value ?? null;
+      }
+      const prefs = await this._nativePrefs();
+      if (prefs?.get) {
+        const r = await prefs.get({ key });
+        return r?.value ?? null;
+      }
+      return localStorage.getItem(key);
+    } catch {
+      try { return localStorage.getItem(key); } catch { return null; }
+    }
+  },
+  async set(key, value) {
+    const str = value == null ? "" : String(value);
+    try {
+      const secure = await this._securePlugin();
+      if (secure?.set) {
+        await secure.set({ key, value: str });
+        return true;
+      }
+      const prefs = await this._nativePrefs();
+      if (prefs?.set) {
+        await prefs.set({ key, value: str });
+        return true;
+      }
+      localStorage.setItem(key, str);
+      return true;
+    } catch {
+      try { localStorage.setItem(key, str); return true; } catch { return false; }
+    }
+  },
+  async remove(key) {
+    try {
+      const secure = await this._securePlugin();
+      if (secure?.remove) { await secure.remove({ key }); return true; }
+      const prefs = await this._nativePrefs();
+      if (prefs?.remove) { await prefs.remove({ key }); return true; }
+      localStorage.removeItem(key);
+      return true;
+    } catch {
+      try { localStorage.removeItem(key); return true; } catch { return false; }
+    }
+  },
+  async getJson(key) {
+    const raw = await this.get(key);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  },
+  async setJson(key, obj) {
+    return this.set(key, JSON.stringify(obj));
+  },
+};
+
 /** Unified permissions: media + system notifications + optional Web Push. */
 const Permissions = {
   isSecure() {
@@ -5168,7 +5253,84 @@ const Permissions = {
       return n;
     } catch { return null; }
   },
+  /** True when running inside a Capacitor native shell (Android/iOS store build). */
+  isNative() {
+    try {
+      return !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
+    } catch { return false; }
+  },
+  /**
+   * Register push for the current environment:
+   * - Capacitor native → FCM/APNs via @capacitor/push-notifications, token → /api/push
+   * - Browser / PWA → Web Push (VAPID) via service worker
+   * Data (likes, messages, passport) is always Supabase either way — push is only delivery.
+   */
   async registerPush() {
+    // —— Native (Capacitor) path ——
+    if (this.isNative()) {
+      try {
+        const Cap = window.Capacitor;
+        const Push = Cap?.Plugins?.PushNotifications
+          || (await import("@capacitor/push-notifications").then((m) => m.PushNotifications).catch(() => null));
+        if (!Push) {
+          return { ok: false, permission: "unsupported", push: false, error: "Install @capacitor/push-notifications in the native shell." };
+        }
+        let perm = await Push.checkPermissions();
+        if (perm.receive !== "granted") {
+          perm = await Push.requestPermissions();
+        }
+        if (perm.receive !== "granted") {
+          return { ok: false, permission: perm.receive || "denied", push: false, error: "Notification permission denied." };
+        }
+        await Push.register();
+        // One-shot token listener (registration event fires after register())
+        const token = await new Promise((resolve) => {
+          const handle = Push.addListener("registration", (t) => {
+            try { handle.remove?.(); } catch {}
+            resolve(t?.value || t?.token || null);
+          });
+          Push.addListener("registrationError", () => {
+            try { handle.remove?.(); } catch {}
+            resolve(null);
+          });
+          setTimeout(() => resolve(null), 8000);
+        });
+        // Foreground display
+        try {
+          Push.addListener("pushNotificationReceived", (notification) => {
+            const title = notification?.title || "Merveil AI";
+            const body = notification?.body || "";
+            this.show(title, { body, tag: notification?.id || "merveil-native", data: notification?.data });
+          });
+          Push.addListener("pushNotificationActionPerformed", (action) => {
+            const data = action?.notification?.data || {};
+            if (data.url && typeof window !== "undefined") {
+              try { window.location.href = data.url; } catch {}
+            }
+            try { window.dispatchEvent(new CustomEvent("merveil:notification-click", { detail: data })); } catch {}
+          });
+        } catch {}
+        if (token) {
+          await fetch("/api/push?action=subscribe", {
+            method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              platform: Cap.getPlatform?.() || "native",
+              token: String(token),
+              subscription: {
+                endpoint: `native://${Cap.getPlatform?.() || "app"}/${token}`,
+                keys: { p256dh: "native", auth: String(token).slice(0, 64) },
+              },
+            }),
+          });
+          return { ok: true, permission: "granted", push: true, platform: "native" };
+        }
+        return { ok: true, permission: "granted", push: false, error: "No device token yet." };
+      } catch (e) {
+        return { ok: false, permission: "error", push: false, error: e.message };
+      }
+    }
+
+    // —— Web / PWA path ——
     const notif = await this.notifications();
     if (!notif.ok) return notif;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
@@ -5189,9 +5351,9 @@ const Permissions = {
       }
       await fetch("/api/push?action=subscribe", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON() }),
+        body: JSON.stringify({ subscription: sub.toJSON(), platform: "web" }),
       });
-      return { ok: true, permission: "granted", push: true };
+      return { ok: true, permission: "granted", push: true, platform: "web" };
     } catch (e) {
       return { ok: true, permission: "granted", push: false, error: e.message };
     }
@@ -6662,8 +6824,8 @@ function useUnfilteredPresence(currentUser) {
     const normalize = (row) => {
       if (!row?.user_id) return null;
       const st = String(row.status || "online").toLowerCase();
-      // 120s freshness — matches server cutoff
-      const fresh = row.updated_at && new Date(row.updated_at).getTime() > Date.now() - 120 * 1000;
+      // 180s freshness — matches server cutoff (optimized heartbeats)
+      const fresh = row.updated_at && new Date(row.updated_at).getTime() > Date.now() - 180 * 1000;
       let status = "offline";
       if (fresh && st !== "offline" && st !== "away") status = st === "busy" ? "busy" : "online";
       return { userId: String(row.user_id), status };
@@ -6687,15 +6849,13 @@ function useUnfilteredPresence(currentUser) {
         .subscribe();
     } catch {}
 
-    // Polling safety-net: every 20s re-fetch presence for every id we've
-    // ever seen (plus self). Heals dropped Realtime sockets so online/
-    // offline stays correct for all citizens without requiring a tab refresh.
+    // Polling safety-net: every 45s (Realtime is primary). Heals dropped
+    // sockets without hammering /api on large citizen lists.
     const poll = () => {
       if (cancelled) return;
       const ids = [...knownIdsRef.current];
       if (!ids.includes(String(currentUser.id))) ids.push(String(currentUser.id));
       if (!ids.length) return;
-      // Chunk to avoid huge query strings
       const chunk = ids.slice(0, 80);
       fetch(`/api/conversations?action=presence&userIds=${chunk.join(",")}`, { credentials: "include" })
         .then((r) => (r.ok ? r.json() : null))
@@ -6705,7 +6865,7 @@ function useUnfilteredPresence(currentUser) {
         })
         .catch(() => {});
     };
-    const pollId = setInterval(poll, 20000);
+    const pollId = setInterval(poll, 45000);
     // Initial seed after a short delay so first realtime events land first
     const seed = setTimeout(poll, 2500);
 
@@ -7146,17 +7306,16 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     };
   }, [activeId, isAiThread]);
 
-  // Presence heartbeat while Connect is open (global heartbeat also runs app-wide).
-  // Prefer myStatus from the Connect toggle; mark offline if the browser is offline.
+  // Connect only writes preferred status — global heartbeat does the interval.
+  // Avoids double POST every 8–12s from Connect + App shell.
   useEffect(() => {
     if (!currentUser?.id) return;
-    const beat = () => fetch("/api/conversations?action=presence", {
+    const status = isOnline ? myStatus : "offline";
+    try { localStorage.setItem("merveil_presence_status", status === "busy" ? "busy" : "online"); } catch {}
+    fetch("/api/conversations?action=presence", {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: isOnline ? myStatus : "offline" }),
+      body: JSON.stringify({ status }),
     }).catch(() => {});
-    beat();
-    const interval = setInterval(beat, 12000);
-    return () => clearInterval(interval);
   }, [currentUser?.id, myStatus, isOnline]);
 
   // Presence itself now comes from the unfiltered useUnfilteredPresence()
@@ -8175,28 +8334,32 @@ function ArenaView({ currentUser, onSignIn }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 mt-5">
+      <div className="grid grid-cols-2 gap-4 mt-5 place-items-center">
         {ARENA_EXPERIENCES.map((exp) => {
           const prog = stats.progress?.[exp.id] || {};
           const levelsDone = prog.levels_completed || 0;
+          const pct = Math.min(100, Math.round((levelsDone / 30) * 100));
           return (
             <button
               key={exp.id}
               type="button"
               onClick={() => setPlaying(exp.id)}
-              className="text-left rounded-2xl p-4 overflow-hidden relative"
-              style={{ background: exp.bg, border: "1px solid rgba(255,255,255,0.08)" }}
+              className="relative w-[148px] h-[148px] rounded-full overflow-hidden flex flex-col items-center justify-center text-center p-3 active:scale-95 transition-transform"
+              style={{
+                background: exp.bg,
+                boxShadow: `0 0 0 3px ${exp.color}55, 0 12px 28px rgba(0,0,0,0.35), inset 0 0 40px rgba(0,0,0,0.25)`,
+              }}
             >
-              <div className="relative z-[1]">
-                <div className="text-[10px] font-bold tracking-widest uppercase" style={{ color: exp.color }}>{exp.tagline}</div>
-                <div className="text-xl font-bold mt-1 text-white" style={{ fontFamily: "Space Grotesk,sans-serif" }}>{exp.name}</div>
-                <p className="text-xs mt-1.5 text-white/70 max-w-[90%]">{exp.desc}</p>
-                <div className="flex items-center gap-3 mt-3">
-                  <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.12)", color: "#fff" }}>
-                    Play
-                  </span>
-                  <span className="text-[10px] text-white/50">{levelsDone}/30 levels</span>
+              {/* Live pulse ring */}
+              <span className="absolute inset-0 rounded-full pointer-events-none animate-pulse" style={{ boxShadow: `inset 0 0 0 2px ${exp.color}44` }} />
+              <div className="relative z-[1] flex flex-col items-center">
+                <div className="text-[9px] font-bold tracking-widest uppercase mb-0.5" style={{ color: exp.color }}>{exp.tagline.split("·")[0]?.trim() || "GAME"}</div>
+                <div className="text-base font-bold text-white leading-tight" style={{ fontFamily: "Space Grotesk,sans-serif" }}>{exp.name}</div>
+                <div className="mt-2 w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.15)" }}>
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: exp.color }} />
                 </div>
+                <span className="text-[10px] mt-1.5 font-semibold text-white/80">{levelsDone}/30</span>
+                <span className="text-[10px] font-bold mt-1 px-2.5 py-0.5 rounded-full" style={{ background: exp.color, color: "#0B0E14" }}>PLAY</span>
               </div>
             </button>
           );
@@ -9731,7 +9894,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
               <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
                 <MessageSquare size={18} color="#fff" />
               </div>
-              <span className="text-[10px] font-semibold text-white">Comment</span>
+              <span className="text-[10px] font-semibold text-white">{post.comments_count || 0}</span>
             </button>
             <button onClick={repost} className="flex flex-col items-center gap-0.5">
               <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
@@ -9803,7 +9966,11 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
 
           {showComments && (
             <CommentsModal targetType="world_post" targetId={post.id} title={post.title}
-              currentUser={currentUser} onRequireSignIn={onRequireSignIn} onClose={() => setShowComments(false)} />
+              currentUser={currentUser} onRequireSignIn={onRequireSignIn} onClose={() => setShowComments(false)}
+              onCommentPosted={() => {
+                // Optimistic local bump; feed refresh picks up server count
+                post.comments_count = (post.comments_count || 0) + 1;
+              }} />
           )}
         </>
       )}
@@ -10141,9 +10308,19 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         method: "POST", credentials:"include", headers: { "Content-Type":"application/json" },
         body: JSON.stringify({ postId: post.id }),
       });
-      const data = await res.json();
-      if (res.ok) setPosts(prev => prev.map(p => p.id === post.id ? { ...p, super_count: data.superCount } : p));
-    } catch {}
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.superCount != null) {
+        setPosts(prev => prev.map(p => p.id === post.id ? { ...p, super_count: data.superCount } : p));
+      } else if (!res.ok) {
+        setSuperedIds(prev => wasSupered ? [...prev, post.id] : prev.filter(id => id !== post.id));
+        setPosts(prev => prev.map(p => p.id === post.id
+          ? { ...p, super_count: Math.max(0, (p.super_count||0) + (wasSupered ? 1 : -1)) } : p));
+      }
+    } catch {
+      setSuperedIds(prev => wasSupered ? [...prev, post.id] : prev.filter(id => id !== post.id));
+      setPosts(prev => prev.map(p => p.id === post.id
+        ? { ...p, super_count: Math.max(0, (p.super_count||0) + (wasSupered ? 1 : -1)) } : p));
+    }
   };
 
   const publish = async (form) => {
@@ -10215,9 +10392,20 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         method: "POST", credentials:"include", headers: { "Content-Type":"application/json" },
         body: JSON.stringify({ postId: post.id }),
       });
-      const data = await res.json();
-      if (res.ok) setPosts(prev => prev.map(p => p.id === post.id ? { ...p, likes_count: data.likesCount } : p));
-    } catch {}
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.likesCount != null) {
+        setPosts(prev => prev.map(p => p.id === post.id ? { ...p, likes_count: data.likesCount } : p));
+      } else if (!res.ok) {
+        // Roll back optimistic UI if server rejected
+        setLikedIds(prev => wasLiked ? [...prev, post.id] : prev.filter(id => id !== post.id));
+        setPosts(prev => prev.map(p => p.id === post.id
+          ? { ...p, likes_count: Math.max(0, (p.likes_count||0) + (wasLiked ? 1 : -1)) } : p));
+      }
+    } catch {
+      setLikedIds(prev => wasLiked ? [...prev, post.id] : prev.filter(id => id !== post.id));
+      setPosts(prev => prev.map(p => p.id === post.id
+        ? { ...p, likes_count: Math.max(0, (p.likes_count||0) + (wasLiked ? 1 : -1)) } : p));
+    }
   };
 
   const [connectStates, setConnectStates] = useState({}); // ownerId -> pending|accepted|busy
@@ -14932,7 +15120,9 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
 
   const uploadCoverVideo = async (file) => {
     if (!file || !currentUser) return;
-    if (!file.type.startsWith("video/")) {
+    const isVideo = (file.type && file.type.startsWith("video/"))
+      || /\.(mp4|mov|webm|m4v|mkv|3gp)$/i.test(file.name || "");
+    if (!isVideo) {
       alert("Please choose a video file (MP4, WebM, MOV).");
       return;
     }
@@ -15046,7 +15236,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
         </div>
         {isSelf && (
           <div className="absolute bottom-3 right-3 z-10">
-            <input ref={coverInputRef} type="file" accept="video/*" className="hidden"
+            <input ref={coverInputRef} type="file" accept="video/*,.mp4,.mov,.webm,.m4v" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCoverVideo(f); e.target.value = ""; }} />
             <button type="button" disabled={uploadingCover}
               onClick={() => coverInputRef.current?.click()}
@@ -15113,27 +15303,40 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
           </div>
 
           <div className="px-4 pb-2 text-[11px] font-bold uppercase tracking-wide shrink-0" style={{ color: "#6B7280" }}>
-            Videos · {worldPosts.length}
+            Reels · {worldPosts.length}
           </div>
-          <div className="flex-1 overflow-y-auto px-1 pb-4" style={{ paddingBottom: "calc(16px + var(--safe-bottom))" }}>
+          <div className="flex-1 overflow-y-auto px-3 pb-4" style={{ paddingBottom: "calc(16px + var(--safe-bottom))" }}>
             {worldPosts.length === 0 ? (
               <div className="text-xs text-center py-12" style={{ color: "#5C6779" }}>No World reels yet.</div>
             ) : (
-              <div className="grid grid-cols-3 gap-0.5">
+              <div className="grid grid-cols-2 gap-3">
                 {worldPosts.map((p) => (
                   <button key={p.id} type="button" onClick={() => onPlayPost?.(p)}
-                    className="relative aspect-[9/16] overflow-hidden bg-black">
+                    className="relative aspect-square overflow-hidden rounded-full bg-black group"
+                    style={{ boxShadow: "0 0 0 2px rgba(6,182,212,0.35), 0 8px 24px rgba(0,0,0,0.35)" }}>
                     {p.video_url ? (
-                      <video src={p.video_url} muted playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+                      <video
+                        src={p.video_url}
+                        muted
+                        playsInline
+                        loop
+                        autoPlay
+                        preload="metadata"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        onMouseEnter={(e) => { e.currentTarget.play().catch(() => {}); }}
+                      />
                     ) : p.photo_url ? (
                       <img src={p.photo_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                       <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#1F2937,#7C3AED55)" }} />
                     )}
-                    <div className="absolute inset-0" style={{ background: "linear-gradient(0deg,rgba(0,0,0,.55),transparent 40%)" }} />
-                    <div className="absolute bottom-1 left-1 right-1 flex items-center gap-1 text-[9px] font-semibold text-white">
-                      <Heart size={10} fill="#fff" /> {(p.likes_count || 0).toLocaleString()}
-                      <span className="ml-auto opacity-80">{p.video_url ? "▶" : ""}</span>
+                    <div className="absolute inset-0" style={{ background: "radial-gradient(circle at 50% 70%, transparent 40%, rgba(0,0,0,.55) 100%)" }} />
+                    <div className="absolute bottom-3 left-0 right-0 flex flex-col items-center gap-0.5 text-[10px] font-semibold text-white">
+                      <div className="flex items-center gap-1.5">
+                        <Heart size={11} fill="#fff" /> {(p.likes_count || 0).toLocaleString()}
+                        <Zap size={11} color="#06B6D4" /> {(p.super_count || 0).toLocaleString()}
+                      </div>
+                      <span className="opacity-80 line-clamp-1 px-2 max-w-full">{p.title || "Reel"}</span>
                     </div>
                   </button>
                 ))}
@@ -15437,17 +15640,20 @@ FACTS ABOUT ${profile.name || "this member"}:
   );
 }
 
-function CommentsModal({ targetType, targetId, title, currentUser, onRequireSignIn, onClose }) {
+function CommentsModal({ targetType, targetId, title, currentUser, onRequireSignIn, onClose, onCommentPosted }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`/api/comments?targetType=${targetType}&targetId=${targetId}`)
-      .then((r) => (r.ok ? r.json() : null))
+    setLoading(true);
+    setError("");
+    fetch(`/api/comments?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : r.json().then((d) => { throw new Error(d?.error || "Couldn't load comments"); })))
       .then((data) => setComments(data?.comments || []))
-      .catch(() => setComments([]))
+      .catch((e) => { setComments([]); setError(e.message || "Couldn't load comments"); })
       .finally(() => setLoading(false));
   }, [targetType, targetId]);
 
@@ -15460,17 +15666,23 @@ function CommentsModal({ targetType, targetId, title, currentUser, onRequireSign
     const body = text.trim();
     if (!body || sending) return;
     setSending(true);
+    setError("");
     try {
       const res = await fetch("/api/comments", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetType, targetId, body }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.comment) {
         setComments((prev) => [...prev, data.comment]);
         setText("");
+        onCommentPosted?.(targetId);
+      } else {
+        setError(data?.error || "Couldn't post comment. Run the latest SQL migration if this keeps failing.");
       }
-    } catch {}
+    } catch {
+      setError("Network error — couldn't post comment.");
+    }
     setSending(false);
   };
 
@@ -15478,8 +15690,8 @@ function CommentsModal({ targetType, targetId, title, currentUser, onRequireSign
     <div className="fixed inset-0 z-[70] flex items-end justify-center" style={{ background: "rgba(2,13,26,.5)" }} onClick={onClose}>
       <div className="w-full max-w-md rounded-t-3xl flex flex-col" style={{ background: "#fff", maxHeight: "78vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3.5 border-b shrink-0" style={{ borderColor: T.line }}>
-          <div className="text-sm font-bold" style={{ color: T.ink }}>{title || "Comments"}</div>
-          <button onClick={onClose}><X size={18} color={T.sub} /></button>
+          <div className="text-sm font-bold" style={{ color: T.ink }}>{title || "Comments"} · {comments.length}</div>
+          <button type="button" onClick={onClose}><X size={18} color={T.sub} /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {loading ? (
@@ -15500,8 +15712,9 @@ function CommentsModal({ targetType, targetId, title, currentUser, onRequireSign
               </div>
             ))
           )}
+          {error && <div className="text-[11px] text-center py-2" style={{ color: "#DC2626" }}>{error}</div>}
         </div>
-        <div className="flex items-center gap-2 px-4 py-3 border-t shrink-0" style={{ borderColor: T.line }}>
+        <div className="flex items-center gap-2 px-4 py-3 border-t shrink-0" style={{ borderColor: T.line, paddingBottom: "calc(12px + var(--safe-bottom))" }}>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -15511,10 +15724,10 @@ function CommentsModal({ targetType, targetId, title, currentUser, onRequireSign
             className="flex-1 text-sm px-3.5 py-2.5 rounded-full outline-none"
             style={{ background: T.panel, color: T.ink }}
           />
-          <button onClick={submit} disabled={sending || !text.trim()}
+          <button type="button" onClick={submit} disabled={sending || !text.trim()}
             className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
             style={{ background: T.ink, opacity: sending || !text.trim() ? 0.5 : 1 }}>
-            <Send size={14} color="#fff" />
+            {sending ? <Loader2 size={14} color="#fff" className="animate-spin" /> : <Send size={14} color="#fff" />}
           </button>
         </div>
       </div>
@@ -18699,19 +18912,32 @@ function AppInner() {
     setMissedCalls([]);
   };
 
-  // GLOBAL presence heartbeat — any tab keeps you visible as online/busy.
-  // Preferred status (online|busy) is stored so Connect's toggle survives
-  // heartbeats from other screens. Realtime subscribers see updates via
-  // the `presence` table; clients also poll as a safety net.
+  // GLOBAL presence heartbeat — single source of truth for all tabs.
+  // Optimized vs 8s spam: only POST when status changes or interval elapses;
+  // 30s when visible (server cutoff 180s), 90s when backgrounded as "away".
+  // Connect no longer runs a second interval — it only writes preferred status.
   useEffect(() => {
     if (!currentUser?.id) return;
+    let lastStatus = null;
+    let lastSentAt = 0;
+    let timer = null;
     const preferred = () => {
       try {
         const s = localStorage.getItem("merveil_presence_status");
         return s === "busy" ? "busy" : "online";
       } catch { return "online"; }
     };
-    const postStatus = (status) => {
+    const desired = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return "away";
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline";
+      return preferred();
+    };
+    const postStatus = (status, force = false) => {
+      const now = Date.now();
+      // Skip identical status within 25s unless forced (unload / visibility flip)
+      if (!force && status === lastStatus && now - lastSentAt < 25000) return;
+      lastStatus = status;
+      lastSentAt = now;
       fetch("/api/conversations?action=presence", {
         method: "POST",
         credentials: "include",
@@ -18719,25 +18945,32 @@ function AppInner() {
         body: JSON.stringify({ status }),
       }).catch(() => {});
     };
-    const beat = () => {
-      if (document.visibilityState === "hidden") postStatus("away");
-      else postStatus(preferred());
+    const schedule = () => {
+      if (timer) clearInterval(timer);
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      // Visible: 30s. Background: 90s (still refreshes before 180s server cutoff).
+      timer = setInterval(() => postStatus(desired()), hidden ? 90000 : 30000);
     };
-    beat();
-    // 8s heartbeat — Facebook/WhatsApp-style: stays fresh within the
-    // 120s server cutoff even if a couple of beats are dropped.
-    const interval = setInterval(beat, 8000);
-    const onVis = () => beat();
+    const beat = (force = false) => {
+      postStatus(desired(), force);
+      schedule();
+    };
+    beat(true);
+    const onVis = () => beat(true);
+    const onOnline = () => beat(true);
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("focus", onVis);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOnline);
     const goOffline = () => {
+      lastStatus = "offline";
+      lastSentAt = Date.now();
       try {
         navigator.sendBeacon?.(
           "/api/conversations?action=presence",
           new Blob([JSON.stringify({ status: "offline" })], { type: "application/json" })
         );
       } catch {}
-      // fetch keepalive as extra signal when sendBeacon isn't available
       try {
         fetch("/api/conversations?action=presence", {
           method: "POST",
@@ -18751,9 +18984,11 @@ function AppInner() {
     window.addEventListener("pagehide", goOffline);
     window.addEventListener("beforeunload", goOffline);
     return () => {
-      clearInterval(interval);
+      if (timer) clearInterval(timer);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onVis);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOnline);
       window.removeEventListener("pagehide", goOffline);
       window.removeEventListener("beforeunload", goOffline);
       goOffline();
@@ -18767,8 +19002,14 @@ function AppInner() {
   // fresh sign-in.
   const syncCurrentUser = (user) => {
     setCurrentUser(user);
-    if (user) localStorage.setItem("junction_user", JSON.stringify(user));
-    else localStorage.removeItem("junction_user");
+    // localStorage: fast sync path for web. MerveilStore: Capacitor Preferences / SecureStorage when native.
+    if (user) {
+      try { localStorage.setItem("junction_user", JSON.stringify(user)); } catch {}
+      MerveilStore.setJson("junction_user", user).catch(() => {});
+    } else {
+      try { localStorage.removeItem("junction_user"); } catch {}
+      MerveilStore.remove("junction_user").catch(() => {});
+    }
   };
 
   const handleAuthed = (user) => {
