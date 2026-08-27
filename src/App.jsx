@@ -231,9 +231,9 @@ import {
 } from "recharts";
 
 // ---------------------------------------------------------------
-// Design tokens — Merveil AI brand (orange-first presentation)
-// Primary: #F97316 orange — logo, CTAs, active states, AI glow
-// Supporting: deep amber, charcoal structure, soft orange washes
+// Design tokens — Merveil AI brand (cyan presentation — original)
+// Primary: #06B6D4 cyan — logo, CTAs, active states, AI glow
+// Supporting: teal depth, charcoal structure, soft cyan washes
 // ---------------------------------------------------------------
 
 const T = {
@@ -242,36 +242,36 @@ const T = {
   panel: "var(--t-panel)",
   navy: "#1F2937",
   navy2: "#374151",
-  signal: "#F97316",       // primary brand orange
-  signalSoft: "#FB923C",   // lighter hover / secondary CTA
-  signalDeep: "#EA580C",   // pressed / emphasis
-  signalWash: "rgba(249,115,22,0.12)",
-  signalGlow: "rgba(249,115,22,0.45)",
-  brass: "#D97706",
+  signal: "#06B6D4",       // primary brand cyan
+  signalSoft: "#22D3EE",   // lighter hover / secondary CTA
+  signalDeep: "#0891B2",   // pressed / emphasis
+  signalWash: "rgba(6,182,212,0.12)",
+  signalGlow: "rgba(6,182,212,0.45)",
+  brass: "#0891B2",
   line: "var(--t-line)",
   inkLine: "var(--t-inkline)",
   sub: "var(--t-sub)",
-  glow: "#F97316",
+  glow: "#06B6D4",
   // Gradients used across CTAs, headers, AI moments
-  gradPrimary: "linear-gradient(135deg, #F97316 0%, #EA580C 55%, #C2410C 100%)",
-  gradSoft: "linear-gradient(135deg, rgba(249,115,22,0.18), rgba(217,119,6,0.08))",
-  gradHero: "linear-gradient(160deg, #1F2937 0%, #374151 40%, #F97316 140%)",
+  gradPrimary: "linear-gradient(135deg, #06B6D4 0%, #0891B2 55%, #0E7490 100%)",
+  gradSoft: "linear-gradient(135deg, rgba(6,182,212,0.18), rgba(8,145,178,0.08))",
+  gradHero: "linear-gradient(160deg, #1F2937 0%, #374151 40%, #06B6D4 140%)",
   uaeRed: "#CE1126",
   uaeGreen: "#00843D",
   uaeWhite: "#FFFFFF",
   uaeBlack: "#000000",
 };
 
-// Theme variables — orange brand stays fixed; surfaces flip light/dark
+// Theme variables — cyan brand stays fixed; surfaces flip light/dark
 const THEME_VARS_STYLE = `
 :root {
-  --t-orange: #F97316;
-  --t-orange-soft: #FB923C;
-  --t-orange-deep: #EA580C;
-  --t-orange-wash: rgba(249,115,22,0.12);
-  --t-orange-glow: rgba(249,115,22,0.4);
+  --t-orange: #06B6D4;
+  --t-orange-soft: #22D3EE;
+  --t-orange-deep: #0891B2;
+  --t-orange-wash: rgba(6,182,212,0.12);
+  --t-orange-glow: rgba(6,182,212,0.4);
 }
-/* Surfaces stay neutral (Facebook-simple). Orange is accent only. */
+/* Surfaces stay neutral. Cyan is accent only. */
 :root[data-theme="light"] {
   --t-ink: #1C1E21; --t-paper: #FFFFFF; --t-panel: #F7F8FA;
   --t-sub: #65676B; --t-line: #E4E6EB; --t-inkline: #3A3B3C;
@@ -297,11 +297,11 @@ const THEME_VARS_STYLE = `
 :root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #44403C; }
 :root[data-theme="dark"] ::-webkit-scrollbar-track { background: #0C0A09; }
 :root[data-theme="dark"] ::selection {
-  background: rgba(249,115,22,0.35);
+  background: rgba(6,182,212,0.35);
   color: #fff;
 }
 :root[data-theme="light"] ::selection {
-  background: rgba(249,115,22,0.25);
+  background: rgba(6,182,212,0.25);
   color: #1C1E21;
 }
 
@@ -402,7 +402,7 @@ const FONT_IMPORT = `
 }
 
 @keyframes aiBreathe {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 40px 10px rgba(249,115,22,0.25); }
+  0%, 100% { transform: scale(1); box-shadow: 0 0 40px 10px rgba(6,182,212,0.25); }
   50% { transform: scale(1.06); box-shadow: 0 0 60px 18px rgba(217,119,6,0.35); }
 }
 @keyframes aiBlink {
@@ -466,8 +466,8 @@ const FONT_IMPORT = `
   100% { opacity: 1; transform: rotateY(0deg) rotateX(0deg) translateZ(0) scale(1); }
 }
 @keyframes logoCompleteIn {
-  from { opacity: 0; transform: translateY(-6px) scale(.9); filter: drop-shadow(0 0 0px #F97316); }
-  to { opacity: 1; transform: translateY(0) scale(1); filter: drop-shadow(0 0 14px #F97316); }
+  from { opacity: 0; transform: translateY(-6px) scale(.9); filter: drop-shadow(0 0 0px #06B6D4); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: drop-shadow(0 0 14px #06B6D4); }
 }
 @keyframes particleConverge {
   0% { opacity: 0; transform: translate3d(var(--sx), var(--sy), var(--sz)) rotate(var(--srot)) scale(.3); }
@@ -480,8 +480,8 @@ const FONT_IMPORT = `
   100% { opacity: 0; transform: scale(1.35); stroke-width: .3; }
 }
 @keyframes eyeGlow {
-  0%,100% { filter:drop-shadow(0 0 4px #F97316) drop-shadow(0 0 12px #D97706); }
-  50% { filter:drop-shadow(0 0 10px #F97316) drop-shadow(0 0 28px #D97706) drop-shadow(0 0 48px #B45309); }
+  0%,100% { filter:drop-shadow(0 0 4px #06B6D4) drop-shadow(0 0 12px #0891B2); }
+  50% { filter:drop-shadow(0 0 10px #06B6D4) drop-shadow(0 0 28px #0891B2) drop-shadow(0 0 48px #0E7490); }
 }
 @keyframes scanLine {
   0% { transform:translateY(-100%); opacity:0; }
@@ -494,8 +494,8 @@ const FONT_IMPORT = `
   to { transform:rotate(360deg); }
 }
 @keyframes logoCoreGlow {
-  0%,100% { filter:drop-shadow(0 0 4px #F97316) drop-shadow(0 0 10px #EA580C); }
-  50% { filter:drop-shadow(0 0 14px #F97316) drop-shadow(0 0 28px #D97706) drop-shadow(0 0 40px #C2410C); }
+  0%,100% { filter:drop-shadow(0 0 4px #06B6D4) drop-shadow(0 0 10px #0891B2); }
+  50% { filter:drop-shadow(0 0 14px #06B6D4) drop-shadow(0 0 28px #0891B2) drop-shadow(0 0 40px #0E7490); }
 }
 @keyframes activeTabAlive {
   0%,100% { transform:scale(1); }
@@ -639,7 +639,7 @@ const PROPERTIES = [
     isNew: false,
     viewsByRole: { agent: 540, investor: 270, buyer: 2300 },
     listingChain: [{ order: 1, name: "Priya Nair — Bay Realty Group", date: "1 week ago" }],
-    grad: ["#D97706", "#8A6E1B"],
+    grad: ["#0891B2", "#8A6E1B"],
   },
   {
     id: "p4",
@@ -700,7 +700,7 @@ const PROPERTIES = [
     isNew: false,
     viewsByRole: { agent: 60, investor: 170, buyer: 10 },
     listingChain: [{ order: 1, name: "Marco Rossi — Coastline Estates", date: "4 days ago" }],
-    grad: ["#F97316", "#8A2E18"],
+    grad: ["#06B6D4", "#155E75"],
   },
   {
     id: "p6",
@@ -1115,11 +1115,11 @@ const REACH_OPTIONS = [
 ];
 
 const URBAN_CENTERS_2040 = [
-  { id: "dxb-center", name: "Deira & Bur Dubai", role: "Heritage & Culture", icon: Globe2, grad: ["#D97706", "#6A520F"] },
+  { id: "dxb-center", name: "Deira & Bur Dubai", role: "Heritage & Culture", icon: Globe2, grad: ["#0891B2", "#6A520F"] },
   { id: "downtown",   name: "Downtown & Business Bay", role: "Business Center", icon: Building2, grad: ["#2C5278", "#0E1A26"] },
   { id: "marina",     name: "Dubai Marina & JBR", role: "Waterfront Living", icon: Wind, grad: ["#1A7AA0", "#0B3850"] },
   { id: "expo",       name: "Expo City & Dubai South", role: "Innovation District", icon: Cpu, grad: ["#7C3FA0", "#3A1A50"] },
-  { id: "creek",      name: "Dubai Creek Harbour", role: "Future Urban Center", icon: Sun, grad: ["#F97316", "#8A2E18"] },
+  { id: "creek",      name: "Dubai Creek Harbour", role: "Future Urban Center", icon: Sun, grad: ["#06B6D4", "#155E75"] },
 ];
 
 const SUSTAINABILITY_FACTORS = [
@@ -1135,7 +1135,7 @@ const DISCOVERY_ORBS = [
     id: "forYou",
     label: "For You",
     icon: Sparkles,
-    grad: ["#F97316", "#D97706"],
+    grad: ["#06B6D4", "#0891B2"],
     headline: "For you",
     sub: "A mix curated from what's trending and newly listed across the UAE.",
   },
@@ -1143,7 +1143,7 @@ const DISCOVERY_ORBS = [
     id: "trending",
     label: "Trending",
     icon: Flame,
-    grad: ["#F97316", "#8A2E18"],
+    grad: ["#06B6D4", "#155E75"],
     headline: "Trending now",
     sub: "Listings getting the most attention on Merveil right now.",
     filter: (p) => p.trending,
@@ -1188,7 +1188,7 @@ const DISCOVERY_ORBS = [
     id: "newToday",
     label: "New today",
     icon: Zap,
-    grad: ["#D97706", "#8A6E1B"],
+    grad: ["#0891B2", "#8A6E1B"],
     headline: "New on Merveil",
     sub: "Just listed by the community.",
     filter: (p) => p.isNew,
@@ -1206,7 +1206,7 @@ const DISCOVERY_ORBS = [
     id: "ghost",
     label: "Ghost Risk",
     icon: AlertTriangle,
-    grad: ["#D97706","#6A520F"],
+    grad: ["#0891B2","#6A520F"],
     headline: "Ghost listing detector",
     sub: "Listings flagged by Merveil AI as potentially unavailable based on inactivity patterns.",
     filter: (p) => p.ghostRisk > 0.4,
@@ -1215,7 +1215,7 @@ const DISCOVERY_ORBS = [
     id: "aiMatch",
     label: "AI Match",
     icon: Sparkles,
-    grad: ["#D97706", "#F97316"],
+    grad: ["#0891B2", "#06B6D4"],
     headline: "Matched for you by Merveil AI",
     sub: "Pure AI recommendations — no search, no filters. Merveil learns what you want.",
     filter: (p) => p.visibility !== "investor",
@@ -1278,7 +1278,7 @@ const BANK_PARTNERS = [
   },
   {
     name: "Mashreq",
-    grad: ["#D97706", "#8A6E1B"],
+    grad: ["#0891B2", "#8A6E1B"],
     services: ["Mortgage pre-approval", "Investor banking"],
   },
   {
@@ -1425,7 +1425,7 @@ const PASSPORT_TIERS = {
   },
   investor: {
     id: "investor", name: "Investor Passport", price: "AED 149", priceNote: "/month",
-    color: "#D97706",
+    color: "#0891B2",
     tagline: "Full access — off-market deals, analytics, and white-glove event concierge.",
     features: [
       "Everything in Services",
@@ -1549,8 +1549,8 @@ function canCreate(user) { return passportCompletionOf(user) >= 40; } // post, l
 // to upload anything.
 const BACKGROUND_PRESETS = [
   { id: "junction-default", name: "Merveil", swatch: "#1F2937", css: "linear-gradient(135deg,#1F2937,#374151)" },
-  { id: "desert-gold", name: "Desert Gold", swatch: "#D97706", css: "linear-gradient(135deg,#8A6A1E,#D97706)" },
-  { id: "skyline-night", name: "Skyline Night", swatch: "#04111F", css: "linear-gradient(135deg,#04111F,#1F2937,#F97316)" },
+  { id: "desert-gold", name: "Desert Gold", swatch: "#0891B2", css: "linear-gradient(135deg,#8A6A1E,#0891B2)" },
+  { id: "skyline-night", name: "Skyline Night", swatch: "#04111F", css: "linear-gradient(135deg,#04111F,#1F2937,#06B6D4)" },
   { id: "marina-teal", name: "Marina Teal", swatch: "#0E5C5C", css: "linear-gradient(135deg,#0E3D3D,#0E5C5C,#1FA8A8)" },
   { id: "falcon-crimson", name: "Falcon", swatch: "#8A1E2E", css: "linear-gradient(135deg,#5C0E18,#8A1E2E)" },
 ];
@@ -1591,8 +1591,8 @@ function PassportAvatar({ user, size = 40 }) {
   return (
     <div className="relative rounded-full flex items-center justify-center shrink-0 overflow-hidden"
       style={{ width: size, height: size, background: "linear-gradient(145deg,#1C1917,#292524)" }}>
-      <div className="absolute inset-0" style={{ animation: "listeningEdge 4s ease-in-out infinite", background: "radial-gradient(circle,rgba(249,115,22,0.4),transparent 70%)" }} />
-      <span className="relative font-bold" style={{ fontSize: size * 0.4, color: "#F97316", fontFamily: "'Space Grotesk',sans-serif" }}>M</span>
+      <div className="absolute inset-0" style={{ animation: "listeningEdge 4s ease-in-out infinite", background: "radial-gradient(circle,rgba(6,182,212,0.4),transparent 70%)" }} />
+      <span className="relative font-bold" style={{ fontSize: size * 0.4, color: "#06B6D4", fontFamily: "'Space Grotesk',sans-serif" }}>M</span>
       {size >= 32 && (
         <span className="absolute bottom-0 left-0 right-0 text-center font-semibold"
           style={{ fontSize: Math.max(6, size * 0.16), color: "#fff", background: "rgba(0,0,0,0.4)", lineHeight: 1.4 }}>
@@ -1669,7 +1669,7 @@ const fmtAED = (n) =>
 const fmtViews = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
 
 const AVATAR_PALETTE = [
-  ["#F97316", "#D97706"],
+  ["#06B6D4", "#0891B2"],
   ["#2C5278", "#14191F"],
   ["#7C8B6F", "#3F4A37"],
   ["#6F8C8B", "#2E3D3C"],
@@ -1736,7 +1736,7 @@ function useLiveViews(initial) {
 // ---------------------------------------------------------------
 
 function Logo({ light }) {
-  // Orange-first wordmark: MERVEIL always brand orange; AI secondary
+  // Cyan wordmark: MERVEIL always brand cyan; AI secondary
   return (
     <div className="flex items-center gap-2">
       <MerveilLogoMark size={30} glow />
@@ -1748,9 +1748,9 @@ function Logo({ light }) {
         className="text-lg"
       >
         <span style={{
-          color: "#F97316",
+          color: "#06B6D4",
           fontWeight: 800,
-          textShadow: light ? "0 0 18px rgba(249,115,22,0.55)" : "0 0 12px rgba(249,115,22,0.25)",
+          textShadow: light ? "0 0 18px rgba(6,182,212,0.55)" : "0 0 12px rgba(6,182,212,0.25)",
         }}>MERVEIL</span>
         <span style={{
           color: light ? "rgba(251,146,60,0.9)" : T.sub,
@@ -1932,7 +1932,7 @@ function EditPropertyModal({ property, currentUser, onClose, onSaved }) {
           {error && <div className="text-xs" style={{ color: "#E0554C" }}>{error}</div>}
           <button onClick={save} disabled={saving}
             className="w-full py-2.5 rounded-lg font-semibold text-sm mt-1"
-            style={{ background: T.signal || "#F97316", color: "#FFFFFF", opacity: saving ? 0.6 : 1 }}>
+            style={{ background: T.signal || "#06B6D4", color: "#FFFFFF", opacity: saving ? 0.6 : 1 }}>
             {saving ? "Saving…" : "Save changes"}
           </button>
         </div>
@@ -2306,7 +2306,7 @@ function InventoryUploadFlow({ currentUser, onClose, onCreated }) {
 
               {submitError && <p className="text-xs mb-2" style={{ color: "#E0554C" }}>{submitError}</p>}
               <button onClick={submit} disabled={submitting} className="w-full text-sm font-bold py-3 rounded-xl"
-                style={{ background: "linear-gradient(135deg,#F97316,#1F2937)", color: "#fff", opacity: submitting ? 0.6 : 1 }}>
+                style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)", color: "#fff", opacity: submitting ? 0.6 : 1 }}>
                 {submitting ? "Publishing…" : `Publish inventory (${parsedUnits.length} units)`}
               </button>
             </>
@@ -2474,7 +2474,7 @@ function merveilScoreOf(p) {
 function ScoreRing({ score, size = 46 }) {
   const r = (size - 6) / 2;
   const c = 2 * Math.PI * r;
-  const color = score >= 75 ? "#1F7A4D" : score >= 50 ? "#F97316" : "#C9862B";
+  const color = score >= 75 ? "#1F7A4D" : score >= 50 ? "#06B6D4" : "#C9862B";
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
@@ -2593,7 +2593,7 @@ function PropertyDetailModal({ p, currentUser, onClose, onChat, onEdit, onDelete
         <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
           <div>
             <div className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-full mb-1.5"
-              style={{ background: p.type === "Rent" ? "rgba(14,165,233,.18)" : "rgba(217,119,6,.18)", color: "#fff", border: `1px solid ${p.type === "Rent" ? "#0EA5E9" : "#D97706"}` }}>
+              style={{ background: p.type === "Rent" ? "rgba(14,165,233,.18)" : "rgba(217,119,6,.18)", color: "#fff", border: `1px solid ${p.type === "Rent" ? "#0EA5E9" : "#0891B2"}` }}>
               {p.type === "Rent" ? "FOR RENT" : "FOR SALE"}
             </div>
             <div style={{ fontFamily: "'IBM Plex Mono',monospace", color: "#fff", textShadow: "0 2px 12px rgba(0,0,0,.5)" }} className="text-3xl font-bold leading-none">
@@ -2861,7 +2861,7 @@ function PropertyCard({ p, liveViews, onViewDetails, liked, onToggleLike }) {
                 className="h-full rounded-full"
                 style={{
                   width: `${p.sustainabilityScore}%`,
-                  background: p.sustainabilityScore >= 70 ? "#1F8A5C" : p.sustainabilityScore >= 40 ? "#D97706" : "#B23A2E",
+                  background: p.sustainabilityScore >= 70 ? "#1F8A5C" : p.sustainabilityScore >= 40 ? "#0891B2" : "#B23A2E",
                 }}
               />
             </div>
@@ -2910,7 +2910,7 @@ function PropertyCard({ p, liveViews, onViewDetails, liked, onToggleLike }) {
               <svg width="40" height="40" viewBox="0 0 40 40">
                 <circle cx="20" cy="20" r="16" fill="none" stroke={T.line} strokeWidth="3.5"/>
                 <circle cx="20" cy="20" r="16" fill="none"
-                  stroke={p.sustainabilityScore>=70?"#1F7A4D":p.sustainabilityScore>=40?"#D97706":"#CE1126"}
+                  stroke={p.sustainabilityScore>=70?"#1F7A4D":p.sustainabilityScore>=40?"#0891B2":"#CE1126"}
                   strokeWidth="3.5" strokeLinecap="round"
                   strokeDasharray={`${p.sustainabilityScore} 100`}
                   transform="rotate(-90 20 20)"/>
@@ -3020,7 +3020,7 @@ function PropertyBalloon({ p, views, expanded, onClick, index }) {
           ? `0 14px 32px rgba(0,0,0,0.22), 0 0 0 3px ${T.brass}`
           : p.propertyAura==="cyan" ? "0 0 28px rgba(14,165,233,.55), 0 10px 20px rgba(0,0,0,.14)"
           : p.propertyAura==="gold" ? "0 0 28px rgba(217,119,6,.55), 0 10px 20px rgba(0,0,0,.14)"
-          : p.propertyAura==="coral" ? "0 0 28px rgba(249,115,22,.55), 0 10px 20px rgba(0,0,0,.14)"
+          : p.propertyAura==="coral" ? "0 0 28px rgba(6,182,212,.55), 0 10px 20px rgba(0,0,0,.14)"
           : p.propertyAura==="green" ? "0 0 28px rgba(31,122,77,.55), 0 10px 20px rgba(0,0,0,.14)"
           : "0 10px 22px rgba(0,0,0,0.14)",
         animation: expanded ? "none" : `balloonFloat ${4 + (index % 3)}s ease-in-out ${(index % 5) * 0.25}s infinite`,
@@ -3052,7 +3052,7 @@ function PropertyBalloon({ p, views, expanded, onClick, index }) {
       )}
       {p.ghostRisk > 0.55 && (
         <span className="absolute top-1 left-1.5" style={{ animation:"ghostFlicker 2s ease-in-out infinite" }}>
-          <AlertTriangle size={12} color="#D97706"/>
+          <AlertTriangle size={12} color="#0891B2"/>
         </span>
       )}
       <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: "#fff" }} className="text-sm font-semibold px-2">
@@ -3235,7 +3235,7 @@ function FeedView({ liveViews, properties, currentUser, onPropertyUpdated, onPro
             Merveil AI
           </h1>
           <div className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full"
-            style={{background:"#F9731612",color:"#9A3412",border:"1px solid #F9731622"}}>
+            style={{background:"#06B6D412",color:"#9A3412",border:"1px solid #06B6D422"}}>
             <Globe2 size={10}/> Visible worldwide · No login required
           </div>
         </div>
@@ -3289,8 +3289,8 @@ function FeedView({ liveViews, properties, currentUser, onPropertyUpdated, onPro
       {/* AI Match banner */}
       {activeOrb === "aiMatch" && (
         <div className="mt-2 mb-1 px-3 py-2.5 rounded-xl flex items-center gap-2.5"
-          style={{ background: "linear-gradient(135deg,#D9770618,#F9731610)", border:"1px solid #F9731633" }}>
-          <Sparkles size={16} style={{ color:"#F97316", shrink:0 }}/>
+          style={{ background: "linear-gradient(135deg,#0891B218,#06B6D410)", border:"1px solid #06B6D433" }}>
+          <Sparkles size={16} style={{ color:"#06B6D4", shrink:0 }}/>
           <p className="text-xs" style={{ color:"#9A3412" }}>
             Merveil AI ranked these listings based on demand velocity, verification quality,
             sustainability score and recent activity — no manual search needed.
@@ -3312,8 +3312,8 @@ function FeedView({ liveViews, properties, currentUser, onPropertyUpdated, onPro
 
       {activeOrb === "ghost" && (
         <div className="mt-2 mb-1 px-3 py-2.5 rounded-xl flex items-center gap-2.5"
-          style={{background:"#D9770612",border:"1px solid #D9770633"}}>
-          <AlertTriangle size={16} style={{color:"#D97706",flexShrink:0}}/>
+          style={{background:"#0891B212",border:"1px solid #0891B233"}}>
+          <AlertTriangle size={16} style={{color:"#0891B2",flexShrink:0}}/>
           <p className="text-xs" style={{color:"#856404"}}>
             Merveil AI flags these listings as potentially unavailable based on price-freeze duration,
             agent inactivity, and absence of verified viewings.
@@ -3821,7 +3821,7 @@ function InvestPostCard({ post, liked, onLike, onComment, onShare, onRepost, onC
           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#EEF2FF", color: "#4F46E5" }}>{post.category}</span>
         )}
         {post.intent && (
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#FEF3C7", color: "#B45309" }}>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#FEF3C7", color: "#0E7490" }}>
             {INVEST_INTENTS.find((i) => i.id === post.intent)?.label || post.intent}
           </span>
         )}
@@ -3920,7 +3920,7 @@ function PostInvestModal({ onClose, onPublish }) {
           <div className="text-base font-bold" style={{ fontFamily: "'Space Grotesk',sans-serif", color: T.ink }}>Post on Invest</div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={submit} disabled={busy} className="text-sm font-bold px-4 py-2 rounded-xl text-white"
-              style={{ background: "linear-gradient(135deg,#D97706,#1F2937)", opacity: busy ? 0.7 : 1 }}>
+              style={{ background: "linear-gradient(135deg,#0891B2,#1F2937)", opacity: busy ? 0.7 : 1 }}>
               {busy ? "Posting…" : "Post"}
             </button>
             <button type="button" onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: T.panel }}>
@@ -4062,7 +4062,7 @@ function InvestorZone({ liveViews, properties, currentUser, onUpgrade, onPropert
           </div>
           <button type="button" onClick={() => (currentUser ? setShowPost(true) : onSignIn?.())}
             className="text-xs font-bold px-3 py-2 rounded-xl shrink-0 text-white"
-            style={{ background: "linear-gradient(135deg,#D97706,#1F2937)" }}>
+            style={{ background: "linear-gradient(135deg,#0891B2,#1F2937)" }}>
             <Plus size={13} className="inline mr-1" /> Post
           </button>
         </div>
@@ -5506,8 +5506,8 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
                 className="rounded-full overflow-hidden relative shrink-0" style={{
                   width: isActive ? 52 : 40, height: isActive ? 52 : 40,
                   opacity: isActive ? 1 : 0.55,
-                  border: isActive ? "2px solid #F97316" : "1.5px solid rgba(255,255,255,0.35)",
-                  boxShadow: isActive ? "0 0 14px rgba(249,115,22,0.4)" : "none",
+                  border: isActive ? "2px solid #06B6D4" : "1.5px solid rgba(255,255,255,0.35)",
+                  boxShadow: isActive ? "0 0 14px rgba(6,182,212,0.4)" : "none",
                   transition: "all 0.25s ease",
                 }}>
                 {/* BUG FIX: thumbnails had no poster/preload, so they
@@ -5531,7 +5531,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
       <div className="absolute right-3 bottom-28 z-20 flex flex-col items-center gap-5">
         <button onClick={onSuper} className="flex flex-col items-center gap-1">
           <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
-            <Zap size={20} color={supered ? "#F97316" : "#fff"} fill={supered ? "#F97316" : "none"} />
+            <Zap size={20} color={supered ? "#06B6D4" : "#fff"} fill={supered ? "#06B6D4" : "none"} />
           </div>
           <span className="text-[11px] font-semibold text-white">{superCount || 0}</span>
         </button>
@@ -5557,7 +5557,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
         <div className="text-white/80 text-sm mb-3">{p.area}, {p.emirate}</div>
         <button onClick={() => setExpanded(true)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full"
           style={{ background: "rgba(255,255,255,0.15)", color: "#fff", backdropFilter: "blur(6px)" }}>
-          <Sparkles size={13} color="#F97316" /> Merveil Intelligence
+          <Sparkles size={13} color="#06B6D4" /> Merveil Intelligence
         </button>
       </div>
 
@@ -5572,8 +5572,8 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <Sparkles size={13} color="#F97316" />
-                <span className="text-[11px] font-bold tracking-wide" style={{ color: "#F97316" }}>MERVEIL INTELLIGENCE</span>
+                <Sparkles size={13} color="#06B6D4" />
+                <span className="text-[11px] font-bold tracking-wide" style={{ color: "#06B6D4" }}>MERVEIL INTELLIGENCE</span>
               </div>
               <button onClick={() => setExpanded(false)} className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>Close</button>
             </div>
@@ -5604,7 +5604,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
                 <div className="flex items-center gap-1.5" style={{ color: "#34D399" }}><Check size={12}/> Available now</div>
               )}
               {insight?.similarCount > 0 && (
-                <div className="flex items-center gap-1.5" style={{ color: "#F97316" }}><Zap size={12}/> {insight.similarCount} similar {insight.similarCount === 1 ? "opportunity" : "opportunities"} in {p.area}</div>
+                <div className="flex items-center gap-1.5" style={{ color: "#06B6D4" }}><Zap size={12}/> {insight.similarCount} similar {insight.similarCount === 1 ? "opportunity" : "opportunities"} in {p.area}</div>
               )}
             </div>
 
@@ -5616,7 +5616,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
                 <div className="text-xs font-semibold" style={{ color: "#fff" }}>{listerLabel}</div>
                 <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.5)" }}>{p.area}, {p.emirate}</div>
               </div>
-              <button onClick={onChat} className="text-[11px] font-semibold px-3 py-1.5 rounded-full" style={{ background: "#F97316", color: "#fff" }}>Connect</button>
+              <button onClick={onChat} className="text-[11px] font-semibold px-3 py-1.5 rounded-full" style={{ background: "#06B6D4", color: "#fff" }}>Connect</button>
             </div>
           </div>
         </div>
@@ -5728,14 +5728,14 @@ function ReelCard({ p, views, liked, likesCount, supered, superCount, onLike, on
             a different signal at a glance, not a re-skinned heart. */}
         <button onClick={onSuper} className="flex flex-col items-center gap-1 relative">
           {supered && (
-            <Zap size={40} color="#F97316" fill="none" strokeWidth={2}
+            <Zap size={40} color="#06B6D4" fill="none" strokeWidth={2}
               className="absolute -top-2 left-1/2 -translate-x-1/2 pointer-events-none"
               style={{ animation: "energyBurst 0.5s ease-out" }} />
           )}
           <Zap
             size={28}
-            color={supered ? "#F97316" : "#fff"}
-            fill={supered ? "#F97316" : "none"}
+            color={supered ? "#06B6D4" : "#fff"}
+            fill={supered ? "#06B6D4" : "none"}
             style={{
               transform: supered ? "scale(1.18)" : "scale(1)",
               transition: "transform 0.25s cubic-bezier(.34,1.56,.64,1)",
@@ -6565,7 +6565,7 @@ function MyConnectionsPresence({ currentUser, onOpenChat }) {
   const [presence, setPresence] = useState({});
   const [loading, setLoading] = useState(true);
 
-  const presenceDot = (status) => ({ online: "#1F7A4D", busy: "#D97706", offline: T.line }[status] || T.line);
+  const presenceDot = (status) => ({ online: "#1F7A4D", busy: "#0891B2", offline: T.line }[status] || T.line);
 
   useEffect(() => {
     if (!currentUser?.id) { setLoading(false); return; }
@@ -7361,7 +7361,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     );
   }
 
-  const presenceDot = (status) => ({ online: "#1F7A4D", busy: "#D97706", offline: T.line }[status] || T.line);
+  const presenceDot = (status) => ({ online: "#1F7A4D", busy: "#0891B2", offline: T.line }[status] || T.line);
   const activeMessages = isAiThread ? aiMessages : threadMessages;
 
   return (
@@ -7503,7 +7503,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           <button onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
             className="w-full text-left p-3 border-b flex items-center gap-3"
             style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "transparent" }}>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#F97316,#1F2937)" }}>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
               <Sparkles size={16} color="#fff" />
             </div>
             <div className="flex-1 min-w-0">
@@ -7651,10 +7651,10 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleFavorite(r.userId); }}
                       className="w-7 h-7 rounded-full flex items-center justify-center"
-                      style={{ color: isFav ? "#D97706" : T.sub }}
+                      style={{ color: isFav ? "#0891B2" : T.sub }}
                       title={isFav ? "Remove favorite" : "Add favorite"}
                     >
-                      <Star size={13} fill={isFav ? "#D97706" : "none"} />
+                      <Star size={13} fill={isFav ? "#0891B2" : "none"} />
                     </button>
                     {r.thread && (
                       <>
@@ -7691,7 +7691,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           <button onClick={() => setMobileView("list")} className="sm:hidden"><ArrowLeft size={18} style={{ color: T.ink }} /></button>
           {isAiThread ? (
             <>
-              <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg,#F97316,#1F2937)" }}>
+              <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
                 <Sparkles size={15} color="#fff" />
               </div>
               <div className="flex-1"><div className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</div></div>
@@ -8044,7 +8044,7 @@ const ARENA_EXPERIENCES = [
     name: "Sahra",
     tagline: "Desert journey · 30 levels",
     desc: "Steer through dunes, wadis, and the Hajar. Discovery to expedition.",
-    color: "#D97706",
+    color: "#0891B2",
     bg: "linear-gradient(145deg,#3B2A1E,#8A5A32)",
     src: "/arena/sahra.html",
   },
@@ -8053,7 +8053,7 @@ const ARENA_EXPERIENCES = [
     name: "Burj Rise",
     tagline: "Build beyond the skyline",
     desc: "Stack precise 3D floors from Trade Centre to Business Bay.",
-    color: "#F97316",
+    color: "#06B6D4",
     bg: "linear-gradient(145deg,#1a2140,#0A0D16)",
     src: "/arena/burj-rise.html",
   },
@@ -8114,14 +8114,14 @@ function ArenaView({ currentUser, onSignIn }) {
   if (!currentUser) {
     return (
       <div className="p-6 flex flex-col items-center justify-center text-center min-h-[60vh]">
-        <Trophy size={36} style={{ color: "#F97316", marginBottom: 12 }} />
+        <Trophy size={36} style={{ color: "#06B6D4", marginBottom: 12 }} />
         <h1 className="text-xl font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: T.ink }}>Arena</h1>
         <p className="text-sm mt-2 max-w-xs" style={{ color: T.sub }}>
           Competitive experiences for Merveil citizens. Sign in with your Passport to play Sahra, Burj Rise, and Connecta.
         </p>
         <button type="button" onClick={() => onSignIn?.()}
           className="mt-5 text-sm font-semibold px-5 py-2.5 rounded-full"
-          style={{ background: "#F97316", color: "#fff" }}>
+          style={{ background: "#06B6D4", color: "#fff" }}>
           Sign in to play
         </button>
         <p className="text-[10px] mt-6 tracking-widest uppercase" style={{ color: T.sub }}>By IVONIX</p>
@@ -8140,7 +8140,7 @@ function ArenaView({ currentUser, onSignIn }) {
             style={{ background: "rgba(255,255,255,0.08)", color: "#E4E6EB" }}>
             ← Arena
           </button>
-          <span className="text-xs font-bold tracking-wide" style={{ color: "#F97316" }}>{exp.name}</span>
+          <span className="text-xs font-bold tracking-wide" style={{ color: "#06B6D4" }}>{exp.name}</span>
           <span className="text-[10px]" style={{ color: "#9CA3AF" }}>{stats.credits} credits</span>
         </div>
         <iframe
@@ -8162,7 +8162,7 @@ function ArenaView({ currentUser, onSignIn }) {
           <p className="text-sm mt-1" style={{ color: T.sub }}>Challenge · Progress · Merveil Credits · Passport</p>
         </div>
         <div className="text-right">
-          <div className="text-lg font-bold" style={{ color: "#F97316" }}>{loading ? "…" : stats.credits}</div>
+          <div className="text-lg font-bold" style={{ color: "#06B6D4" }}>{loading ? "…" : stats.credits}</div>
           <div className="text-[10px] uppercase tracking-wide" style={{ color: T.sub }}>Credits</div>
         </div>
       </div>
@@ -8381,7 +8381,7 @@ function NewcomerJourney({ onComplete, onGoTo }) {
 
   const HeroHeader = ({ title, subtitle }) => (
     <div className="relative overflow-hidden rounded-2xl mb-5 px-5 pt-6 pb-9"
-      style={{ background: "linear-gradient(135deg,#1F2937 0%,#374151 45%,#D97706 130%)" }}>
+      style={{ background: "linear-gradient(135deg,#1F2937 0%,#374151 45%,#0891B2 130%)" }}>
       <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full" style={{ background: "radial-gradient(circle,rgba(14,165,233,0.35),transparent 70%)" }} />
       <SkylineSilhouette />
       <div className="relative z-10">
@@ -8402,9 +8402,9 @@ function NewcomerJourney({ onComplete, onGoTo }) {
     const recs = areas[answers.purpose] || areas["Rent"];
     const tools = [
       { id:"verify", label:"Get your Emirates ID verified", sub:"Unlocks listing, chatting & applying", icon:ShieldCheck, color:"#1F7A4D", go:"passport" },
-      { id:"souk", label:"Find movers & home services", sub:"Cleaners, movers, AC techs — verified", icon:Wrench, color:"#D97706", go:"souk" },
-      { id:"jobs", label:"Browse jobs matched to you", sub:"Zero fees for job seekers, ever", icon:Briefcase, color:"#D97706", go:"jobs" },
-      { id:"connect", label:"Message a local agent", sub:"Ask anything about your new area", icon:MessageCircle, color:"#F97316", go:"messages" },
+      { id:"souk", label:"Find movers & home services", sub:"Cleaners, movers, AC techs — verified", icon:Wrench, color:"#0891B2", go:"souk" },
+      { id:"jobs", label:"Browse jobs matched to you", sub:"Zero fees for job seekers, ever", icon:Briefcase, color:"#0891B2", go:"jobs" },
+      { id:"connect", label:"Message a local agent", sub:"Ask anything about your new area", icon:MessageCircle, color:"#06B6D4", go:"messages" },
     ];
     return (
       <div className="p-4 max-w-md mx-auto">
@@ -8414,7 +8414,7 @@ function NewcomerJourney({ onComplete, onGoTo }) {
             <div key={area} className="flex items-center gap-3 p-3 rounded-xl border relative overflow-hidden"
               style={{borderColor: i===0 ? T.signal : T.line, background: i===0 ? `${T.signal}0A` : T.paper}}>
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                style={{background: i===0 ? "linear-gradient(135deg,#F97316,#1F2937)" : T.navy}}>{i+1}</div>
+                style={{background: i===0 ? "linear-gradient(135deg,#06B6D4,#1F2937)" : T.navy}}>{i+1}</div>
               <div className="flex-1">
                 <div className="text-sm font-semibold flex items-center gap-1.5" style={{color:T.ink}}>
                   {area} {i===0 && <Sparkles size={12} style={{color:T.signal}} />}
@@ -8427,7 +8427,7 @@ function NewcomerJourney({ onComplete, onGoTo }) {
         </div>
 
         <div className="text-[11px] p-3 rounded-xl mb-5"
-          style={{background:"#F9731612",color:"#9A3412",border:"1px solid #F9731622"}}>
+          style={{background:"#06B6D412",color:"#9A3412",border:"1px solid #06B6D422"}}>
           Merveil matched these areas to your profile. Listings from every area are visible to you right now
           — no registration required. Register when you're ready to contact an agent or make an offer.
         </div>
@@ -8454,7 +8454,7 @@ function NewcomerJourney({ onComplete, onGoTo }) {
 
         <button onClick={onComplete}
           className="w-full text-sm font-bold py-3 rounded-xl"
-          style={{background:"linear-gradient(135deg,#F97316,#1F2937)",color:"#fff",
+          style={{background:"linear-gradient(135deg,#06B6D4,#1F2937)",color:"#fff",
             fontFamily:"'Space Grotesk',sans-serif",boxShadow:"0 0 18px rgba(14,165,233,.4)"}}>
           Enter Merveil as a citizen →
         </button>
@@ -8471,7 +8471,7 @@ function NewcomerJourney({ onComplete, onGoTo }) {
         <div className="flex-1 h-1.5 rounded-full overflow-hidden flex gap-0.5" style={{background:T.line}}>
           {steps.map((_, i) => (
             <div key={i} className="h-full flex-1 rounded-full" style={{
-              background: i <= step ? "linear-gradient(90deg,#F97316,#D97706)" : "transparent",
+              background: i <= step ? "linear-gradient(90deg,#06B6D4,#0891B2)" : "transparent",
               transition: "background .3s",
             }} />
           ))}
@@ -8589,7 +8589,7 @@ function JobReelCard({ item, onApply, onContact, liked, likesCount, onLike, comp
         </span>
         {isJob && item.urgent && (
           <span className="text-[11px] font-semibold px-2 py-1 rounded-full"
-            style={{ background:"#F97316", color:"#fff" }}>Urgent</span>
+            style={{ background:"#06B6D4", color:"#fff" }}>Urgent</span>
         )}
         {!isJob && item.idVerified && (
           <span className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
@@ -8803,7 +8803,7 @@ function JobCard({ item, onApply, onContact }) {
             <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
               {isJob && item.urgent && (
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                  style={{ background:"#F9731618", color:"#F97316", border:"1px solid #F9731644" }}>
+                  style={{ background:"#06B6D418", color:"#06B6D4", border:"1px solid #06B6D444" }}>
                   Urgent
                 </span>
               )}
@@ -8821,7 +8821,7 @@ function JobCard({ item, onApply, onContact }) {
               )}
               {!isJob && !item.idVerified && (
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                  style={{ background:"#D9770618", color:"#856404", border:"1px solid #D9770644" }}>
+                  style={{ background:"#0891B218", color:"#856404", border:"1px solid #0891B244" }}>
                   Verification pending
                 </span>
               )}
@@ -9011,7 +9011,7 @@ function PostJobModal({ onClose, onPublish, verifyStatuses }) {
                 className="text-sm px-3 py-2.5 rounded-xl border outline-none resize-none"
                 style={{ borderColor:"#E5E7EB" }}/>
               <div className="p-3 rounded-xl text-xs"
-                style={{ background:"#F9731612", color:"#9A3412", border:"1px solid #F9731622" }}>
+                style={{ background:"#06B6D412", color:"#9A3412", border:"1px solid #06B6D422" }}>
                 Merveil Work is <b>completely free for job seekers.</b> No registration fee, no CV fee, no agency fee. We only charge employers — and only after they hire you successfully.
               </div>
             </>
@@ -9240,7 +9240,7 @@ function JobsView({ verifyStatuses, currentUser, onSignIn, services, onChat }) {
           {[
             [jobs.filter(j=>j.type==="job").length.toString(),"Live jobs","#1F2937"],
             [jobs.filter(j=>j.type==="seeker").length.toString(),"Seekers","#1F7A4D"],
-            ["AED 0","Your cost","#F97316"],
+            ["AED 0","Your cost","#06B6D4"],
           ].map(([val,label,color])=>(
             <div key={label} className="rounded-xl p-2 text-center"
               style={{ background:"#F9FAFB", border:"1px solid #E5E7EB" }}>
@@ -9336,7 +9336,7 @@ function JobsView({ verifyStatuses, currentUser, onSignIn, services, onChat }) {
               {matches.map(({ job, score, reasons }) => (
                 <div key={job.id} className="mb-3">
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background:"#F9731618", color:"#F97316" }}>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background:"#06B6D418", color:"#06B6D4" }}>
                       {score}% match
                     </span>
                     <span className="text-[10px]" style={{ color:"#6B7280" }}>{reasons.join(" · ")}</span>
@@ -9452,7 +9452,7 @@ const WORLD_TOPICS = [
   "Maritime", "Business", "Government & PPP", "Tourism & Culture", "News & Current Affairs",
   "Religion & Culture", "Family", "Kids", "DIY & How-to", "Motivation", "Other",
 ];
-const WORLD_CARD_GRADIENTS = [["#1F2937","#374151"],["#F97316","#1F2937"],["#6B7280","#2E3D3C"],["#D97706","#1F2937"]];
+const WORLD_CARD_GRADIENTS = [["#1F2937","#374151"],["#06B6D4","#1F2937"],["#6B7280","#2E3D3C"],["#0891B2","#1F2937"]];
 // World Reels ranking: entertainment + tech surface slightly ahead of pure
 // recency so the feed feels alive without inventing engagement scores.
 const WORLD_TECH_TOPICS = new Set([
@@ -9667,7 +9667,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
           <div className="absolute right-3 bottom-28 z-10 flex flex-col items-center gap-3.5">
             <button onClick={(e) => { e.stopPropagation(); onToggleSuper?.(post); }} className="flex flex-col items-center gap-0.5">
               <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
-                <Zap size={20} color={supered ? "#F97316" : "#fff"} fill={supered ? "#F97316" : "none"} />
+                <Zap size={20} color={supered ? "#06B6D4" : "#fff"} fill={supered ? "#06B6D4" : "none"} />
               </div>
               <span className="text-[10px] font-semibold text-white">{post.super_count || 0}</span>
             </button>
@@ -9707,7 +9707,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
               </div>
             </button>
             <button onClick={(e) => { e.stopPropagation(); currentUser ? onCall?.("voice") : onRequireSignIn?.(); }} className="flex flex-col items-center gap-0.5">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(249,115,22,0.9)" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(6,182,212,0.9)" }}>
                 <AnimatedPhone size={18} color="#fff"/>
               </div>
               <span className="text-[10px] font-semibold text-white">Call</span>
@@ -9744,7 +9744,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
               className="flex items-center gap-1.5 mb-2">
               {post.owner_avatar
                 ? <img src={post.owner_avatar} alt="" className="w-8 h-8 rounded-full object-cover border-2" style={{ borderColor: "#fff" }}/>
-                : <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white border-2" style={{ background: "#F97316", borderColor: "#fff" }}>{(post.owner_name||"?")[0]}</div>}
+                : <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white border-2" style={{ background: "#06B6D4", borderColor: "#fff" }}>{(post.owner_name||"?")[0]}</div>}
               <span className="text-sm font-semibold text-white">{post.owner_name || "Merveil Citizen"}</span>
             </button>
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-block mb-1.5" style={{ background: "#0EA5E933", color: "#7DD3FC" }}>{post.topic}</span>
@@ -9752,7 +9752,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
             {post.description && <p className="text-xs mb-3 line-clamp-2" style={{ color: "rgba(255,255,255,.85)" }}>{post.description}</p>}
             <button onClick={(e) => { e.stopPropagation(); onChat?.(); }}
               className="text-xs font-semibold px-3.5 py-2 rounded-full flex items-center gap-1.5"
-              style={{ background: "#F97316", color: "#fff" }}>
+              style={{ background: "#06B6D4", color: "#fff" }}>
               <MessageCircle size={13}/> Connect
             </button>
           </div>
@@ -10874,7 +10874,7 @@ function SettingsView({ settings, setSettings }) {
     </div>
   );
 
-  const severityColor = (sev) => (sev === "high" || sev === "critical" ? "#DC2626" : sev === "medium" ? "#D97706" : T.sub);
+  const severityColor = (sev) => (sev === "high" || sev === "critical" ? "#DC2626" : sev === "medium" ? "#0891B2" : T.sub);
 
   return (
     <div className="p-4 md:p-6 max-w-xl">
@@ -11991,7 +11991,7 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
           top: `${pos.y}px`,
           width: "60px",
           height: "60px",
-          background: "linear-gradient(135deg, #D97706, #F97316)",
+          background: "linear-gradient(135deg, #0891B2, #06B6D4)",
           boxShadow: "0 0 20px rgba(14,165,233,0.5), 0 4px 16px rgba(0,0,0,.3)",
           touchAction: "none",
           cursor: "grab",
@@ -12013,17 +12013,17 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
             marginRight: "auto",
             height: "min(64vh, 480px)",
             background: "#020D1A",
-            border: "1px solid #F9731633",
+            border: "1px solid #06B6D433",
           }}
         >
           <div
             className="flex items-center justify-between px-4 py-3"
-            style={{ background: "#061628", borderBottom: "1px solid #F9731622" }}
+            style={{ background: "#061628", borderBottom: "1px solid #06B6D422" }}
           >
             <div className="flex items-center gap-2.5">
               <MerveilLogoMark size={24} glow />
-              <span style={{ fontFamily: "'Space Grotesk', sans-serif", color: "#F97316",
-                textShadow: "0 0 10px #F9731666", letterSpacing: ".04em" }}
+              <span style={{ fontFamily: "'Space Grotesk', sans-serif", color: "#06B6D4",
+                textShadow: "0 0 10px #06B6D466", letterSpacing: ".04em" }}
                 className="text-sm font-bold">
                 MERVEIL AI
               </span>
@@ -12040,15 +12040,15 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
                 const d = m.draft;
                 return (
                   <div key={i} className="max-w-[92%] self-start rounded-xl p-3"
-                    style={{ background: "#0A1E30", border: "1px solid #F9731633" }}>
-                    <div className="text-xs font-bold mb-1" style={{ color: "#F97316" }}>DRAFT — review before posting</div>
+                    style={{ background: "#0A1E30", border: "1px solid #06B6D433" }}>
+                    <div className="text-xs font-bold mb-1" style={{ color: "#06B6D4" }}>DRAFT — review before posting</div>
                     <div className="text-sm font-semibold mb-1" style={{ color: "#EAF3F7" }}>{d.title}</div>
                     <div className="text-xs mb-2" style={{ color: "#8FB3CC" }}>
                       {d.area}, {d.emirate} · {d.category} · {d.type}
                       {d.beds != null ? ` · ${d.beds} bed` : ""}{d.baths != null ? ` · ${d.baths} bath` : ""}
                       {d.sqft != null ? ` · ${d.sqft} sqft` : ""}{d.furnished ? ` · ${d.furnished}` : ""}
                     </div>
-                    <div className="text-sm font-bold mb-2" style={{ color: "#F97316" }}>
+                    <div className="text-sm font-bold mb-2" style={{ color: "#06B6D4" }}>
                       AED {Number(d.price || 0).toLocaleString()}{d.type === "Rent" ? "/yr" : ""}
                     </div>
                     {d.description && <div className="text-xs mb-2" style={{ color: "#B8EEFF" }}>{d.description}</div>}
@@ -12057,12 +12057,12 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
                       <div className="flex gap-2 mt-1">
                         <button onClick={() => confirmDraft(i, d)}
                           className="flex-1 text-xs font-semibold py-2 rounded-lg"
-                          style={{ background: "linear-gradient(135deg,#F97316,#D97706)", color: "#04111F" }}>
+                          style={{ background: "linear-gradient(135deg,#06B6D4,#0891B2)", color: "#04111F" }}>
                           Confirm &amp; Post
                         </button>
                         <button onClick={() => discardDraft(i)}
                           className="text-xs font-semibold py-2 px-3 rounded-lg"
-                          style={{ background: "transparent", color: "#8FB3CC", border: "1px solid #F9731633" }}>
+                          style={{ background: "transparent", color: "#8FB3CC", border: "1px solid #06B6D433" }}>
                           Discard
                         </button>
                       </div>
@@ -12091,10 +12091,10 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
                   style={{
                     alignSelf: m.role === "user" ? "flex-end" : "flex-start",
                     background: m.role === "user"
-                      ? "linear-gradient(135deg,#D97706,#F97316)"
+                      ? "linear-gradient(135deg,#0891B2,#06B6D4)"
                       : "#0A1E30",
                     color: "#B8EEFF",
-                    border: m.role === "user" ? "none" : "1px solid #F9731622",
+                    border: m.role === "user" ? "none" : "1px solid #06B6D422",
                   }}
                 >
                   {m.text}
@@ -12110,7 +12110,7 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
               <button
                 onClick={() => { setOpen(false); onOpenPost(); }}
                 className="self-start text-xs font-semibold px-3 py-2 rounded-lg"
-                style={{ background: "linear-gradient(135deg,#F97316,#D97706)", color: "#04111F" }}
+                style={{ background: "linear-gradient(135deg,#06B6D4,#0891B2)", color: "#04111F" }}
               >
                 Open listing form
               </button>
@@ -12125,7 +12125,7 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
                   key={s}
                   onClick={() => send(s)}
                   className="text-[11px] font-medium px-2.5 py-1.5 rounded-full border"
-                  style={{ borderColor: "#F9731633", color: "#4A8AAA" }}
+                  style={{ borderColor: "#06B6D433", color: "#4A8AAA" }}
                 >
                   {s}
                 </button>
@@ -12134,14 +12134,14 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
           )}
 
           <div className="p-2.5 border-t flex items-center gap-2"
-            style={{ borderColor: "#F9731622", background: "#061628" }}>
+            style={{ borderColor: "#06B6D422", background: "#061628" }}>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send()}
               placeholder={listening ? "Listening…" : "Ask Merveil AI, or paste a listing…"}
               className="flex-1 text-sm px-3 py-2 rounded-xl border outline-none"
-              style={{ borderColor: "#F9731622", background: "#0A1E30", color: "#B8EEFF",
+              style={{ borderColor: "#06B6D422", background: "#0A1E30", color: "#B8EEFF",
                 fontFamily: "'IBM Plex Mono',monospace" }}
             />
             {speechSupported && (
@@ -12149,15 +12149,15 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
                 onClick={toggleVoiceInput}
                 title={listening ? "Stop listening" : "Speak to Merveil AI"}
                 className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: listening ? "#E0554C" : "#0A1E30", border: "1px solid #F9731633" }}
+                style={{ background: listening ? "#E0554C" : "#0A1E30", border: "1px solid #06B6D433" }}
               >
-                <Mic size={15} color={listening ? "#fff" : "#F97316"} />
+                <Mic size={15} color={listening ? "#fff" : "#06B6D4"} />
               </button>
             )}
             <button
               onClick={() => send()}
               className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "linear-gradient(135deg,#D97706,#F97316)" }}
+              style={{ background: "linear-gradient(135deg,#0891B2,#06B6D4)" }}
             >
               <Send size={15} color="#fff" />
             </button>
@@ -13975,16 +13975,16 @@ const AMENITY_META = {
   schools: { label: "Schools", icon: GraduationCap, color: "#3A6FA0" },
   mosques: { label: "Mosques", icon: Building2, color: "#1F7A4D" },
   churches: { label: "Churches", icon: Building2, color: "#8A6B1E" },
-  malls: { label: "Malls", icon: Building2, color: "#D97706" },
+  malls: { label: "Malls", icon: Building2, color: "#0891B2" },
   restaurants: { label: "Restaurants", icon: Wrench, color: "#C0432E" },
   hotels: { label: "Hotels", icon: Building2, color: "#8A6B1E" },
   banks: { label: "Banks", icon: CreditCard, color: "#1F2937" },
   police: { label: "Police Station", icon: ShieldCheck, color: "#1F2937" },
   gyms: { label: "Gyms & Fitness", icon: Activity, color: "#C0432E" },
-  clubs: { label: "Clubs", icon: Star, color: "#D97706" },
+  clubs: { label: "Clubs", icon: Star, color: "#0891B2" },
   hospitals: { label: "Hospitals & Clinics", icon: HandCoins, color: "#C0432E" },
   parks: { label: "Parks", icon: Leaf, color: "#1F7A4D" },
-  other: { label: "Other amenities", icon: Sparkles, color: "#F97316" },
+  other: { label: "Other amenities", icon: Sparkles, color: "#06B6D4" },
 };
 
 // Nationality mix inside a neighborhood — proportional, illustrative
@@ -14045,11 +14045,11 @@ function NeighborhoodDetail({ hood, onBack, currentUser, onSignIn }) {
         {hood.verified ? (
           <span className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: "#1F7A4D22", color: "#1F7A4D" }}>VERIFIED</span>
         ) : (
-          <span className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: "#D9770622", color: "#8A6B1E" }}>NEEDS DETAILS</span>
+          <span className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: "#0891B222", color: "#8A6B1E" }}>NEEDS DETAILS</span>
         )}
         <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
           className="text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1"
-          style={{ background: "#F9731622", color: "#F97316" }}>
+          style={{ background: "#06B6D422", color: "#06B6D4" }}>
           <MapPin size={10} /> View on map
         </a>
       </div>
@@ -14154,10 +14154,10 @@ const CIRCLE_POSTS = [
 ];
 
 const CIRCLE_TYPE_META = {
-  job: { icon: Briefcase, color: "#D97706" },
+  job: { icon: Briefcase, color: "#0891B2" },
   service: { icon: Wrench, color: "#1F7A4D" },
   property: { icon: Building2, color: "#3A6FA0" },
-  announcement: { icon: Bell, color: "#F97316" },
+  announcement: { icon: Bell, color: "#06B6D4" },
 };
 
 const EMIRATES = ["Dubai", "Abu Dhabi", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain"];
@@ -14641,8 +14641,8 @@ const EVENT_CATEGORIES = [
   { id: "family", name: "Family & Kids", icon: Gift, color: "#1F7A4D" },
   { id: "sports", name: "Sports & Fitness", icon: Activity, color: "#B5342A" },
   { id: "wellness", name: "Wellness", icon: Heart, color: "#C2447A" },
-  { id: "community", name: "Community Meetup", icon: Users, color: "#F97316" },
-  { id: "adventure", name: "Desert & Adventure", icon: Wind, color: "#D97706" },
+  { id: "community", name: "Community Meetup", icon: Users, color: "#06B6D4" },
+  { id: "adventure", name: "Desert & Adventure", icon: Wind, color: "#0891B2" },
 ];
 
 const EVENT_SIZE_TIERS = [
@@ -14668,7 +14668,7 @@ const ORGANIZER_TIERS = [
     aiPlanning: true, venueOutreach: false, marketing: false,
   },
   {
-    id: "premium", name: "Full Concierge", icon: Crown, color: "#D97706",
+    id: "premium", name: "Full Concierge", icon: Crown, color: "#0891B2",
     priceBySize: { small: 299, medium: 699, large: 1699, mega: 3999 },
     tagline: "Merveil plans it AND has a concierge reach out to the venue to confirm details on your behalf.",
     includes: ["Everything in AI-Assisted", "Merveil concierge contacts the venue for you", "Dedicated event page", "Optional social media promotion add-on"],
@@ -14786,7 +14786,7 @@ Give exactly 3 distinct, realistic suggestions grounded in real Dubai/UAE venue 
               {aiError && <p className="text-xs mb-2" style={{ color: "#E0554C" }}>{aiError}</p>}
               <div className="flex gap-2">
                 <button onClick={askAi} disabled={asking || !brief.trim()} className="flex-1 text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5"
-                  style={{ background: "linear-gradient(135deg,#F97316,#1F2937)", color: "#fff", opacity: asking || !brief.trim() ? 0.6 : 1 }}>
+                  style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)", color: "#fff", opacity: asking || !brief.trim() ? 0.6 : 1 }}>
                   {asking ? <><Loader2 size={14} className="animate-spin" /> Thinking…</> : <><Sparkles size={14} /> Ask Merveil AI</>}
                 </button>
                 <button onClick={() => setStep(2)} className="text-sm font-semibold px-4 py-2.5 rounded-xl" style={{ background: T.panel, color: T.sub }}>Skip</button>
@@ -14888,7 +14888,7 @@ Give exactly 3 distinct, realistic suggestions grounded in real Dubai/UAE venue 
               </div>
               {submitError && <p className="text-xs mb-2" style={{ color: "#E0554C" }}>{submitError}</p>}
               <button onClick={submit} disabled={submitting} className="w-full text-sm font-bold py-3 rounded-xl"
-                style={{ background: "linear-gradient(135deg,#F97316,#1F2937)", color: "#fff", opacity: submitting ? 0.6 : 1 }}>
+                style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)", color: "#fff", opacity: submitting ? 0.6 : 1 }}>
                 {submitting ? "Publishing…" : `Publish event · AED ${totalOrganizerFee}`}
               </button>
               <p className="text-[10px] mt-2 text-center" style={{ color: T.sub }}>
@@ -15184,7 +15184,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
         <>
           <div className="px-5 pb-4 flex flex-col items-center text-center shrink-0 -mt-12 relative z-10">
             {/* Circular avatar over the cover video */}
-            <div className="rounded-full p-1" style={{ background: "#0B0E14", boxShadow: "0 0 0 3px rgba(249,115,22,0.5)" }}>
+            <div className="rounded-full p-1" style={{ background: "#0B0E14", boxShadow: "0 0 0 3px rgba(6,182,212,0.5)" }}>
               <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={88} />
             </div>
             <div className="text-lg font-bold text-white mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>{profile.name || "Merveil Citizen"}</div>
@@ -15212,7 +15212,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             <div className="flex items-center gap-2 mt-4 w-full max-w-sm">
               {!isSelf && (
                 <button type="button" onClick={handleConnect} disabled={connecting}
-                  className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "#F97316", color: "#fff", opacity: connecting ? 0.7 : 1 }}>
+                  className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "#06B6D4", color: "#fff", opacity: connecting ? 0.7 : 1 }}>
                   {connecting ? "…" : "Connect"}
                 </button>
               )}
@@ -15452,12 +15452,12 @@ function BusinessHealthCard({ profile, stats }) {
       <div className="rounded-xl p-4" style={{ background: "rgba(255,255,255,.04)" }}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: "#fff" }}>
-            <Activity size={13} color={score >= 70 ? "#1F7A4D" : score >= 40 ? "#D97706" : "#E0554C"}/> Business Health
+            <Activity size={13} color={score >= 70 ? "#1F7A4D" : score >= 40 ? "#0891B2" : "#E0554C"}/> Business Health
           </span>
-          <span className="text-sm font-bold" style={{ color: score >= 70 ? "#43D692" : score >= 40 ? "#D97706" : "#E66550" }}>{score}/100</span>
+          <span className="text-sm font-bold" style={{ color: score >= 70 ? "#43D692" : score >= 40 ? "#0891B2" : "#E66550" }}>{score}/100</span>
         </div>
         <div className="w-full h-1.5 rounded-full overflow-hidden mb-2" style={{ background: "rgba(255,255,255,.1)" }}>
-          <div className="h-full rounded-full" style={{ width: `${score}%`, background: score >= 70 ? "#43D692" : score >= 40 ? "#D97706" : "#E66550" }}/>
+          <div className="h-full rounded-full" style={{ width: `${score}%`, background: score >= 70 ? "#43D692" : score >= 40 ? "#0891B2" : "#E66550" }}/>
         </div>
         {summary ? (
           <div className="text-[11px] whitespace-pre-line" style={{ color: "#B8C2D0" }}>{summary}</div>
@@ -15527,7 +15527,7 @@ FACTS ABOUT ${profile.name || "this member"}:
                 <div key={i} className="text-xs px-2.5 py-2 rounded-lg"
                   style={{
                     background: h.role === "user" ? "rgba(14,165,233,0.15)" : "rgba(255,255,255,.06)",
-                    color: h.role === "user" ? "#F97316" : "#E4EAF2",
+                    color: h.role === "user" ? "#06B6D4" : "#E4EAF2",
                     alignSelf: h.role === "user" ? "flex-end" : "flex-start",
                     maxWidth: "88%",
                   }}>
@@ -15544,7 +15544,7 @@ FACTS ABOUT ${profile.name || "this member"}:
               style={{ background: "rgba(255,255,255,.06)", color: "#fff" }}/>
             <button onClick={ask} disabled={busy}
               className="text-xs font-bold px-3 py-2 rounded-lg"
-              style={{ background: "#F97316", color: "#FFFFFF", opacity: busy ? 0.6 : 1 }}>
+              style={{ background: "#06B6D4", color: "#FFFFFF", opacity: busy ? 0.6 : 1 }}>
               {busy ? "…" : "Ask"}
             </button>
           </div>
@@ -16158,7 +16158,7 @@ function MarketplaceFeedView({
       <div className="mt-3 mb-3 rounded-xl p-3 flex items-center gap-3"
         style={{ background: T.panel, border: `1px solid ${T.line}` }}>
         <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: "rgba(249,115,22,0.12)", color: "#F97316", fontWeight: 700, fontFamily: "Space Grotesk,sans-serif" }}>
+          style={{ background: "rgba(6,182,212,0.12)", color: "#06B6D4", fontWeight: 700, fontFamily: "Space Grotesk,sans-serif" }}>
           {(currentUser?.name || "M")[0]}
         </div>
         <button type="button"
@@ -16170,7 +16170,7 @@ function MarketplaceFeedView({
         <button type="button"
           onClick={() => (currentUser ? setShowPost(true) : onSignIn?.())}
           className="text-xs font-semibold px-3 py-2 rounded-lg shrink-0"
-          style={{ background: "#F97316", color: "#fff" }}>
+          style={{ background: "#06B6D4", color: "#fff" }}>
           Post
         </button>
       </div>
@@ -16184,9 +16184,9 @@ function MarketplaceFeedView({
           <button key={f.id} type="button" onClick={() => setFilter(f.id)}
             className="text-xs font-semibold px-3 py-1.5 rounded-full shrink-0"
             style={{
-              background: filter === f.id ? "rgba(249,115,22,0.12)" : T.panel,
-              color: filter === f.id ? "#F97316" : T.sub,
-              border: `1px solid ${filter === f.id ? "rgba(249,115,22,0.35)" : T.line}`,
+              background: filter === f.id ? "rgba(6,182,212,0.12)" : T.panel,
+              color: filter === f.id ? "#06B6D4" : T.sub,
+              border: `1px solid ${filter === f.id ? "rgba(6,182,212,0.35)" : T.line}`,
             }}>
             {f.label}
           </button>
@@ -16194,7 +16194,7 @@ function MarketplaceFeedView({
       </div>
 
       {loading ? (
-        <div className="py-16 flex justify-center"><Loader2 size={22} className="animate-spin" style={{ color: "#F97316" }} /></div>
+        <div className="py-16 flex justify-center"><Loader2 size={22} className="animate-spin" style={{ color: "#06B6D4" }} /></div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 px-6">
           <Store size={28} style={{ color: T.sub, margin: "0 auto 12px" }} />
@@ -16203,7 +16203,7 @@ function MarketplaceFeedView({
             Jobs and services share one feed. Be the first to post a role or a service.
           </p>
           <button type="button" onClick={() => (currentUser ? setShowPost(true) : onSignIn?.())}
-            className="mt-4 text-xs font-semibold px-4 py-2 rounded-lg" style={{ background: "#F97316", color: "#fff" }}>
+            className="mt-4 text-xs font-semibold px-4 py-2 rounded-lg" style={{ background: "#06B6D4", color: "#fff" }}>
             Create a post
           </button>
         </div>
@@ -16216,8 +16216,8 @@ function MarketplaceFeedView({
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
                   style={{
-                    background: it.kind === "job" ? "rgba(249,115,22,0.12)" : "rgba(34,197,94,0.12)",
-                    color: it.kind === "job" ? "#F97316" : "#16A34A",
+                    background: it.kind === "job" ? "rgba(6,182,212,0.12)" : "rgba(34,197,94,0.12)",
+                    color: it.kind === "job" ? "#06B6D4" : "#16A34A",
                   }}>
                   {it.kind === "job" ? "Job" : "Service"}
                 </span>
@@ -16226,7 +16226,7 @@ function MarketplaceFeedView({
               <div className="text-sm font-bold" style={{ color: T.ink, fontFamily: "Space Grotesk,sans-serif" }}>{it.title}</div>
               {it.subtitle && <div className="text-xs mt-0.5" style={{ color: T.sub }}>{it.subtitle}</div>}
               {it.body && <p className="text-xs mt-2 line-clamp-3" style={{ color: T.sub }}>{it.body}</p>}
-              {it.salary && <div className="text-xs font-semibold mt-2" style={{ color: "#F97316" }}>{it.salary}</div>}
+              {it.salary && <div className="text-xs font-semibold mt-2" style={{ color: "#06B6D4" }}>{it.salary}</div>}
               <div className="flex items-center gap-3 mt-3">
                 <span className="text-[10px]" style={{ color: T.sub }}
                   onClick={(e) => { e.stopPropagation(); openChat(it); }}>Message</span>
@@ -16257,7 +16257,7 @@ function MarketplaceFeedView({
             style={{ background: T.paper }} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
-                style={{ background: "rgba(249,115,22,0.12)", color: "#F97316" }}>
+                style={{ background: "rgba(6,182,212,0.12)", color: "#06B6D4" }}>
                 {detail.kind === "job" ? "Job" : "Service"}
               </span>
               <button type="button" onClick={() => setDetail(null)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: T.panel }}>
@@ -16266,11 +16266,11 @@ function MarketplaceFeedView({
             </div>
             <h2 className="text-lg font-bold" style={{ color: T.ink, fontFamily: "Space Grotesk,sans-serif" }}>{detail.title}</h2>
             {detail.subtitle && <p className="text-xs mt-1" style={{ color: T.sub }}>{detail.subtitle}</p>}
-            {detail.salary && <p className="text-sm font-semibold mt-2" style={{ color: "#F97316" }}>{detail.salary}</p>}
+            {detail.salary && <p className="text-sm font-semibold mt-2" style={{ color: "#06B6D4" }}>{detail.salary}</p>}
             {detail.body && <p className="text-sm mt-4 whitespace-pre-wrap" style={{ color: T.ink }}>{detail.body}</p>}
             <div className="flex gap-2 mt-6">
               <button type="button" onClick={() => openChat(detail)}
-                className="flex-1 text-sm font-semibold py-2.5 rounded-xl" style={{ background: "#F97316", color: "#fff" }}>
+                className="flex-1 text-sm font-semibold py-2.5 rounded-xl" style={{ background: "#06B6D4", color: "#fff" }}>
                 Message
               </button>
               <button type="button" onClick={() => setDetail(null)}
@@ -16402,7 +16402,7 @@ function MarketplacePostModal({ currentUser, onClose, onPublished, verifyStatuse
           <div className="text-sm font-bold" style={{ color: T.ink }}>Create post</div>
           <button type="button" onClick={publish} disabled={busy}
             className="text-sm font-semibold px-3 py-1.5 rounded-lg"
-            style={{ background: "#F97316", color: "#fff", opacity: busy ? 0.6 : 1 }}>
+            style={{ background: "#06B6D4", color: "#fff", opacity: busy ? 0.6 : 1 }}>
             {busy ? "…" : "Post"}
           </button>
         </div>
@@ -16419,9 +16419,9 @@ function MarketplacePostModal({ currentUser, onClose, onPublished, verifyStatuse
                 <button key={k.id} type="button" onClick={() => setKind(k.id)}
                   className="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-semibold"
                   style={{
-                    background: kind === k.id ? "rgba(249,115,22,0.12)" : T.panel,
-                    color: kind === k.id ? "#F97316" : T.sub,
-                    border: `1px solid ${kind === k.id ? "rgba(249,115,22,0.35)" : T.line}`,
+                    background: kind === k.id ? "rgba(6,182,212,0.12)" : T.panel,
+                    color: kind === k.id ? "#06B6D4" : T.sub,
+                    border: `1px solid ${kind === k.id ? "rgba(6,182,212,0.35)" : T.line}`,
                   }}>
                   <Icon size={16} /> {k.label}
                 </button>
@@ -16605,10 +16605,10 @@ function generateMerveilId(name, fallbackSeed) {
 const CITIZEN_TIERS = {
   Bronze:   { color: "#8A6A3A", icon: "🥉" },
   Silver:   { color: "#9CA3AF", icon: "🥈" },
-  Gold:     { color: "#D97706", icon: "🥇" },
+  Gold:     { color: "#0891B2", icon: "🥇" },
   Platinum: { color: "#38BDF8", icon: "💎" },
 };
-const ECOSYSTEM_COLORS = { pulse: "#F97316", souk: "#16A34A", work: "#D97706", world: "#0EA5E9" };
+const ECOSYSTEM_COLORS = { pulse: "#06B6D4", souk: "#16A34A", work: "#0891B2", world: "#0EA5E9" };
 function CitizenScorePanel({ currentUser }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -16688,7 +16688,7 @@ function CitizenScorePanel({ currentUser }) {
         <div className="text-xs mt-1" style={{ color: T.sub }}>{data.totalScore.toLocaleString()} total Merveil Citizen Score points</div>
         {founding.isFounding && (
           <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
-            style={{ background: "linear-gradient(135deg,#D97706,#7C3AED)", color: "#fff" }}>
+            style={{ background: "linear-gradient(135deg,#0891B2,#7C3AED)", color: "#fff" }}>
             ✨ Founding Citizen #{founding.rank || "—"} / 100
           </div>
         )}
@@ -16705,7 +16705,7 @@ function CitizenScorePanel({ currentUser }) {
                 : "Claim 50 pts once per day. Streak adds +10/day (max +70)."}
             </div>
             {(daily.streak > 0 || daily.claimedToday) && (
-              <div className="text-[11px] font-semibold mt-1" style={{ color: "#D97706" }}>
+              <div className="text-[11px] font-semibold mt-1" style={{ color: "#0891B2" }}>
                 🔥 {daily.streak || 1}-day streak{daily.claimedToday ? ` · +${daily.todayPoints} today` : ""}
               </div>
             )}
@@ -16713,7 +16713,7 @@ function CitizenScorePanel({ currentUser }) {
           <button type="button" onClick={claimDaily} disabled={claiming || daily.claimedToday}
             className="shrink-0 text-xs font-bold px-4 py-2.5 rounded-xl text-white"
             style={{
-              background: daily.claimedToday ? "#9CA3AF" : "linear-gradient(135deg,#D97706,#1F2937)",
+              background: daily.claimedToday ? "#9CA3AF" : "linear-gradient(135deg,#0891B2,#1F2937)",
               opacity: claiming ? 0.7 : 1,
             }}>
             {daily.claimedToday ? "Claimed ✓" : claiming ? "…" : `Claim +${daily.basePoints || 50}`}
@@ -16798,7 +16798,7 @@ function ComingSoonCard({ icon: Icon, title, description, dark = false }) {
         <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
           <span className="text-xs font-bold" style={{ color: dark ? "#fff" : T.ink }}>{title}</span>
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-            style={{ background: "#D97706", color: "#fff", letterSpacing: ".03em" }}>COMING SOON</span>
+            style={{ background: "#0891B2", color: "#fff", letterSpacing: ".03em" }}>COMING SOON</span>
         </div>
         <p className="text-[11px]" style={{ color: dark ? "#9CA3AF" : T.sub }}>{description}</p>
       </div>
@@ -17184,12 +17184,12 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-bold" style={{ color: T.ink }}>Professional Passport: {pct}% Complete</span>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                style={{ background: pct >= 100 ? "#1F7A4D22" : "#F9731622", color: pct >= 100 ? "#1F7A4D" : "#1F2937" }}>
+                style={{ background: pct >= 100 ? "#1F7A4D22" : "#06B6D422", color: pct >= 100 ? "#1F7A4D" : "#1F2937" }}>
                 {level === "full" ? "Full access" : level === "create" ? "Can create & list" : level === "engage" ? "Can comment & connect" : "Browse only"}
               </span>
             </div>
             <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: T.line }}>
-              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "linear-gradient(90deg,#F97316,#1F7A4D)" }} />
+              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "linear-gradient(90deg,#06B6D4,#1F7A4D)" }} />
             </div>
             {nextGoal && <div className="text-[11px] mt-1.5" style={{ color: T.sub }}>{nextGoal}</div>}
             <button
@@ -17460,13 +17460,13 @@ const M_SEGMENTS = [
 ];
 // Orange brand nodes — core of the M is pure signal orange
 const M_NODES = [
-  { cx: 8,  cy: 12, r: 2.4, fill: "#FB923C", delay: 0.16 },
-  { cx: 24, cy: 26, r: 3.4, fill: "#F97316", delay: 0.48, core: true },
-  { cx: 40, cy: 12, r: 2.4, fill: "#EA580C", delay: 0.8 },
+  { cx: 8,  cy: 12, r: 2.4, fill: "#22D3EE", delay: 0.16 },
+  { cx: 24, cy: 26, r: 3.4, fill: "#06B6D4", delay: 0.48, core: true },
+  { cx: 40, cy: 12, r: 2.4, fill: "#0891B2", delay: 0.8 },
 ];
 function MerveilLogoMark({ size = 28, glow = false, hero = false, animate = true }) {
-  // Orange-first mark: strokes use brand orange on dark, charcoal on light
-  const strokeColor = glow ? "#F97316" : "#EA580C";
+  // Cyan mark: strokes use brand cyan on dark, charcoal on light
+  const strokeColor = glow ? "#06B6D4" : "#0891B2";
   const drawDur = hero ? 0.9 : 0.55;
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" fill="none"
@@ -17926,13 +17926,13 @@ function IntroScreen({ onEnter, userName, settings }) {
             <radialGradient id="eyeGL" cx="38%" cy="38%" r="65%">
               <stop offset="0%" stopColor="#C8F0FF"/>
               <stop offset="30%" stopColor="#0EA5E9"/>
-              <stop offset="68%" stopColor="#D97706"/>
+              <stop offset="68%" stopColor="#0891B2"/>
               <stop offset="100%" stopColor="#001844"/>
             </radialGradient>
             <radialGradient id="eyeGR" cx="38%" cy="38%" r="65%">
               <stop offset="0%" stopColor="#C8F0FF"/>
               <stop offset="30%" stopColor="#0EA5E9"/>
-              <stop offset="68%" stopColor="#D97706"/>
+              <stop offset="68%" stopColor="#0891B2"/>
               <stop offset="100%" stopColor="#001844"/>
             </radialGradient>
             <filter id="glow2"><feGaussianBlur stdDeviation="3.5" result="b"/>
@@ -19136,9 +19136,9 @@ function AppInner() {
             top: "calc(4rem + var(--safe-top))",
             background: "#242526",
             color: "#E4E6EB",
-            border: "1px solid rgba(249,115,22,0.35)",
+            border: "1px solid rgba(6,182,212,0.35)",
           }}>
-          <Sparkles size={14} style={{ color: "#F97316" }} />
+          <Sparkles size={14} style={{ color: "#06B6D4" }} />
           <span className="text-xs font-medium">{aiWelcome}</span>
         </div>
       )}
@@ -19166,8 +19166,8 @@ function AppInner() {
                 onClick={() => setTab(n.id)}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg shrink-0"
                 style={{
-                  color: isActive ? "#F97316" : "rgba(228,230,235,0.75)",
-                  background: isActive ? "rgba(249,115,22,0.12)" : "transparent",
+                  color: isActive ? "#06B6D4" : "rgba(228,230,235,0.75)",
+                  background: isActive ? "rgba(6,182,212,0.12)" : "transparent",
                 }}
               >
                 <Icon size={15} /> {n.label}
@@ -19194,7 +19194,7 @@ function AppInner() {
           ) : (
             <button onClick={() => setShowAuthModal(true)}
               className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg shrink-0"
-              style={{ background: "#F97316", color: "#FFFFFF" }}>
+              style={{ background: "#06B6D4", color: "#FFFFFF" }}>
               Sign In
             </button>
           )}
@@ -19207,7 +19207,7 @@ function AppInner() {
             <Bell size={15} style={{ color: "#E4E6EB" }} />
             {(unreadCount + incomingRequests.length + missedCalls.length) > 0 && (
               <span className="absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center"
-                style={{ background: "#F97316", color: "#fff" }}>
+                style={{ background: "#06B6D4", color: "#fff" }}>
                 {(unreadCount + incomingRequests.length + missedCalls.length) > 9 ? "9+" : (unreadCount + incomingRequests.length + missedCalls.length)}
               </span>
             )}
@@ -19216,7 +19216,7 @@ function AppInner() {
             <button
               onClick={() => setShowPostModal(true)}
               className="text-[11px] md:text-xs font-bold px-2.5 md:px-3 py-1.5 rounded-lg shrink-0 whitespace-nowrap"
-              style={{ background: "linear-gradient(135deg,#F97316,#D97706)", color: "#04111F",
+              style={{ background: "linear-gradient(135deg,#06B6D4,#0891B2)", color: "#04111F",
                 fontFamily: "'Space Grotesk',sans-serif",
                 boxShadow: "0 0 14px rgba(14,165,233,.4)" }}
             >
@@ -19443,7 +19443,7 @@ function AppInner() {
         <div className="fixed left-0 z-30"
           style={{
             top:"20%", width:"3px", height:"60%",
-            background:"linear-gradient(to bottom,transparent,#F97316,transparent)",
+            background:"linear-gradient(to bottom,transparent,#06B6D4,transparent)",
             animation:"listeningEdge 3s ease-in-out infinite",
             borderRadius:"0 3px 3px 0", cursor:"pointer",
           }}
@@ -19487,25 +19487,25 @@ function AppInner() {
                 <div className="flex items-center justify-center rounded-full relative"
                   style={{
                     width:40, height:40,
-                    background: isActive ? "rgba(249,115,22,0.15)" : "transparent",
+                    background: isActive ? "rgba(6,182,212,0.15)" : "transparent",
                     transition: "all .2s ease",
                   }}>
-                  <Icon size={18} color={isActive ? "#F97316" : "#B0B3B8"} />
+                  <Icon size={18} color={isActive ? "#06B6D4" : "#B0B3B8"} />
                   {n.id === "messages" && unreadCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center"
-                      style={{ background: "#F97316", color: "#fff" }}>
+                      style={{ background: "#06B6D4", color: "#fff" }}>
                       {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                   )}
                   {n.id === "market" && tabCounts.jobs > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center"
-                      style={{ background: "#F97316", color: "#fff" }}>
+                      style={{ background: "#06B6D4", color: "#fff" }}>
                       {tabCounts.jobs > 9 ? "9+" : tabCounts.jobs}
                     </span>
                   )}
                 </div>
                 <span className="text-[9px] font-medium"
-                  style={{ color: isActive ? "#F97316" : "#B0B3B8" }}>{n.label}</span>
+                  style={{ color: isActive ? "#06B6D4" : "#B0B3B8" }}>{n.label}</span>
               </button>
             );
           })}
@@ -19744,7 +19744,7 @@ function AdminOverviewPanel() {
       <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
         {["info", "low", "elevated", "high", "critical"].map((k) => (
           <AdminStatCard key={k} label={k[0].toUpperCase() + k.slice(1)} value={data.securityEvents24h?.[k] ?? 0}
-            tone={k === "critical" ? "#DC2626" : k === "high" ? "#EA580C" : T.ink} />
+            tone={k === "critical" ? "#DC2626" : k === "high" ? "#0891B2" : T.ink} />
         ))}
       </div>
     </div>
@@ -19800,7 +19800,7 @@ function AdminSecurityPanel() {
   };
   useEffect(() => { load(); }, []);
   const revoke = async (s) => { await adminApi("console?action=revoke-session", { method: "POST", body: JSON.stringify({ sessionId: s.id }) }).catch(() => {}); load(); };
-  const sevColor = (s) => ({ critical: "#DC2626", high: "#EA580C", elevated: "#D97706", low: T.sub, info: T.sub }[s] || T.sub);
+  const sevColor = (s) => ({ critical: "#DC2626", high: "#0891B2", elevated: "#0891B2", low: T.sub, info: T.sub }[s] || T.sub);
   return (
     <div>
       {error && <div className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</div>}
@@ -19851,7 +19851,7 @@ function AdminReportsPanel() {
     await adminApi("console?action=report-decision", { method: "POST", body: JSON.stringify({ reportId: r.id, status }) }).catch((e) => setError(e.message));
     load();
   };
-  const catColor = (c) => ({ scam: "#DC2626", impersonation: "#DC2626", harassment: "#EA580C", spam: T.sub, inappropriate_content: "#EA580C", other: T.sub }[c] || T.sub);
+  const catColor = (c) => ({ scam: "#DC2626", impersonation: "#DC2626", harassment: "#0891B2", spam: T.sub, inappropriate_content: "#0891B2", other: T.sub }[c] || T.sub);
   return (
     <div>
       <div className="flex gap-1.5 mb-4">
@@ -19896,7 +19896,7 @@ function AdminFraudPanel() {
     await adminApi("console?action=citizen-status", { method: "POST", body: JSON.stringify({ citizenId: c.userId, suspended: true }) }).catch((e) => setError(e.message));
     load();
   };
-  const scoreColor = (s) => (s >= 70 ? "#DC2626" : s >= 40 ? "#EA580C" : T.sub);
+  const scoreColor = (s) => (s >= 70 ? "#DC2626" : s >= 40 ? "#0891B2" : T.sub);
   return (
     <div>
       <p className="text-xs mb-4" style={{ color: T.sub }}>
@@ -20047,7 +20047,7 @@ function AdminShell({ ctx, onSignOut }) {
           {modules.map((m) => (
             <button key={m.key} onClick={() => setActive(m.key)}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left"
-              style={{ background: active === m.key ? "rgba(249,115,22,0.15)" : "transparent", color: active === m.key ? T.signal : "#D1D5DB" }}>
+              style={{ background: active === m.key ? "rgba(6,182,212,0.15)" : "transparent", color: active === m.key ? T.signal : "#D1D5DB" }}>
               <m.icon size={14} /> {m.label}
             </button>
           ))}
