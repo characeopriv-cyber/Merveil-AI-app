@@ -2967,17 +2967,49 @@ export default async function handler(req, res) {
       if (method === "DELETE") {
         if (!user) return sendJson(res, 401, { error: "Sign in required." });
         const body = await readBody(req);
-        if (!body.postId) return sendJson(res, 400, { error: "postId required" });
+        const postId = (body && body.postId) || req.query.postId;
+        if (!postId) return sendJson(res, 400, { error: "postId required" });
         // Service role after ownership check — citizen RLS may block DELETE
         let svcDel;
         try { svcDel = adminClient(); } catch (e) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
-        const { data: existing } = await svcDel.from("world_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
-        if (!existing || existing.owner_id !== user.id) return sendJson(res, 404, { error: "Post not found." });
-        const { error } = await svcDel.from("world_posts").delete().eq("id", body.postId);
+        const { data: existing } = await svcDel.from("world_posts").select("id, owner_id").eq("id", postId).maybeSingle();
+        if (!existing || String(existing.owner_id) !== String(user.id)) {
+          return sendJson(res, 404, { error: "Post not found or not yours." });
+        }
+        await Promise.all([
+          svcDel.from("world_likes").delete().eq("world_post_id", postId),
+          svcDel.from("world_saves").delete().eq("world_post_id", postId),
+          svcDel.from("world_supers").delete().eq("world_post_id", postId),
+          svcDel.from("world_reactions").delete().eq("world_post_id", postId),
+          svcDel.from("world_post_views").delete().eq("world_post_id", postId),
+        ]).catch(() => {});
+        const { error } = await svcDel.from("world_posts").delete().eq("id", postId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
+      }
+
+      // Wipe every World post owned by the signed-in citizen (reels + feed)
+      if (method === "POST" && action === "delete-mine") {
+        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        let svcDel;
+        try { svcDel = adminClient(); } catch (e) {
+          return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+        }
+        const { data: mine } = await svcDel.from("world_posts").select("id").eq("owner_id", user.id);
+        const ids = (mine || []).map((r) => r.id);
+        if (!ids.length) return sendJson(res, 200, { ok: true, deleted: 0 });
+        await Promise.all([
+          svcDel.from("world_likes").delete().in("world_post_id", ids),
+          svcDel.from("world_saves").delete().in("world_post_id", ids),
+          svcDel.from("world_supers").delete().in("world_post_id", ids),
+          svcDel.from("world_reactions").delete().in("world_post_id", ids),
+          svcDel.from("world_post_views").delete().in("world_post_id", ids),
+        ]).catch(() => {});
+        const { error } = await svcDel.from("world_posts").delete().eq("owner_id", user.id);
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { ok: true, deleted: ids.length });
       }
 
       if (method === "POST" && action === "update") {
@@ -2989,7 +3021,7 @@ export default async function handler(req, res) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         const { data: existing } = await svcUp.from("world_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
-        if (!existing || existing.owner_id !== user.id) return sendJson(res, 404, { error: "Post not found." });
+        if (!existing || String(existing.owner_id) !== String(user.id)) return sendJson(res, 404, { error: "Post not found or not yours." });
         const fields = { updated_at: new Date().toISOString() };
         if (body.title !== undefined) fields.title = String(body.title).slice(0, 200);
         if (body.topic !== undefined) fields.topic = body.topic || "Innovation";
