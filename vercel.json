@@ -3,6 +3,6 @@
   "rewrites": [
     { "source": "/api/assistant", "destination": "/api/assistant" },
     { "source": "/api/(.*)", "destination": "/api/router" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!arena/|favicon|icons/|manifest|robots|sitemap|sw\\.js|assets/).*)", "destination": "/index.html" }
   ]
 }
