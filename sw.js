@@ -1,13 +1,49 @@
-/* Merveil AI service worker — background notifications (calls, messages, activity).
+/* Merveil AI service worker — push + force-fresh navigations (Firefox/Chrome/Safari).
  * Deploy at site root: /sw.js
- * Full closed-app delivery also needs VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY on the server.
+ * Bump CACHE_VER when shipping UI fixes so browsers drop stale shells.
  */
+const CACHE_VER = "merveil-v1-2026-08-28b";
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k !== CACHE_VER).map((k) => caches.delete(k)));
+      await self.clients.claim();
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of clients) {
+        client.postMessage({ type: "merveil:sw-updated", version: CACHE_VER });
+      }
+    })()
+  );
+});
+
+// HTML / navigations: network-first so Firefox does not keep an old index shell.
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  const isNav = req.mode === "navigate" || req.destination === "document";
+  const isHtml = url.pathname === "/" || url.pathname.endsWith(".html");
+  if (!isNav && !isHtml) return;
+
+  event.respondWith(
+    (async () => {
+      try {
+        return await fetch(req, { cache: "no-store" });
+      } catch {
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        throw new Error("offline");
+      }
+    })()
+  );
 });
 
 self.addEventListener("push", (event) => {
