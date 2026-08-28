@@ -5111,7 +5111,7 @@ const MerveilStore = {
       if (typeof window === "undefined" || !window.Capacitor?.isNativePlatform?.()) return null;
       const Cap = window.Capacitor;
       if (Cap.Plugins?.Preferences) return Cap.Plugins.Preferences;
-      const mod = await import("@capacitor/preferences").catch(() => null);
+      const mod = await import(/* @vite-ignore */ "@capacitor/preferences").catch(() => null);
       return mod?.Preferences || null;
     } catch { return null; }
   },
@@ -5271,7 +5271,7 @@ const Permissions = {
       try {
         const Cap = window.Capacitor;
         const Push = Cap?.Plugins?.PushNotifications
-          || (await import("@capacitor/push-notifications").then((m) => m.PushNotifications).catch(() => null));
+          || (await import(/* @vite-ignore */ "@capacitor/push-notifications").then((m) => m.PushNotifications).catch(() => null));
         if (!Push) {
           return { ok: false, permission: "unsupported", push: false, error: "Install @capacitor/push-notifications in the native shell." };
         }
