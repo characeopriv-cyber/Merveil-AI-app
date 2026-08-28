@@ -6,7 +6,7 @@
 <title>Sahra — Merveil Arena</title>
 <style>
   :root{
-    --bg:#2C1E14; --sand:#E8C285; --oasis:#3FBFA0; --orange:#F97316;
+    --bg:#2C1E14; --sand:#E8C285; --oasis:#3FBFA0; --orange:#06B6D4;
     --text:#FFF6E8; --dim:#D9B98A; --danger:#E5626B;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;margin:0;padding:0}
@@ -181,7 +181,7 @@ function resize(){canvas.width=innerWidth*devicePixelRatio;canvas.height=innerHe
 resize();addEventListener('resize',resize);
 
 const ROBE=['#F4EEDD','#2E3A5C','#5C2E3A','#2E5C4A','#4A3B5C'];
-const SCARF=['#F97316','#D4A24C','#3FBFA0','#818CF8','#F4EEDD'];
+const SCARF=['#06B6D4','#D4A24C','#3FBFA0','#818CF8','#F4EEDD'];
 let avatar={name:'Maryam',robe:ROBE[0],scarf:SCARF[0]};
 function buildSwatches(el,colors,key){
   el.innerHTML='';
@@ -300,7 +300,7 @@ function openLevels(){
   }
   home.classList.add('hidden');levelsScreen.classList.remove('hidden');
 }
-document.getElementById('startBtn').onclick=()=>startLevel(Math.min(levelUnlocked,30));
+document.getElementById('startBtn').onclick=()=>{ try{ArenaAudio.unlock('sahra');}catch(e){} startLevel(Math.min(levelUnlocked,30)); };
 document.getElementById('levelsBtn').onclick=openLevels;
 document.getElementById('levelsBack').onclick=()=>{levelsScreen.classList.add('hidden');home.classList.remove('hidden')};
 document.getElementById('helpOpen').onclick=()=>instructions.classList.remove('hidden');
@@ -348,7 +348,7 @@ function update(){
   }
   for(const d of drops){
     if(!d.collected&&Math.hypot(d.x-player.x,d.y-band)<22){
-      d.collected=true;
+      d.collected=true; try{ArenaAudio.sfx('collect');}catch(e){}
       ability.meter=Math.min(ability.max,ability.meter+24);
       for(let i=0;i<7;i++)particles.push({x:d.x,y:d.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,life:18,color:'#3FBFA0'});
     }
@@ -357,7 +357,7 @@ function update(){
   particles=particles.filter(pt=>pt.life>0);
   // win condition by depth for level
   const goal=180+currentLevel*35;
-  if(depth>=goal)endGame();
+  if(depth>=goal){ try{ArenaAudio.sfx('win');}catch(e){} endGame(); }
   updateHud();
 }
 function render(){
@@ -422,6 +422,102 @@ function render(){
 }
 function loop(){update();render();requestAnimationFrame(loop)}
 initGame();requestAnimationFrame(loop);
+
+
+
+
+
+
+// --- Merveil Arena audio (Web Audio API — Chrome, Safari, Firefox) ---
+// Firefox keeps AudioContext suspended until a real user gesture + resume().
+const ArenaAudio = (() => {
+  let ctx = null, master = null, started = false, loopTimer = null, muted = false, kind = "sahra";
+  function ensure() {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = muted ? 0.0001 : 0.2;
+    master.connect(ctx.destination);
+    return ctx;
+  }
+  async function resumeIfNeeded() {
+    const c = ensure();
+    if (!c) return null;
+    if (c.state === "suspended") {
+      try { await c.resume(); } catch (e) {}
+    }
+    return c;
+  }
+  function tone(freq, dur, type, gain, when) {
+    if (muted) return;
+    const c = ctx; if (!c || c.state !== "running") return;
+    const t0 = when != null ? when : c.currentTime;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.001, gain || 0.08), t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.05, dur));
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  function schedulePad(at) {
+    if (muted || !ctx || ctx.state !== "running") return;
+    const base = kind === "sahra" ? 110 : kind === "burj" ? 98 : 130.81;
+    const intervals = kind === "connecta" ? [0, 4, 7, 12] : [0, 3, 7, 10];
+    for (let i = 0; i < intervals.length; i++) {
+      const f = base * Math.pow(2, intervals[i] / 12);
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = i % 2 ? "triangle" : "sine";
+      o.frequency.value = f;
+      g.gain.value = 0.03 / (1 + i * 0.4);
+      o.connect(g); g.connect(master);
+      o.start(at);
+      o.stop(at + 3.15);
+    }
+    tone(base * 0.5, 0.16, "sine", 0.05, at);
+    tone(base * 0.5, 0.1, "sine", 0.03, at + 1.6);
+  }
+  function startBgm(k) {
+    kind = k || kind;
+    if (started) return;
+    started = true;
+    schedulePad(ctx.currentTime + 0.05);
+    loopTimer = setInterval(() => {
+      if (!ctx || muted) return;
+      if (ctx.state === "suspended") ctx.resume().catch(()=>{});
+      if (ctx.state === "running") schedulePad(ctx.currentTime + 0.02);
+    }, 3200);
+  }
+  function sfx(name) {
+    if (muted) return;
+    const c = ctx; if (!c || c.state !== "running") return;
+    const t = c.currentTime;
+    if (name === "collect") { tone(660, 0.08, "square", 0.05, t); tone(880, 0.12, "sine", 0.04, t + 0.06); }
+    else if (name === "hit") { tone(90, 0.2, "sawtooth", 0.07, t); tone(60, 0.25, "sine", 0.05, t + 0.02); }
+    else if (name === "win") { tone(523, 0.15, "triangle", 0.06, t); tone(659, 0.18, "triangle", 0.05, t + 0.12); tone(784, 0.25, "sine", 0.05, t + 0.26); }
+    else if (name === "start") { tone(220, 0.1, "triangle", 0.05, t); tone(330, 0.15, "sine", 0.04, t + 0.08); }
+    else if (name === "dash") { tone(400, 0.08, "sawtooth", 0.04, t); tone(600, 0.1, "sine", 0.03, t + 0.05); }
+  }
+  async function unlock(k) {
+    kind = k || kind;
+    ensure();
+    await resumeIfNeeded();
+    startBgm(kind);
+    sfx("start");
+  }
+  function setMuted(m) {
+    muted = !!m;
+    if (master) master.gain.value = muted ? 0.0001 : 0.2;
+  }
+  return { unlock, sfx, startBgm, ensure, resumeIfNeeded, setMuted };
+})();
+
+
 </script>
 </body>
 </html>
