@@ -5107,12 +5107,13 @@ function useIncomingCallListener(currentUser) {
  */
 const MerveilStore = {
   async _nativePrefs() {
+    // Never static/dynamic-import @capacitor/* — Vite/Rollup resolves them at
+    // build time and breaks Vercel when those packages are not installed
+    // (this is a web app, not a Capacitor shell yet). Native shell injects
+    // window.Capacitor.Plugins at runtime.
     try {
       if (typeof window === "undefined" || !window.Capacitor?.isNativePlatform?.()) return null;
-      const Cap = window.Capacitor;
-      if (Cap.Plugins?.Preferences) return Cap.Plugins.Preferences;
-      const mod = await import(/* @vite-ignore */ "@capacitor/preferences").catch(() => null);
-      return mod?.Preferences || null;
+      return window.Capacitor.Plugins?.Preferences || null;
     } catch { return null; }
   },
   async _securePlugin() {
@@ -5269,11 +5270,10 @@ const Permissions = {
     // —— Native (Capacitor) path ——
     if (this.isNative()) {
       try {
-        const Cap = window.Capacitor;
-        const Push = Cap?.Plugins?.PushNotifications
-          || (await import(/* @vite-ignore */ "@capacitor/push-notifications").then((m) => m.PushNotifications).catch(() => null));
+        // Only use runtime plugin bridge — no import("@capacitor/...") so Vite builds on Vercel.
+        const Push = window.Capacitor?.Plugins?.PushNotifications || null;
         if (!Push) {
-          return { ok: false, permission: "unsupported", push: false, error: "Install @capacitor/push-notifications in the native shell." };
+          return { ok: false, permission: "unsupported", push: false, error: "PushNotifications plugin not available on this shell." };
         }
         let perm = await Push.checkPermissions();
         if (perm.receive !== "granted") {
