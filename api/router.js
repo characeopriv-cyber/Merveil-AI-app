@@ -130,14 +130,16 @@ function parseCookies(req) {
 
 function setAdminCookie(res, token) {
   const maxAge = ADMIN_SESSION_HOURS * 60 * 60;
+  const secure = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
   res.setHeader(
     "Set-Cookie",
-    `${ADMIN_COOKIE}=${token}; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`
+    `${ADMIN_COOKIE}=${token}; Path=/api; HttpOnly; ${secure ? "Secure; " : ""}SameSite=Lax; Max-Age=${maxAge}`
   );
 }
 
 function clearAdminCookie(res) {
-  res.setHeader("Set-Cookie", `${ADMIN_COOKIE}=; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
+  const secure = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+  res.setHeader("Set-Cookie", `${ADMIN_COOKIE}=; Path=/api; HttpOnly; ${secure ? "Secure; " : ""}SameSite=Lax; Max-Age=0`);
 }
 
 // Resolves the admin session cookie into { admin, role, permissions } or
@@ -186,6 +188,7 @@ async function writeAdminAudit(adminId, action, { targetType = null, targetId = 
   }).catch(() => {});
 }
 
+
 async function logSecurityEvent(userId, eventType, { severity = "info", description = null, metadata = null } = {}) {
   const svc = adminClient();
   await svc.from("security_events").insert({
@@ -195,7 +198,31 @@ async function logSecurityEvent(userId, eventType, { severity = "info", descript
     description,
     metadata,
   }).catch(() => {});
+  // Offline admin alerts for elevated+ activity
+  const sev = String(severity || "info").toLowerCase();
+  if (["elevated", "high", "critical"].includes(sev)) {
+    notifyAdmins({
+      title: "Merveil Security",
+      body: description || eventType,
+      urgent: sev === "critical" || sev === "high",
+      data: { type: "security_event", eventType, severity: sev, url: "/merveil-admin-x9k2" },
+    }).catch(() => {});
+  }
 }
+
+/** Push all registered admin devices (Web Push + FCM). No-op if none. */
+async function notifyAdmins(payload) {
+  let svc;
+  try { svc = adminClient(); } catch { return { sent: 0 }; }
+  const { data: rows } = await svc.from("admin_push_subscriptions").select("*").limit(200);
+  if (!rows?.length) return { sent: 0 };
+  const mod = await getPushSend();
+  const results = await mod.sendToSubscriptions(rows, payload);
+  const staleIds = (results || []).filter((r) => r.stale && r.id).map((r) => r.id);
+  if (staleIds.length) await svc.from("admin_push_subscriptions").delete().in("id", staleIds);
+  return { sent: (results || []).filter((r) => r.ok).length, results };
+}
+
 
 function parseUserAgent(ua) {
   ua = ua || "";
@@ -1277,11 +1304,42 @@ export default async function handler(req, res) {
           role_label: p.role_label,
           passport_tier: p.passport_tier,
           status: presenceMap[p.id] || "offline",
+          contactRank: 0,
         }));
+        // Prioritize citizens the caller already messaged or called
+        try {
+          const contactIds = new Set();
+          const { data: myConvos } = await svcDir
+            .from("conversations")
+            .select("participant_ids")
+            .contains("participant_ids", [callerId])
+            .limit(200);
+          for (const c of myConvos || []) {
+            for (const pid of c.participant_ids || []) {
+              if (String(pid) !== String(callerId)) contactIds.add(String(pid));
+            }
+          }
+          const { data: myCalls } = await svcDir
+            .from("calls")
+            .select("caller_id, receiver_id")
+            .or(`caller_id.eq.${callerId},receiver_id.eq.${callerId}`)
+            .limit(200);
+          for (const c of myCalls || []) {
+            if (c.caller_id && String(c.caller_id) !== String(callerId)) contactIds.add(String(c.caller_id));
+            if (c.receiver_id && String(c.receiver_id) !== String(callerId)) contactIds.add(String(c.receiver_id));
+          }
+          for (const u of list) {
+            if (contactIds.has(String(u.id))) u.contactRank = 1;
+          }
+        } catch { /* ranking is best-effort */ }
         if (q) list = list.filter((p) => (p.name || "").toLowerCase().includes(q));
         list.sort((a, b) => {
+          // 1) people you already messaged/called, 2) online/busy, 3) name
+          if ((b.contactRank || 0) !== (a.contactRank || 0)) return (b.contactRank || 0) - (a.contactRank || 0);
           const rank = { online: 0, busy: 1, away: 2, offline: 3 };
-          return (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+          const r = (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+          if (r !== 0) return r;
+          return (a.name || "").localeCompare(b.name || "");
         });
         return sendJson(res, 200, { users: list });
       }
@@ -1584,6 +1642,14 @@ export default async function handler(req, res) {
       }
       if (pushAction === "subscribe" && method === "POST") {
         if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        // App Check: APP_CHECK_ENFORCE=1 rejects missing/invalid X-Firebase-AppCheck
+        try {
+          const mod = await getPushSend();
+          if (mod.requireAppCheck) {
+            const ac = await mod.requireAppCheck(req);
+            if (!ac.ok) return sendJson(res, 401, { error: ac.error || "App Check failed" });
+          }
+        } catch {}
         const body = await readBody(req);
         const platform = String(body?.platform || "web").slice(0, 32);
         // Native Capacitor: token-only path (FCM/APNs)
@@ -1901,6 +1967,12 @@ export default async function handler(req, res) {
           description: description || null,
         });
         if (error) return sendJson(res, 400, { error: error.message });
+        notifyAdmins({
+          title: "New safety report",
+          body: `${category} on ${targetType}`,
+          urgent: true,
+          data: { type: "report", category, targetType, url: "/merveil-admin-x9k2" },
+        }).catch(() => {});
         return sendJson(res, 200, { ok: true });
       }
       if (method === "GET") {
@@ -2257,6 +2329,49 @@ export default async function handler(req, res) {
       const svc = adminClient();
       const action = req.query.action;
 
+
+      // One-time bootstrap: create pending Super Admin when none exist.
+      // POST { secret, email, name } where secret === process.env.ADMIN_BOOTSTRAP_SECRET
+      if (action === "bootstrap" && method === "POST") {
+        const body = await readBody(req);
+        const secret = process.env.ADMIN_BOOTSTRAP_SECRET || "";
+        if (!secret || body?.secret !== secret) {
+          return sendJson(res, 403, { error: "Bootstrap not available." });
+        }
+        const { count } = await svc.from("admin_users").select("*", { count: "exact", head: true }).eq("status", "active");
+        if ((count || 0) > 0) return sendJson(res, 400, { error: "An active admin already exists. Use Administrators → invite." });
+        const email = String(body.email || "admin@merveil.ai").toLowerCase().trim();
+        const name = String(body.name || "Founder Admin").trim();
+        let { data: role } = await svc.from("admin_roles").select("id").eq("key", "super_admin").maybeSingle();
+        if (!role) {
+          const ins = await svc.from("admin_roles").insert({ key: "super_admin", name: "Super Admin", permissions: ["*"] }).select("id").maybeSingle();
+          role = ins.data;
+        }
+        if (!role?.id) return sendJson(res, 500, { error: "Could not ensure super_admin role." });
+        const activationCode = newActivationCode();
+        const { data: existing } = await svc.from("admin_users").select("id, status").eq("email", email).maybeSingle();
+        if (existing?.status === "active") return sendJson(res, 400, { error: "That email is already an active admin." });
+        if (existing) {
+          await svc.from("admin_users").update({
+            activation_code: activationCode,
+            activation_expires_at: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+            status: "pending",
+            role_id: role.id,
+            name,
+          }).eq("id", existing.id);
+        } else {
+          await svc.from("admin_users").insert({
+            email,
+            name,
+            status: "pending",
+            role_id: role.id,
+            activation_code: activationCode,
+            activation_expires_at: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+          });
+        }
+        return sendJson(res, 200, { ok: true, email, activationCode, hint: "Open /merveil-admin-x9k2 → Activate account" });
+      }
+
       if (action === "activate" && method === "POST") {
         const body = await readBody(req);
         const { activationCode, password, name } = body || {};
@@ -2361,6 +2476,103 @@ export default async function handler(req, res) {
       const svc = adminClient();
       const action = req.query.action;
 
+      
+      // Admin AI assist — ops/moderation helper (admin session, no citizen AI limits)
+      if (action === "assistant" && method === "POST") {
+        if (!hasPermission(ctx, "analytics.read") && ctx.role !== "super_admin") {
+          return sendJson(res, 403, { error: "Not authorized." });
+        }
+        const body = await readBody(req);
+        const messages = Array.isArray(body?.messages) ? body.messages : [];
+        const cleaned = messages
+          .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+          .map((m) => ({ role: m.role, content: String(m.content).slice(0, 8000) }))
+          .slice(-20);
+        if (!cleaned.length) return sendJson(res, 400, { error: "messages required" });
+        const system = body?.system || [
+          "You are Merveil Admin AI, an operations assistant for the Merveil Control Center.",
+          "Help with moderation decisions, risk interpretation, passport verification review, World content policy, and summarizing security events.",
+          "Be concise, factual, and conservative. Never invent citizen data. Never claim you took an action in the database — suggest the human use the console buttons.",
+          "If asked to suspend or delete, explain the recommended steps in the Admin UI rather than pretending you already did it.",
+        ].join(" ");
+        const apiUrl = (process.env.AI_API_URL || process.env.XAI_API_URL || "https://api.x.ai/v1").replace(/\/$/, "");
+        const apiKey = process.env.AI_API_KEY || process.env.XAI_API_KEY || process.env.OPENAI_API_KEY || "";
+        const model = process.env.AI_MODEL || process.env.XAI_MODEL || "grok-2-latest";
+        if (!apiKey) return sendJson(res, 503, { error: "AI_API_KEY not configured on server." });
+        try {
+          const aiRes = await fetch(`${apiUrl}/chat/completions`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model,
+              max_tokens: Math.min(Number(body?.maxTokens) || 800, 1200),
+              messages: [{ role: "system", content: system }, ...cleaned],
+            }),
+          });
+          const aiData = await aiRes.json().catch(() => ({}));
+          if (!aiRes.ok) {
+            return sendJson(res, 502, { error: aiData?.error?.message || `AI upstream ${aiRes.status}` });
+          }
+          const reply = aiData?.choices?.[0]?.message?.content || "";
+          await writeAdminAudit(ctx.admin.id, "admin_ai_query", { riskLevel: "low", details: { chars: cleaned.reduce((n, m) => n + m.content.length, 0) } });
+          return sendJson(res, 200, { reply });
+        } catch (e) {
+          return sendJson(res, 502, { error: e.message || "AI request failed" });
+        }
+      }
+
+      // Register this browser/device for offline admin activity push
+      if (action === "push-subscribe" && method === "POST") {
+        const body = await readBody(req);
+        const endpoint = body?.endpoint || null;
+        const fcmToken = body?.fcmToken || body?.token || null;
+        if (!endpoint && !fcmToken) return sendJson(res, 400, { error: "endpoint or fcmToken required" });
+        const row = {
+          admin_id: ctx.admin.id,
+          endpoint: endpoint || null,
+          p256dh: body?.keys?.p256dh || body?.p256dh || null,
+          auth: body?.keys?.auth || body?.auth || null,
+          fcm_token: fcmToken || null,
+          platform: body?.platform || (fcmToken ? "fcm" : "web"),
+          updated_at: new Date().toISOString(),
+        };
+        if (endpoint) {
+          const { data: existing } = await svc.from("admin_push_subscriptions").select("id").eq("endpoint", endpoint).maybeSingle();
+          if (existing) await svc.from("admin_push_subscriptions").update(row).eq("id", existing.id);
+          else await svc.from("admin_push_subscriptions").insert({ ...row, created_at: new Date().toISOString() });
+        } else if (fcmToken) {
+          const { data: existing } = await svc.from("admin_push_subscriptions").select("id").eq("fcm_token", fcmToken).maybeSingle();
+          if (existing) await svc.from("admin_push_subscriptions").update(row).eq("id", existing.id);
+          else await svc.from("admin_push_subscriptions").insert({ ...row, created_at: new Date().toISOString() });
+        }
+        await writeAdminAudit(ctx.admin.id, "admin_push_subscribed", { riskLevel: "low" });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (action === "push-unsubscribe" && method === "POST") {
+        const body = await readBody(req);
+        if (body?.endpoint) await svc.from("admin_push_subscriptions").delete().eq("admin_id", ctx.admin.id).eq("endpoint", body.endpoint);
+        else await svc.from("admin_push_subscriptions").delete().eq("admin_id", ctx.admin.id);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (action === "push-status" && method === "GET") {
+        const mod = await getPushSend();
+        const cfg = mod.pushConfigured?.() || { fcm: false, vapid: false, any: false };
+        const { count } = await svc.from("admin_push_subscriptions").select("*", { count: "exact", head: true }).eq("admin_id", ctx.admin.id);
+        return sendJson(res, 200, { configured: cfg, subscriptions: count || 0, vapidPublicKey: process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || null });
+      }
+
+      if (action === "push-test" && method === "POST") {
+        const result = await notifyAdmins({
+          title: "Merveil Admin",
+          body: "Test alert — offline notifications are working.",
+          urgent: false,
+          data: { type: "test", url: "/merveil-admin-x9k2" },
+        });
+        return sendJson(res, 200, { ok: true, ...result });
+      }
+
       if (action === "overview" && method === "GET") {
         if (!hasPermission(ctx, "analytics.read") && ctx.role !== "super_admin") return sendJson(res, 403, { error: "Not authorized." });
         const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -2448,9 +2660,22 @@ export default async function handler(req, res) {
 
       if (action === "security-events" && method === "GET") {
         if (!hasPermission(ctx, "security.alerts.read") && ctx.role !== "super_admin") return sendJson(res, 403, { error: "Not authorized." });
-        const { data, error } = await svc.from("security_events").select("id, user_id, event_type, severity, description, created_at").order("created_at", { ascending: false }).limit(100);
+        const { data, error } = await svc.from("security_events")
+          .select("id, user_id, event_type, severity, description, metadata, created_at")
+          .order("created_at", { ascending: false }).limit(150);
         if (error) return sendJson(res, 400, { error: error.message });
-        return sendJson(res, 200, { events: data || [] });
+        const uids = [...new Set((data || []).map((e) => e.user_id).filter(Boolean))];
+        const { data: profiles } = uids.length
+          ? await svc.from("profiles").select("id, name, junction_id, email").in("id", uids)
+          : { data: [] };
+        const byUser = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+        const events = (data || []).map((e) => ({
+          ...e,
+          citizen: byUser[e.user_id]
+            ? { id: e.user_id, name: byUser[e.user_id].name, junction_id: byUser[e.user_id].junction_id, email: byUser[e.user_id].email }
+            : null,
+        }));
+        return sendJson(res, 200, { events });
       }
 
       if (action === "sessions" && method === "GET") {
@@ -2471,9 +2696,20 @@ export default async function handler(req, res) {
 
       if (action === "audit-log" && method === "GET") {
         if (!hasPermission(ctx, "audit.read") && ctx.role !== "super_admin") return sendJson(res, 403, { error: "Not authorized." });
-        const { data, error } = await svc.from("admin_audit_log").select("id, admin_id, action, target_type, target_id, details, risk_level, created_at").order("created_at", { ascending: false }).limit(100);
+        const { data, error } = await svc.from("admin_audit_log")
+          .select("id, admin_id, action, target_type, target_id, details, risk_level, created_at")
+          .order("created_at", { ascending: false }).limit(150);
         if (error) return sendJson(res, 400, { error: error.message });
-        return sendJson(res, 200, { log: data || [] });
+        const adminIds = [...new Set((data || []).map((r) => r.admin_id).filter(Boolean))];
+        const { data: admins } = adminIds.length
+          ? await svc.from("admin_users").select("id, name, email").in("id", adminIds)
+          : { data: [] };
+        const byAdmin = Object.fromEntries((admins || []).map((a) => [a.id, a]));
+        const log = (data || []).map((r) => ({
+          ...r,
+          admin: byAdmin[r.admin_id] ? { id: r.admin_id, name: byAdmin[r.admin_id].name, email: byAdmin[r.admin_id].email } : null,
+        }));
+        return sendJson(res, 200, { log });
       }
 
       if (action === "reports" && method === "GET") {
@@ -2675,6 +2911,73 @@ export default async function handler(req, res) {
       // Real call metadata for admin visibility (doc 3 §12-13) — never the
       // audio/video itself, just what the admin console already surfaces
       // for every other resource: who, when, how long, what status.
+      
+      if (action === "world-moderation" && method === "GET") {
+        if (!hasPermission(ctx, "safety.reports.read") && ctx.role !== "super_admin") return sendJson(res, 403, { error: "Not authorized." });
+        const { data, error } = await svc.from("world_posts")
+          .select("id, title, topic, country, owner_id, video_url, created_at, likes_count, views, content_origin")
+          .order("created_at", { ascending: false }).limit(80);
+        if (error) return sendJson(res, 400, { error: error.message });
+        const ownerIds = [...new Set((data || []).map((p) => p.owner_id).filter(Boolean))];
+        const { data: profiles } = ownerIds.length
+          ? await svc.from("profiles").select("id, name, junction_id, suspended").in("id", ownerIds)
+          : { data: [] };
+        const byId = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+        return sendJson(res, 200, { posts: (data || []).map((p) => ({ ...p, owner: byId[p.owner_id] || null })) });
+      }
+
+      if (action === "world-delete" && method === "POST") {
+        if (!hasPermission(ctx, "safety.reports.update") && ctx.role !== "super_admin") return sendJson(res, 403, { error: "Not authorized." });
+        const body = await readBody(req);
+        const postId = body?.postId;
+        if (!postId) return sendJson(res, 400, { error: "postId required" });
+        await Promise.all([
+          svc.from("world_likes").delete().eq("world_post_id", postId),
+          svc.from("world_saves").delete().eq("world_post_id", postId),
+          svc.from("world_supers").delete().eq("world_post_id", postId),
+        ]).catch(() => {});
+        const { error } = await svc.from("world_posts").delete().eq("id", postId);
+        if (error) return sendJson(res, 400, { error: error.message });
+        await writeAdminAudit(ctx.admin.id, "world_post_deleted", { targetType: "world_post", targetId: postId, riskLevel: "medium" });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (action === "verifications" && method === "GET") {
+        if (!hasPermission(ctx, "support.accounts.read") && ctx.role !== "super_admin") return sendJson(res, 403, { error: "Not authorized." });
+        const { data, error } = await svc.from("verifications")
+          .select("id, user_id, type, status, created_at, reviewed_at, note")
+          .order("created_at", { ascending: false }).limit(100);
+        if (error) {
+          // Table may use different name — try verification_requests
+          const alt = await svc.from("verification_requests").select("*").order("created_at", { ascending: false }).limit(100);
+          if (alt.error) return sendJson(res, 200, { items: [], note: error.message });
+          return sendJson(res, 200, { items: alt.data || [] });
+        }
+        const ids = [...new Set((data || []).map((v) => v.user_id).filter(Boolean))];
+        const { data: profiles } = ids.length
+          ? await svc.from("profiles").select("id, name, email, junction_id").in("id", ids)
+          : { data: [] };
+        const byId = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+        return sendJson(res, 200, { items: (data || []).map((v) => ({ ...v, profile: byId[v.user_id] || null })) });
+      }
+
+      if (action === "verification-review" && method === "POST") {
+        if (!hasPermission(ctx, "support.cases.update") && ctx.role !== "super_admin") return sendJson(res, 403, { error: "Not authorized." });
+        const body = await readBody(req);
+        const { id, status, note } = body || {};
+        if (!id || !["verified", "rejected", "pending"].includes(status)) {
+          return sendJson(res, 400, { error: "id and status (verified|rejected|pending) required." });
+        }
+        const patch = { status, reviewed_at: new Date().toISOString(), note: note || null };
+        let { error } = await svc.from("verifications").update(patch).eq("id", id);
+        if (error) {
+          const alt = await svc.from("verification_requests").update(patch).eq("id", id);
+          if (alt.error) return sendJson(res, 400, { error: alt.error.message });
+        }
+        await writeAdminAudit(ctx.admin.id, "verification_reviewed", { targetType: "verification", targetId: id, details: { status }, riskLevel: "medium" });
+        return sendJson(res, 200, { ok: true });
+      }
+
       if (action === "calls-recent" && method === "GET") {
         if (!hasPermission(ctx, "security.sessions.read") && !hasPermission(ctx, "analytics.read") && ctx.role !== "super_admin") {
           return sendJson(res, 403, { error: "Not authorized." });
