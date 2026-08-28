@@ -151,6 +151,7 @@ import {
   ArrowLeft,
   CreditCard,
   Sparkles,
+  Bell,
   Loader2,
   Phone,
   Bookmark,
@@ -391,6 +392,13 @@ const FONT_IMPORT = `
   animation: tabFadeIn 0.28s ease-out;
 }
 
+/* firefox-presentation — normal feed layout across Gecko/Blink/WebKit */
+html { -moz-text-size-adjust: 100%; text-size-adjust: 100%; }
+* { scrollbar-width: thin; }
+video { max-width: 100%; object-fit: cover; }
+@supports (-moz-appearance: none) {
+  .overflow-y-auto, .overflow-auto { scrollbar-gutter: stable; }
+}
 @keyframes swipeHint {
   0%, 100% { transform: translateY(0); opacity: 0.7; }
   50% { transform: translateY(-8px); opacity: 1; }
@@ -1329,7 +1337,7 @@ const EXAMPLE_TRANSACTIONS = [
 ];
 
 const LISTER_TYPE_STYLE = {
-  OWNER_LISTING: { label: "Owner listing", color: T.navy2 },
+  OWNER_LISTING: { label: "Listed by seller", color: T.navy2 },
   REFERRAL_PARTNER: { label: "Referral partner", color: "#8A6E1B" },
   LICENSED_BROKER: { label: "Licensed broker", color: T.signal },
   DEVELOPER: { label: "Verified developer", color: T.ink },
@@ -5003,7 +5011,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd }) {
                   { label: "Share Property", sub: "Bring a listing into the orbit" },
                   { label: "Share Passport", sub: "Open the other person's Passport" },
                 ].map((row) => (
-                  <button key={row.label} onClick={() => alert(`${row.label} is coming in the next Call Intelligence phase.`)}
+                  <button key={row.label} onClick={() => alert(`${row.label} is not available on this call yet.`)}
                     className="flex items-center justify-between px-3 py-2.5 rounded-xl text-left" style={{ background: "rgba(255,255,255,0.04)" }}>
                     <div>
                       <div className="text-xs font-semibold text-white">{row.label}</div>
@@ -5338,6 +5346,28 @@ const Permissions = {
     }
     try {
       const reg = await navigator.serviceWorker.register("/sw.js").catch(() => null);
+      // Firefox often keeps an old page shell; when a new SW activates, soft-reload once.
+      if (!window.__merveilSwReloadHook) {
+        window.__merveilSwReloadHook = true;
+        navigator.serviceWorker.addEventListener("message", (ev) => {
+          if (ev?.data?.type === "merveil:sw-updated") {
+            const key = "merveil_sw_ver";
+            const prev = sessionStorage.getItem(key);
+            if (prev !== ev.data.version) {
+              sessionStorage.setItem(key, ev.data.version);
+              // One controlled reload so Marketplace / World / Arena fixes appear in all browsers
+              window.location.reload();
+            }
+          }
+        });
+        // Also catch controllerchange (Chrome + Firefox)
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (window.__merveilControllerReload) return;
+          window.__merveilControllerReload = true;
+          window.location.reload();
+        });
+      }
+
       const vapidRes = await fetch("/api/push?action=vapid-public").then((r) => r.json()).catch(() => ({}));
       if (!vapidRes.publicKey || !reg) return { ok: true, permission: "granted", push: false };
       let sub = await reg.pushManager.getSubscription();
@@ -5619,7 +5649,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
 
   if (!current) return null;
 
-  const listerLabel = LISTER_TYPE_STYLE[p.listedAs]?.label || "Owner";
+  const listerLabel = (p.owner_name || p.lister_name || LISTER_TYPE_STYLE[p.listedAs]?.label || "Citizen");
 
   return (
     <div className="relative h-full w-full overflow-hidden select-none" style={{ background: "#000" }}
@@ -5778,7 +5808,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
                 <div className="text-xs font-semibold" style={{ color: "#fff" }}>{listerLabel}</div>
                 <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.5)" }}>{p.area}, {p.emirate}</div>
               </div>
-              <button onClick={onChat} className="text-[11px] font-semibold px-3 py-1.5 rounded-full" style={{ background: "#06B6D4", color: "#fff" }}>Connect</button>
+              <button onClick={onChat} className="text-[11px] font-semibold px-3 py-1.5 rounded-full" style={{ background: "#06B6D4", color: "#fff" }}>Message</button>
             </div>
           </div>
         </div>
@@ -6461,7 +6491,6 @@ function PostServiceModal({ onClose, statuses, onPublish }) {
 function ServicesView({ providers, statuses, onChat, onPublishService, currentUser, onRequireSignIn }) {
   const [filter, setFilter] = useState("All");
   const [showPost, setShowPost] = useState(false);
-  const [callComingSoon, setCallComingSoon] = useState(false);
   const list = providers;
 
   const cats = ["All", ...SERVICE_CATEGORIES];
@@ -6511,7 +6540,10 @@ function ServicesView({ providers, statuses, onChat, onPublishService, currentUs
             <ServiceCard s={s} onChat={onChat} onCall={async () => {
               if (!currentUser) { onRequireSignIn?.(); return; }
               const receiverId = s.owner_id || s.user_id || s.provider_id;
-              if (!receiverId) { setCallComingSoon(true); return; }
+              if (!receiverId) {
+                alert("This provider has no Merveil account linked yet — use Message instead.");
+                return;
+              }
               try {
                 const res = await fetch("/api/calls?action=create", {
                   method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
@@ -6547,16 +6579,7 @@ function ServicesView({ providers, statuses, onChat, onPublishService, currentUs
         />
       )}
 
-      {callComingSoon && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setCallComingSoon(false)}>
-          <div className="rounded-2xl p-5 max-w-xs text-center" style={{ background: "#fff" }} onClick={(e) => e.stopPropagation()}>
-            <Clock size={28} color={T.sub} className="mx-auto mb-2" />
-            <div className="text-sm font-bold mb-1" style={{ color: T.ink }}>Calling service providers — coming soon</div>
-            <div className="text-xs mb-3" style={{ color: T.sub }}>Real calling is live for people you're connected with on Merveil. Calling a service provider directly is next.</div>
-            <button onClick={() => setCallComingSoon(false)} className="text-xs font-semibold px-4 py-2 rounded-full" style={{ background: T.navy, color: "#fff" }}>Got it</button>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }
@@ -6998,6 +7021,8 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
       .map((u) => ({ ...u, status: presenceMap[u.id] || u.status || "offline" }));
     if (q) list = list.filter((u) => (u.name || "").toLowerCase().includes(q));
     list.sort((a, b) => {
+      // Already messaged/called first, then online, then name
+      if ((b.contactRank || 0) !== (a.contactRank || 0)) return (b.contactRank || 0) - (a.contactRank || 0);
       const rank = { online: 0, busy: 1, offline: 2 };
       const r = (rank[a.status] ?? 2) - (rank[b.status] ?? 2);
       if (r !== 0) return r;
@@ -9960,7 +9985,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
             <button onClick={(e) => { e.stopPropagation(); onChat?.(); }}
               className="text-xs font-semibold px-3.5 py-2 rounded-full flex items-center gap-1.5"
               style={{ background: "#06B6D4", color: "#fff" }}>
-              <MessageCircle size={13}/> Connect
+              <MessageCircle size={13}/> Message
             </button>
           </div>
 
@@ -10355,7 +10380,15 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { alert(data.error || "Couldn't delete."); return; }
-      setPosts((prev) => prev.filter((p) => p.id !== post.id));
+      setPosts((prev) => {
+        const next = prev.filter((p) => String(p.id) !== String(post.id));
+        // Keep reel index valid so the feed doesn't freeze after delete
+        setWorldReelIndex((idx) => {
+          if (!next.length) return 0;
+          return Math.min(idx, next.length - 1);
+        });
+        return next;
+      });
     } catch {
       alert("Couldn't delete — check your connection.");
     }
@@ -10410,7 +10443,23 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
 
   const [connectStates, setConnectStates] = useState({}); // ownerId -> pending|accepted|busy
 
-  // Real connection request (not just open chat). Other user must Accept in Connect.
+  // Message = open/create conversation (chat). Connection = social request to My Circle.
+  const messageWithPoster = async (post) => {
+    if (!currentUser) { onSignIn?.(); return; }
+    if (!post.owner_id) return;
+    if (String(post.owner_id) === String(currentUser.id)) return;
+    try {
+      await fetch("/api/conversations", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantIds: [currentUser.id, post.owner_id] }),
+      });
+      onChat?.();
+    } catch {
+      alert("Couldn't open the conversation.");
+    }
+  };
+
+  // Real connection request (not chat). Other user must Accept under Connect → requests.
   const connectWithPoster = async (post) => {
     if (!currentUser) { onSignIn?.(); return; }
     if (!post.owner_id) return;
@@ -10428,7 +10477,6 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       [oid]: result.status === "accepted" || result.alreadyConnected ? "accepted" : "pending",
     }));
     if (result.status === "accepted" || result.alreadyConnected) {
-      // Already friends — open chat
       try {
         await fetch("/api/conversations", {
           method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
@@ -10437,7 +10485,6 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         onChat?.();
       } catch {}
     } else {
-      // Pending — other person must accept under Connect → requests
       alert("Connection request sent. They’ll appear in My Circle after they accept.");
     }
   };
@@ -10511,7 +10558,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
                 onToggleLike={toggleLike} onToggleSuper={toggleSuper} onToggleSave={() => toggleSave(post)}
                 onCall={(mode) => callPoster(post, mode)}
                 onOpenCreator={(uid) => uid && setViewingCreatorId(uid)}
-                onChat={() => connectWithPoster(post)}
+                onChat={() => messageWithPoster(post)}
                 onEdit={(p) => { setEditingPost(p); setShowPost(true); }}
                 onDelete={deleteWorldPost}
               />
@@ -11673,10 +11720,10 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
                   </button>
                   {musicTracks.map((t) => (
                     <button key={t.id} type="button" onClick={() => setMusicTrackId(t.id)} disabled={!t.audio_url}
-                      title={!t.audio_url ? "Coming soon — track not uploaded yet" : t.title}
+                      title={!t.audio_url ? "Track not available yet" : t.title}
                       className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full capitalize"
                       style={{ background: musicTrackId === t.id ? T.ink : T.panel, color: musicTrackId === t.id ? "#fff" : (t.audio_url ? T.sub : "#B8C2D0") }}>
-                      {t.genre} {!t.audio_url && "· soon"}
+                      {t.genre} {!t.audio_url && "· unavailable"}
                     </button>
                   ))}
                 </div>
@@ -16306,29 +16353,51 @@ function MarketplaceFeedView({
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((it) => (
-            <button key={it.id} type="button" onClick={() => setDetail(it)}
-              className="text-left rounded-xl p-4 transition-colors"
+            <div key={it.id} role="button" tabIndex={0}
+              onClick={() => setDetail(it)}
+              onKeyDown={(e) => { if (e.key === "Enter") setDetail(it); }}
+              className="text-left rounded-xl p-4 transition-colors cursor-pointer"
               style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
-                  style={{
-                    background: it.kind === "job" ? "rgba(6,182,212,0.12)" : "rgba(34,197,94,0.12)",
-                    color: it.kind === "job" ? "#06B6D4" : "#16A34A",
-                  }}>
-                  {it.kind === "job" ? "Job" : "Service"}
-                </span>
-                {it.category && <span className="text-[10px]" style={{ color: T.sub }}>{it.category}</span>}
+              {/* LinkedIn-style actor header */}
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
+                  style={{ background: it.kind === "job" ? "#06B6D4" : "#16A34A" }}>
+                  {(it.title || "M")[0]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-bold truncate" style={{ color: T.ink, fontFamily: "Space Grotesk,sans-serif" }}>{it.title}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                      style={{
+                        background: it.kind === "job" ? "rgba(6,182,212,0.12)" : "rgba(34,197,94,0.12)",
+                        color: it.kind === "job" ? "#06B6D4" : "#16A34A",
+                      }}>
+                      {it.kind === "job" ? "Job" : "Service"}
+                    </span>
+                  </div>
+                  {it.subtitle && <div className="text-xs mt-0.5" style={{ color: T.sub }}>{it.subtitle}</div>}
+                  {it.category && <div className="text-[10px] mt-0.5" style={{ color: T.sub }}>{it.category}</div>}
+                </div>
               </div>
-              <div className="text-sm font-bold" style={{ color: T.ink, fontFamily: "Space Grotesk,sans-serif" }}>{it.title}</div>
-              {it.subtitle && <div className="text-xs mt-0.5" style={{ color: T.sub }}>{it.subtitle}</div>}
-              {it.body && <p className="text-xs mt-2 line-clamp-3" style={{ color: T.sub }}>{it.body}</p>}
-              {it.salary && <div className="text-xs font-semibold mt-2" style={{ color: "#06B6D4" }}>{it.salary}</div>}
-              <div className="flex items-center gap-3 mt-3">
-                <span className="text-[10px]" style={{ color: T.sub }}
-                  onClick={(e) => { e.stopPropagation(); openChat(it); }}>Message</span>
-                {it.views > 0 && <span className="text-[10px]" style={{ color: T.sub }}>{it.views} views</span>}
+              {it.body && <p className="text-sm leading-relaxed line-clamp-4 mb-2" style={{ color: T.ink }}>{it.body}</p>}
+              {it.salary && <div className="text-sm font-semibold mb-2" style={{ color: "#06B6D4" }}>{it.salary}</div>}
+              {/* LinkedIn-style action row */}
+              <div className="flex items-center gap-1 pt-2" style={{ borderTop: `1px solid ${T.line}` }}>
+                <button type="button" className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-lg"
+                  style={{ color: T.sub }}
+                  onClick={(e) => { e.stopPropagation(); openChat(it); }}>
+                  <MessageCircle size={14} /> Message
+                </button>
+                <button type="button" className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-lg"
+                  style={{ color: T.sub }}
+                  onClick={(e) => { e.stopPropagation(); setDetail(it); }}>
+                  <Eye size={14} /> View
+                </button>
+                {it.views > 0 && (
+                  <span className="text-[10px] px-2" style={{ color: T.sub }}>{it.views} views</span>
+                )}
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -16894,7 +16963,7 @@ function ComingSoonCard({ icon: Icon, title, description, dark = false }) {
         <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
           <span className="text-xs font-bold" style={{ color: dark ? "#fff" : T.ink }}>{title}</span>
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-            style={{ background: "#0891B2", color: "#fff", letterSpacing: ".03em" }}>COMING SOON</span>
+            style={{ background: "#0891B2", color: "#fff", letterSpacing: ".03em" }}>SOON</span>
         </div>
         <p className="text-[11px]" style={{ color: dark ? "#9CA3AF" : T.sub }}>{description}</p>
       </div>
@@ -17322,8 +17391,7 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
             <b>Three real access levels</b> — not just badges. Each one actually unlocks different parts of Merveil.
           </p>
           <p className="text-xs mb-5 max-w-2xl" style={{ color: T.sub }}>
-            Billing isn't connected yet, so switching tiers here is free for now — useful to try out what each
-            level unlocks. Once payments are wired, this becomes a real subscription.
+            Tier switching is free while you explore what each seat unlocks on Merveil.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {Object.values(PASSPORT_TIERS).map((t) => {
@@ -19970,8 +20038,13 @@ function AdminSecurityPanel() {
         {events.map((e) => (
           <div key={e.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border" style={{ borderColor: T.line, background: "#fff" }}>
             <div className="min-w-0">
-              <div className="text-sm font-medium" style={{ color: sevColor(e.severity) }}>{e.event_type}</div>
+              <div className="text-sm font-medium" style={{ color: sevColor(e.severity) }}>{e.event_type} <span className="text-[10px] font-normal uppercase" style={{ color: T.sub }}>{e.severity}</span></div>
               <div className="text-xs mt-0.5" style={{ color: T.sub }}>{e.description || "—"}</div>
+              {(e.citizen || e.user_id) && (
+                <div className="text-[10px] mt-0.5" style={{ color: T.sub }}>
+                  {e.citizen ? `${e.citizen.name || "Citizen"} · ${e.citizen.junction_id || e.citizen.email || ""}` : `user ${String(e.user_id).slice(0, 8)}…`}
+                </div>
+              )}
             </div>
             <div className="text-[10px] shrink-0" style={{ color: T.sub }}>{timeAgo(e.created_at)}</div>
           </div>
@@ -20109,19 +20182,58 @@ function AdminPropertyPanel() {
 
 function AdminAuditPanel() {
   const [log, setLog] = useState([]);
-  useEffect(() => { adminApi("console?action=audit-log").then((d) => setLog(d.log || [])).catch(() => {}); }, []);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState("all");
+  useEffect(() => {
+    adminApi("console?action=audit-log")
+      .then((d) => setLog(d.log || []))
+      .catch((e) => setError(e.message));
+  }, []);
+  const riskColor = (r) => ({ high: "#DC2626", medium: "#B45309", low: T.sub }[r] || T.sub);
+  const rows = filter === "all" ? log : log.filter((l) => (l.risk_level || "low") === filter);
   return (
-    <div className="flex flex-col gap-2">
-      {log.map((l) => (
-        <div key={l.id} className="p-3 rounded-xl border text-sm" style={{ borderColor: T.line, background: "#fff" }}>
-          <div className="flex items-center justify-between">
-            <span style={{ color: T.ink, fontWeight: 600 }}>{l.action}</span>
-            <span className="text-[10px]" style={{ color: T.sub }}>{timeAgo(l.created_at)}</span>
+    <div>
+      <p className="text-xs mb-3" style={{ color: T.sub }}>
+        Immutable record of every admin action — who did what, on which target, and risk level.
+      </p>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {["all", "high", "medium", "low"].map((f) => (
+          <button key={f} type="button" onClick={() => setFilter(f)}
+            className="text-[11px] font-semibold px-2.5 py-1 rounded-full capitalize"
+            style={{ background: filter === f ? "rgba(6,182,212,0.15)" : T.panel, color: filter === f ? "#06B6D4" : T.sub }}>
+            {f}
+          </button>
+        ))}
+      </div>
+      {error && <div className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</div>}
+      <div className="flex flex-col gap-2">
+        {rows.map((l) => (
+          <div key={l.id} className="p-3 rounded-xl border text-sm" style={{ borderColor: T.line, background: "#fff" }}>
+            <div className="flex items-center justify-between gap-2">
+              <span style={{ color: T.ink, fontWeight: 600 }}>{l.action}</span>
+              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
+                style={{ color: riskColor(l.risk_level), background: `${riskColor(l.risk_level)}18` }}>
+                {l.risk_level || "low"}
+              </span>
+            </div>
+            <div className="text-xs mt-1" style={{ color: T.sub }}>
+              {l.admin?.name || l.admin?.email || "Admin"} · {timeAgo(l.created_at)}
+              {l.created_at ? ` · ${new Date(l.created_at).toLocaleString()}` : ""}
+            </div>
+            {l.target_type && (
+              <div className="text-xs mt-0.5" style={{ color: T.sub }}>
+                Target: {l.target_type}{l.target_id ? ` · ${String(l.target_id).slice(0, 36)}` : ""}
+              </div>
+            )}
+            {l.details && (
+              <pre className="text-[10px] mt-2 p-2 rounded overflow-x-auto" style={{ background: T.panel, color: T.sub, maxHeight: 80 }}>
+                {typeof l.details === "string" ? l.details : JSON.stringify(l.details)}
+              </pre>
+            )}
           </div>
-          {l.target_type && <div className="text-xs mt-0.5" style={{ color: T.sub }}>{l.target_type} · {l.target_id}</div>}
-        </div>
-      ))}
-      {log.length === 0 && <div className="text-sm text-center py-6" style={{ color: T.sub }}>No admin actions recorded yet.</div>}
+        ))}
+        {rows.length === 0 && <div className="text-sm text-center py-6" style={{ color: T.sub }}>No admin actions recorded yet.</div>}
+      </div>
     </div>
   );
 }
@@ -20129,19 +20241,19 @@ function AdminAuditPanel() {
 function AdminAdminsPanel() {
   const [admins, setAdmins] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: "", name: "", roleKey: "support_admin" });
+  const [form, setForm] = useState({ email: "", name: "", roleKey: "support" });
   const [issuedCode, setIssuedCode] = useState(null);
   const [error, setError] = useState("");
   const load = () => adminApi("console?action=admins").then((d) => setAdmins(d.admins || [])).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
-  const roles = ["super_admin", "security_admin", "safety_admin", "identity_admin", "fraud_admin", "property_admin", "ecosystem_admin", "analytics_admin", "support_admin", "auditor"];
+  const roles = ["super_admin", "support", "safety", "ops"];
   const create = async () => {
     if (!form.email || !form.name) { setError("Email and name are required."); return; }
     try {
       const { activationCode } = await adminApi("console?action=create-admin", { method: "POST", body: JSON.stringify(form) });
       setIssuedCode(activationCode);
       setShowCreate(false);
-      setForm({ email: "", name: "", roleKey: "support_admin" });
+      setForm({ email: "", name: "", roleKey: "support" });
       load();
     } catch (e) { setError(e.message); }
   };
@@ -20181,12 +20293,242 @@ function AdminAdminsPanel() {
   );
 }
 
+
+function AdminWorldPanel() {
+  const [posts, setPosts] = useState([]);
+  const [error, setError] = useState("");
+  const load = () => adminApi("console?action=world-moderation").then((d) => setPosts(d.posts || [])).catch((e) => setError(e.message));
+  useEffect(() => { load(); }, []);
+  const remove = async (p) => {
+    if (!window.confirm(`Delete World reel "${p.title || p.id}" permanently?`)) return;
+    try {
+      await adminApi("console?action=world-delete", { method: "POST", body: JSON.stringify({ postId: p.id }) });
+      load();
+    } catch (e) { setError(e.message); }
+  };
+  return (
+    <div>
+      <p className="text-xs mb-4" style={{ color: T.sub }}>Moderate World reels — remove abusive or policy-breaking posts.</p>
+      {error && <div className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</div>}
+      <div className="flex flex-col gap-2">
+        {posts.map((p) => (
+          <div key={p.id} className="flex items-start justify-between gap-3 p-3 rounded-xl border" style={{ borderColor: T.line, background: "#fff" }}>
+            <div className="min-w-0">
+              <div className="text-sm font-medium" style={{ color: T.ink }}>{p.title || "Untitled reel"}</div>
+              <div className="text-xs mt-0.5" style={{ color: T.sub }}>
+                {p.owner?.name || "Unknown"} · {p.topic} · {p.country || "—"} · {p.content_origin || "human"}
+              </div>
+              <div className="text-[10px] mt-1" style={{ color: T.sub }}>
+                {(p.likes_count || 0)} likes · {(p.views || 0)} views · {p.created_at ? new Date(p.created_at).toLocaleString() : ""}
+              </div>
+            </div>
+            <button onClick={() => remove(p)} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg shrink-0" style={{ background: "#FEE2E2", color: "#DC2626" }}>
+              Delete
+            </button>
+          </div>
+        ))}
+        {posts.length === 0 && <div className="text-sm text-center py-6" style={{ color: T.sub }}>No World posts to review.</div>}
+      </div>
+    </div>
+  );
+}
+
+function AdminVerifyPanel() {
+  const [items, setItems] = useState([]);
+  const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  const load = () => adminApi("console?action=verifications").then((d) => setItems(d.items || [])).catch((e) => setError(e.message));
+  useEffect(() => { load(); }, []);
+  const review = async (id, status) => {
+    try {
+      await adminApi("console?action=verification-review", { method: "POST", body: JSON.stringify({ id, status, note: note || undefined }) });
+      setNote("");
+      load();
+    } catch (e) { setError(e.message); }
+  };
+  return (
+    <div>
+      <p className="text-xs mb-3" style={{ color: T.sub }}>Passport / document verification queue. Approve or reject citizen submissions.</p>
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional review note"
+        className="w-full mb-3 px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: T.line }} />
+      {error && <div className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</div>}
+      <div className="flex flex-col gap-2">
+        {items.map((v) => (
+          <div key={v.id} className="p-3 rounded-xl border" style={{ borderColor: T.line, background: "#fff" }}>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="text-sm font-medium" style={{ color: T.ink }}>
+                {v.profile?.name || "Citizen"} <span className="text-xs font-normal" style={{ color: T.sub }}>{v.profile?.junction_id || v.user_id}</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: v.status === "verified" ? "#DCFCE7" : v.status === "rejected" ? "#FEE2E2" : "#FEF3C7",
+                  color: v.status === "verified" ? "#16A34A" : v.status === "rejected" ? "#DC2626" : "#B45309" }}>
+                {v.status || "pending"}
+              </span>
+            </div>
+            <div className="text-xs mb-2" style={{ color: T.sub }}>{v.type || v.kind || "Document"} · {v.created_at ? new Date(v.created_at).toLocaleString() : ""}</div>
+            {v.status === "pending" && (
+              <div className="flex gap-2">
+                <button onClick={() => review(v.id, "verified")} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg" style={{ background: "#DCFCE7", color: "#16A34A" }}>Approve</button>
+                <button onClick={() => review(v.id, "rejected")} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg" style={{ background: "#FEE2E2", color: "#DC2626" }}>Reject</button>
+              </div>
+            )}
+          </div>
+        ))}
+        {items.length === 0 && <div className="text-sm text-center py-6" style={{ color: T.sub }}>No verification requests yet.</div>}
+      </div>
+    </div>
+  );
+}
+
+
+function AdminAiPanel() {
+  const [messages, setMessages] = useState([
+    { role: "assistant", content: "I'm Merveil Admin AI. Ask about moderation, risk signals, verification review, or how to use a console action. I won't invent citizen data." },
+  ]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const send = async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput("");
+    setError("");
+    const next = [...messages, { role: "user", content: text }];
+    setMessages(next);
+    setBusy(true);
+    try {
+      const data = await adminApi("console?action=assistant", {
+        method: "POST",
+        body: JSON.stringify({ messages: next.map((m) => ({ role: m.role, content: m.content })) }),
+      });
+      setMessages((prev) => [...prev, { role: "assistant", content: data.reply || "No reply." }]);
+    } catch (e) {
+      setError(e.message);
+      setMessages((prev) => [...prev, { role: "assistant", content: `Couldn't reach Admin AI — ${e.message}` }]);
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="flex flex-col" style={{ maxWidth: 720, height: "min(70vh, 560px)" }}>
+      <p className="text-xs mb-3" style={{ color: T.sub }}>
+        Ops assistant for this console only — separate from citizen Merveil AI limits. Suggests actions; you still approve with the panel buttons.
+      </p>
+      <div className="flex-1 overflow-y-auto rounded-xl border p-3 flex flex-col gap-2 mb-3" style={{ borderColor: T.line, background: "#fff" }}>
+        {messages.map((m, i) => (
+          <div key={i} className="text-sm rounded-lg px-3 py-2 max-w-[90%]"
+            style={{
+              alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+              background: m.role === "user" ? "rgba(6,182,212,0.12)" : T.panel,
+              color: T.ink,
+            }}>
+            {m.content}
+          </div>
+        ))}
+      </div>
+      {error && <div className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</div>}
+      <div className="flex gap-2">
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()}
+          placeholder="e.g. How should I handle a duplicate listing signal?"
+          className="flex-1 px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: T.line }} disabled={busy} />
+        <button type="button" onClick={send} disabled={busy} className="text-xs font-semibold px-4 py-2 rounded-lg"
+          style={{ background: T.navy, color: "#fff", opacity: busy ? 0.7 : 1 }}>{busy ? "…" : "Ask"}</button>
+      </div>
+    </div>
+  );
+}
+
+function AdminAlertsPanel() {
+  const [status, setStatus] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+  const load = () => adminApi("console?action=push-status").then(setStatus).catch((e) => setError(e.message));
+  useEffect(() => { load(); }, []);
+
+  const enable = async () => {
+    setError(""); setMsg("");
+    try {
+      if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+        setError("This browser does not support push notifications.");
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { setError("Notification permission denied."); return; }
+      const reg = await navigator.serviceWorker.ready.catch(() => navigator.serviceWorker.register("/sw.js"));
+      const vapid = status?.vapidPublicKey;
+      if (!vapid) {
+        setError("VAPID_PUBLIC_KEY is not configured on the server — set it on Vercel to enable Web Push.");
+        return;
+      }
+      const urlBase64ToUint8Array = (base64String) => {
+        const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+        const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+        const raw = atob(base64);
+        return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+      };
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapid),
+      });
+      const json = sub.toJSON();
+      await adminApi("console?action=push-subscribe", {
+        method: "POST",
+        body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, platform: "web" }),
+      });
+      setMsg("This device will receive admin alerts while closed (if VAPID keys are set).");
+      load();
+    } catch (e) {
+      setError(e.message || "Could not enable notifications.");
+    }
+  };
+
+  const test = async () => {
+    try {
+      const r = await adminApi("console?action=push-test", { method: "POST", body: "{}" });
+      setMsg(r.sent ? `Test sent to ${r.sent} device(s).` : "No admin devices subscribed yet — enable notifications first.");
+    } catch (e) { setError(e.message); }
+  };
+
+  return (
+    <div>
+      <p className="text-xs mb-4" style={{ color: T.sub }}>
+        Full offline alerts for elevated security events and new safety reports. Requires Web Push (VAPID) or FCM on the server, plus permission on this device.
+      </p>
+      {error && <div className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</div>}
+      {msg && <div className="text-xs mb-2" style={{ color: "#16A34A" }}>{msg}</div>}
+      <div className="rounded-xl border p-4 mb-4" style={{ borderColor: T.line, background: "#fff" }}>
+        <div className="text-sm font-semibold mb-2" style={{ color: T.ink }}>Push backend</div>
+        <div className="text-xs" style={{ color: T.sub }}>
+          Web Push (VAPID): {status?.configured?.vapid ? "configured" : "not configured"} · FCM: {status?.configured?.fcm ? "configured" : "not configured"}
+        </div>
+        <div className="text-xs mt-1" style={{ color: T.sub }}>Your devices registered: {status?.subscriptions ?? "—"}</div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={enable} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: T.navy, color: "#fff" }}>
+          Enable alerts on this device
+        </button>
+        <button type="button" onClick={test} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: T.panel, color: T.ink }}>
+          Send test notification
+        </button>
+      </div>
+      <ul className="text-xs mt-4 space-y-1" style={{ color: T.sub }}>
+        <li>• New citizen safety reports → push to all subscribed admins</li>
+        <li>• Security events with severity elevated / high / critical → push</li>
+        <li>• Works when the admin tab is closed (PWA / browser background)</li>
+      </ul>
+    </div>
+  );
+}
+
 function AdminShell({ ctx, onSignOut }) {
   const perms = ctx.permissions || [];
   const can = (p) => perms.includes("*") || perms.includes(p) || ctx.role === "super_admin";
   const modules = [
     { key: "overview", label: "Overview", icon: LayoutGrid, show: can("analytics.read") },
+    { key: "ai", label: "Admin AI", icon: Sparkles, show: can("analytics.read") },
+    { key: "alerts", label: "Alerts", icon: Bell, show: true },
     { key: "citizens", label: "Citizens", icon: Users, show: can("support.accounts.read") },
+    { key: "verify", label: "Verifications", icon: ShieldCheck, show: can("support.accounts.read") },
+    { key: "world", label: "World", icon: Globe, show: can("safety.reports.read") },
     { key: "reports", label: "Reports", icon: FileWarning, show: can("safety.reports.read") },
     { key: "fraud", label: "Fraud & Risk", icon: AlertTriangle, show: can("fraud.cases.read") || can("fraud.risk.read") },
     { key: "property", label: "Property", icon: LayoutGrid, show: can("property.read") },
@@ -20196,42 +20538,73 @@ function AdminShell({ ctx, onSignOut }) {
     { key: "sponsored", label: "Sponsored", icon: Sparkles, show: ctx.role === "super_admin" },
   ].filter((m) => m.show);
   const [active, setActive] = useState(modules[0]?.key || "overview");
+  const [navOpen, setNavOpen] = useState(false);
 
-  return (
-    <div className="min-h-screen flex" style={{ background: T.paper }}>
-      <div className="w-56 shrink-0 border-r flex flex-col" style={{ borderColor: T.line, background: T.navy }}>
-        <div className="p-4 flex items-center gap-2">
+  const Nav = (
+    <>
+      <div className="p-4 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <Shield size={18} style={{ color: T.signal }} />
           <div className="text-sm font-semibold text-white">Merveil Admin</div>
         </div>
-        <div className="flex-1 flex flex-col gap-1 px-2">
-          {modules.map((m) => (
-            <button key={m.key} onClick={() => setActive(m.key)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left"
-              style={{ background: active === m.key ? "rgba(6,182,212,0.15)" : "transparent", color: active === m.key ? T.signal : "#D1D5DB" }}>
-              <m.icon size={14} /> {m.label}
-            </button>
-          ))}
-        </div>
-        <div className="p-3 border-t" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
-          <div className="text-xs text-white font-medium">{ctx.admin.name}</div>
-          <div className="text-[10px] mb-2" style={{ color: "#9CA3AF" }}>{ctx.roleName || ctx.role}</div>
-          <button onClick={onSignOut} className="text-xs flex items-center gap-1.5" style={{ color: "#9CA3AF" }}>
-            <LogOut size={12} /> Sign out
-          </button>
-        </div>
+        <button type="button" className="md:hidden text-white/70 text-xs" onClick={() => setNavOpen(false)}>Close</button>
       </div>
-      <div className="flex-1 p-6 overflow-y-auto">
-        <h1 className="text-xl font-semibold mb-5 capitalize" style={{ fontFamily: "'Space Grotesk',sans-serif", color: T.ink }}>{active}</h1>
-        {active === "overview" && <AdminOverviewPanel />}
-        {active === "citizens" && <AdminCitizensPanel />}
-        {active === "reports" && <AdminReportsPanel />}
-        {active === "fraud" && <AdminFraudPanel />}
-        {active === "property" && <AdminPropertyPanel />}
-        {active === "security" && <AdminSecurityPanel />}
-        {active === "audit" && <AdminAuditPanel />}
-        {active === "admins" && <AdminAdminsPanel />}
-        {active === "sponsored" && <AdminSponsoredPanel />}
+      <div className="flex-1 flex flex-col gap-1 px-2 overflow-y-auto">
+        {modules.map((m) => (
+          <button key={m.key} type="button" onClick={() => { setActive(m.key); setNavOpen(false); }}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left"
+            style={{ background: active === m.key ? "rgba(6,182,212,0.15)" : "transparent", color: active === m.key ? T.signal : "#D1D5DB" }}>
+            <m.icon size={14} /> {m.label}
+          </button>
+        ))}
+      </div>
+      <div className="p-3 border-t" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+        <div className="text-xs text-white font-medium">{ctx.name || ctx.email}</div>
+        <div className="text-[10px] mb-2" style={{ color: "#9CA3AF" }}>{ctx.roleName || ctx.role}</div>
+        <button type="button" onClick={onSignOut} className="text-xs flex items-center gap-1.5" style={{ color: "#9CA3AF" }}>
+          <LogOut size={12} /> Sign out
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen flex flex-col md:flex-row" style={{ background: T.paper }}>
+      {/* Desktop sidebar */}
+      <div className="hidden md:flex w-56 shrink-0 border-r flex-col" style={{ borderColor: T.line, background: T.navy }}>
+        {Nav}
+      </div>
+      {/* Mobile drawer */}
+      {navOpen && (
+        <div className="fixed inset-0 z-50 md:hidden" style={{ background: "rgba(0,0,0,0.45)" }} onClick={() => setNavOpen(false)}>
+          <div className="h-full w-64 flex flex-col" style={{ background: T.navy }} onClick={(e) => e.stopPropagation()}>
+            {Nav}
+          </div>
+        </div>
+      )}
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="md:hidden flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: T.line, background: T.navy }}>
+          <button type="button" onClick={() => setNavOpen(true)} className="text-white text-sm font-semibold flex items-center gap-2">
+            <Shield size={16} style={{ color: T.signal }} /> Menu
+          </button>
+          <span className="text-xs text-white/80 capitalize">{active}</span>
+        </div>
+        <div className="flex-1 p-4 md:p-6 overflow-y-auto">
+          <h1 className="text-xl font-semibold mb-5 capitalize hidden md:block" style={{ fontFamily: "'Space Grotesk',sans-serif", color: T.ink }}>{active}</h1>
+          {active === "overview" && <AdminOverviewPanel />}
+          {active === "ai" && <AdminAiPanel />}
+          {active === "alerts" && <AdminAlertsPanel />}
+          {active === "citizens" && <AdminCitizensPanel />}
+          {active === "verify" && <AdminVerifyPanel />}
+          {active === "world" && <AdminWorldPanel />}
+          {active === "reports" && <AdminReportsPanel />}
+          {active === "fraud" && <AdminFraudPanel />}
+          {active === "property" && <AdminPropertyPanel />}
+          {active === "security" && <AdminSecurityPanel />}
+          {active === "audit" && <AdminAuditPanel />}
+          {active === "admins" && <AdminAdminsPanel />}
+          {active === "sponsored" && <AdminSponsoredPanel />}
+        </div>
       </div>
     </div>
   );
