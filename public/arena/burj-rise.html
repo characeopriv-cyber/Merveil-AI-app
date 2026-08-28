@@ -7,7 +7,7 @@
 <style>
   :root{
     --bg:#0B0E14; --panel:#141822; --line:rgba(255,255,255,.08);
-    --orange:#F97316; --gold:#D4A24C; --text:#F3F4F6; --dim:#9CA3AF;
+    --orange:#06B6D4; --gold:#D4A24C; --text:#F3F4F6; --dim:#9CA3AF;
     --indigo:#818CF8;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;margin:0;padding:0}
@@ -185,7 +185,7 @@ let currentStop=0,stopConfig=ROUTE[0];
 let blocks=[],moving=null,camY=0,speed=2.6,dir=1;
 let score=0,combo=0,running=false,integrity=100,gameOverFlag=false;
 const BLOCK_H=36;
-const palette=['#F97316','#FB923C','#EA580C','#D97706','#818CF8','#A78BFA'];
+const palette=['#06B6D4','#22D3EE','#0891B2','#D97706','#818CF8','#A78BFA'];
 
 function baseWidth(){return Math.min(210,innerWidth*0.48)}
 function shade(hex,amt){
@@ -268,19 +268,19 @@ function drop(){
   const left=Math.max(moving.x,top.x);
   const right=Math.min(moving.x+moving.w,top.x+top.w);
   const overlap=right-left;
-  if(overlap<=5){integrity=0;endGame();return}
+  if(overlap<=5){integrity=0; try{ArenaAudio.sfx('hit');}catch(e){} endGame();return}
   const perfect=Math.abs(moving.x-top.x)<5&&Math.abs(moving.w-top.w)<3;
   const newW=perfect?top.w:overlap;
   const newX=perfect?top.x:left;
   blocks.push({x:newX,w:newW,color:moving.color,perfect,y:blocks.length});
-  if(perfect){combo++;showCombo()}else{combo=0;const lean=1-(overlap/top.w);integrity-=lean*20}
+  if(perfect){combo++;showCombo(); try{ArenaAudio.sfx('collect');}catch(e){}}else{combo=0;const lean=1-(overlap/top.w);integrity-=lean*20; try{ArenaAudio.sfx('hit');}catch(e){}}
   if(integrity<=0){endGame();return}
   updateScore();
   const stackTop=innerHeight-140-blocks.length*BLOCK_H+camY;
   if(stackTop<innerHeight*.38)camY+=(innerHeight*.38-stackTop);
   spawnMoving();
 }
-function completeStop(){
+function completeStop(){ try{ArenaAudio.sfx('win');}catch(e){}
   running=false;
   progress=Math.max(progress,currentStop+1);
   localStorage.setItem('br_progress',String(progress));
@@ -348,7 +348,7 @@ function openRoute(){
   home.classList.add('hidden');result.classList.add('hidden');
   routeScreen.classList.remove('hidden');
 }
-document.getElementById('startBtn').onclick=()=>beginStop(Math.min(progress,ROUTE.length-1));
+document.getElementById('startBtn').onclick=()=>{ try{ArenaAudio.unlock('burj');}catch(e){} beginStop(Math.min(progress,ROUTE.length-1)); };
 document.getElementById('routeBtn').onclick=openRoute;
 document.getElementById('routeBack').onclick=()=>{routeScreen.classList.add('hidden');home.classList.remove('hidden')};
 document.getElementById('helpOpen').onclick=()=>instructions.classList.remove('hidden');
@@ -378,6 +378,99 @@ function loop(){
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+
+
+// --- Merveil Arena audio (Web Audio API — Chrome, Safari, Firefox) ---
+// Firefox keeps AudioContext suspended until a real user gesture + resume().
+const ArenaAudio = (() => {
+  let ctx = null, master = null, started = false, loopTimer = null, muted = false, kind = "sahra";
+  function ensure() {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = muted ? 0.0001 : 0.2;
+    master.connect(ctx.destination);
+    return ctx;
+  }
+  async function resumeIfNeeded() {
+    const c = ensure();
+    if (!c) return null;
+    if (c.state === "suspended") {
+      try { await c.resume(); } catch (e) {}
+    }
+    return c;
+  }
+  function tone(freq, dur, type, gain, when) {
+    if (muted) return;
+    const c = ctx; if (!c || c.state !== "running") return;
+    const t0 = when != null ? when : c.currentTime;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.001, gain || 0.08), t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.05, dur));
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  function schedulePad(at) {
+    if (muted || !ctx || ctx.state !== "running") return;
+    const base = kind === "sahra" ? 110 : kind === "burj" ? 98 : 130.81;
+    const intervals = kind === "connecta" ? [0, 4, 7, 12] : [0, 3, 7, 10];
+    for (let i = 0; i < intervals.length; i++) {
+      const f = base * Math.pow(2, intervals[i] / 12);
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = i % 2 ? "triangle" : "sine";
+      o.frequency.value = f;
+      g.gain.value = 0.03 / (1 + i * 0.4);
+      o.connect(g); g.connect(master);
+      o.start(at);
+      o.stop(at + 3.15);
+    }
+    tone(base * 0.5, 0.16, "sine", 0.05, at);
+    tone(base * 0.5, 0.1, "sine", 0.03, at + 1.6);
+  }
+  function startBgm(k) {
+    kind = k || kind;
+    if (started) return;
+    started = true;
+    schedulePad(ctx.currentTime + 0.05);
+    loopTimer = setInterval(() => {
+      if (!ctx || muted) return;
+      if (ctx.state === "suspended") ctx.resume().catch(()=>{});
+      if (ctx.state === "running") schedulePad(ctx.currentTime + 0.02);
+    }, 3200);
+  }
+  function sfx(name) {
+    if (muted) return;
+    const c = ctx; if (!c || c.state !== "running") return;
+    const t = c.currentTime;
+    if (name === "collect") { tone(660, 0.08, "square", 0.05, t); tone(880, 0.12, "sine", 0.04, t + 0.06); }
+    else if (name === "hit") { tone(90, 0.2, "sawtooth", 0.07, t); tone(60, 0.25, "sine", 0.05, t + 0.02); }
+    else if (name === "win") { tone(523, 0.15, "triangle", 0.06, t); tone(659, 0.18, "triangle", 0.05, t + 0.12); tone(784, 0.25, "sine", 0.05, t + 0.26); }
+    else if (name === "start") { tone(220, 0.1, "triangle", 0.05, t); tone(330, 0.15, "sine", 0.04, t + 0.08); }
+    else if (name === "dash") { tone(400, 0.08, "sawtooth", 0.04, t); tone(600, 0.1, "sine", 0.03, t + 0.05); }
+  }
+  async function unlock(k) {
+    kind = k || kind;
+    ensure();
+    await resumeIfNeeded();
+    startBgm(kind);
+    sfx("start");
+  }
+  function setMuted(m) {
+    muted = !!m;
+    if (master) master.gain.value = muted ? 0.0001 : 0.2;
+  }
+  return { unlock, sfx, startBgm, ensure, resumeIfNeeded, setMuted };
+})();
+
+
 </script>
 </body>
 </html>
