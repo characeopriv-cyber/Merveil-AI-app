@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sahra — Merveil Arena</title>
+<style>
+  :root{
+    --bg:#2C1E14; --sand:#E8C285; --oasis:#3FBFA0; --orange:#06B6D4;
+    --text:#FFF6E8; --dim:#D9B98A; --danger:#E5626B;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#2C1E14;font-family:system-ui,-apple-system,sans-serif;color:var(--text)}
+  #wrap{position:relative;width:100%;height:100dvh}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  #hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top,0px)) 18px 0;z-index:10;pointer-events:none}
+  #brand{font-size:11px;letter-spacing:2px;font-weight:700;color:var(--orange);text-transform:uppercase}
+  #brand span{color:var(--dim);font-weight:500}
+  #depth{font-size:30px;font-weight:800;text-align:right;line-height:1}
+  #depth small{display:block;font-size:10px;letter-spacing:1.5px;color:var(--dim);margin-top:3px;text-transform:uppercase}
+  #lives{margin-top:6px;font-size:15px;letter-spacing:3px;text-align:right}
+  #region{position:absolute;top:calc(78px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);color:var(--sand);font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0;transition:opacity .4s;font-weight:700;z-index:10;text-shadow:0 2px 10px rgba(0,0,0,.5)}
+  #abilityBtn{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom,0px));right:20px;width:68px;height:68px;border-radius:50%;background:rgba(63,191,160,.12);border:2px solid var(--oasis);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:15;color:var(--oasis);font-size:10px;font-weight:800;letter-spacing:1px;opacity:.35;transition:.2s}
+  #abilityBtn.ready{opacity:1;box-shadow:0 0 22px rgba(63,191,160,.45)}
+  #abilityBtn .ic{font-size:18px;margin-bottom:2px}
+  #credit{position:absolute;bottom:calc(6px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;color:var(--dim);font-size:9px;letter-spacing:1.5px;opacity:.4;text-transform:uppercase;z-index:5;pointer-events:none}
+  .screen{position:absolute;inset:0;background:rgba(18,12,8,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:30;padding:24px;text-align:center;overflow-y:auto}
+  .screen.hidden{display:none}
+  .screen h1{font-size:40px;font-weight:800;letter-spacing:6px;margin-bottom:8px}
+  .screen .tag{font-size:11px;letter-spacing:3px;color:var(--orange);text-transform:uppercase;font-weight:700;margin-bottom:8px}
+  .screen .sub{color:var(--dim);font-size:14px;max-width:290px;line-height:1.5;margin-bottom:20px}
+  .btn{background:var(--orange);color:#fff;border:none;padding:14px 36px;font-size:15px;font-weight:700;border-radius:100px;cursor:pointer}
+  .btn:active{transform:scale(.97)}
+  .btn.ghost{background:transparent;color:var(--dim);border:1px solid rgba(255,255,255,.15);margin-top:10px;padding:11px 28px;font-size:13px}
+  .btn-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+  .stat-row{display:flex;gap:26px;margin-bottom:22px}
+  .stat .n{font-size:26px;font-weight:800;color:var(--oasis)}
+  .stat .l{font-size:10px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin-top:2px}
+  .field{margin-bottom:16px;width:100%;max-width:300px;text-align:left}
+  .field label{font-size:11px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;display:block;margin-bottom:8px}
+  .swatches{display:flex;gap:10px;flex-wrap:wrap}
+  .swatch{width:36px;height:36px;border-radius:50%;cursor:pointer;border:2px solid transparent}
+  .swatch.sel{border-color:#fff;transform:scale(1.08)}
+  input#avatarName{width:100%;padding:11px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--text);font-size:14px}
+  .by{margin-top:18px;font-size:10px;letter-spacing:2px;color:var(--dim);opacity:.5;text-transform:uppercase}
+  #helpBtn{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.3);color:var(--dim);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;z-index:15;cursor:pointer;border:1px solid rgba(255,255,255,.12)}
+  .level-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;max-width:280px;margin:12px 0 18px}
+  .lv{aspect-ratio:1;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;cursor:pointer}
+  .lv.locked{opacity:.3;cursor:not-allowed}
+  .lv.done{border-color:rgba(63,191,160,.5);color:var(--oasis)}
+</style>
+</head>
+<body>
+<div id="wrap">
+    <!-- Citizen gate: guests cannot play Arena -->
+  <div id="gate" class="screen">
+    <div class="tag">Merveil Arena</div>
+    <h1 style="font-size:28px;letter-spacing:2px">Citizens only</h1>
+    <div class="sub">Sahra is part of Merveil Arena. Sign in with your Merveil Passport to play. Guests cannot access Arena.</div>
+    <button class="btn" id="gateSignIn">Sign in to play</button>
+    <p style="margin-top:16px;font-size:11px;color:var(--dim);max-width:280px;line-height:1.5">Open the Merveil app, sign in with your Passport, then launch Arena from your account.</p>
+    <div class="by">By IVONIX</div>
+  </div>
+
+  <div id="hud" style="display:none">
+    <div id="brand">SAHRA <span>· Arena</span></div>
+    <div>
+      <div id="depth">0<small>Meters</small></div>
+      <div id="lives">♥ ♥ ♥</div>
+    </div>
+  </div>
+  <div id="helpBtn" style="display:none">?</div>
+  <div id="pauseBtn" style="display:none;position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:18px;z-index:16;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.15);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">❚❚</div>
+  <div id="region">The Dunes</div>
+  <canvas id="game" style="display:none"></canvas>
+  <div id="abilityBtn" style="display:none"><div class="ic">⚡</div>DASH</div>
+  <div id="credit" style="display:none">By IVONIX · Merveil Arena</div>
+  <div id="pauseScreen" class="screen hidden">
+    <div class="tag">Paused</div>
+    <h1 style="font-size:28px;letter-spacing:2px">SAHRA</h1>
+    <div class="sub">Take a breath. Resume when ready.</div>
+    <button class="btn" id="resumeBtn">Resume</button>
+    <div class="btn-row">
+      <button class="btn ghost" id="restartBtn">Restart level</button>
+      <button class="btn ghost" id="pauseHomeBtn">Home</button>
+    </div>
+    <div class="by">By IVONIX</div>
+  </div>
+
+  <div id="home" class="screen hidden">
+    <div class="tag">Merveil Arena</div>
+    <h1>SAHRA</h1>
+    <div class="sub">A desert journey home. Steer through dunes, wadis, and the Hajar — 30 levels of discovery to expedition.</div>
+    <div class="field">
+      <label>Traveler name</label>
+      <input id="avatarName" placeholder="e.g. Maryam" maxlength="14" value="Maryam">
+    </div>
+    <div class="field">
+      <label>Robe</label>
+      <div class="swatches" id="robeSwatches"></div>
+    </div>
+    <div class="field">
+      <label>Headscarf</label>
+      <div class="swatches" id="scarfSwatches"></div>
+    </div>
+    <div class="field">
+      <label>Sound</label>
+      <div class="btn-row" style="justify-content:flex-start;margin-top:0">
+        <button type="button" class="btn ghost" id="muteBtn" style="margin-top:0;padding:8px 16px;font-size:12px">Sound on</button>
+        <input type="range" id="volSlider" min="0" max="100" value="40" style="flex:1;max-width:140px;accent-color:var(--orange)">
+      </div>
+    </div>
+    <div class="field">
+      <label>Difficulty</label>
+      <div class="btn-row" style="justify-content:flex-start;margin-top:0;gap:8px">
+        <button type="button" class="btn ghost diffBtn" data-diff="calm" style="margin-top:0;padding:8px 14px;font-size:12px">Calm</button>
+        <button type="button" class="btn ghost diffBtn" data-diff="standard" style="margin-top:0;padding:8px 14px;font-size:12px">Standard</button>
+        <button type="button" class="btn ghost diffBtn" data-diff="expedition" style="margin-top:0;padding:8px 14px;font-size:12px">Expedition</button>
+      </div>
+    </div>
+    <button class="btn" id="startBtn">Start</button>
+    <div class="btn-row">
+      <button class="btn ghost" id="levelsBtn">Levels</button>
+      <button class="btn ghost" id="helpOpen">How to Play</button>
+    </div>
+    <div class="by">By IVONIX</div>
+  </div>
+
+  <div id="levelsScreen" class="screen hidden">
+    <div class="tag">Progression</div>
+    <h1 style="font-size:24px;letter-spacing:2px">Levels</h1>
+    <div class="sub">Complete a level to unlock the next. First clear awards full Merveil Credits.</div>
+    <div class="level-grid" id="levelGrid"></div>
+    <button class="btn ghost" id="levelsBack">Back</button>
+    <div class="by">By IVONIX</div>
+  </div>
+
+  <div id="result" class="screen hidden"></div>
+
+  <div id="instructions" class="screen hidden">
+    <h1 style="font-size:22px;letter-spacing:1px">How to Play</h1>
+    <ul style="color:var(--dim);font-size:13.5px;line-height:1.75;max-width:320px;text-align:left;padding-left:18px;margin:12px 0 20px">
+      <li><b style="color:var(--text)">Tap left / right</b> or use arrow keys to steer while falling.</li>
+      <li>Land on <b style="color:var(--text)">safe dune ledges</b> — avoid dark hazard platforms.</li>
+      <li>Collect <b style="color:var(--text)">water drops</b> to charge DASH for speed and brief protection.</li>
+      <li>Regions: <b style="color:var(--text)">Dunes → Wadi → Oasis → Hajar</b> — speed rises as you go deeper.</li>
+      <li>You have <b style="color:var(--text)">3 lives</b>.</li>
+    </ul>
+    <button class="btn" id="closeHelp">Got it</button>
+  </div>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const depthEl=document.getElementById('depth');
+const livesEl=document.getElementById('lives');
+const regionEl=document.getElementById('region');
+const abilityBtn=document.getElementById('abilityBtn');
+const home=document.getElementById('home');
+const levelsScreen=document.getElementById('levelsScreen');
+const result=document.getElementById('result');
+const instructions=document.getElementById('instructions');
+const nameInput=document.getElementById('avatarName');
+const gate=document.getElementById('gate');
+
+/** Arena is citizens-only. Allow play only with Merveil session. */
+function isMerveilCitizen(){
+  try{
+    if(window.parent!==window&&window.parent.__MERVEIL_USER__)return true;
+    if(window.__MERVEIL_USER__)return true;
+    const q=new URLSearchParams(location.search);
+    // App embeds with ?citizen=1 after server-side session check
+    if(q.get('citizen')==='1')return true;
+    if(localStorage.getItem('merveil_session')||localStorage.getItem('sb-access-token'))return true;
+  }catch(e){}
+  return false;
+}
+function unlockArenaUI(){
+  gate.classList.add('hidden');
+  document.getElementById('hud').style.display='';
+  document.getElementById('helpBtn').style.display='';
+  document.getElementById('pauseBtn').style.display='none';
+  canvas.style.display='block';
+  abilityBtn.style.display='flex';
+  document.getElementById('credit').style.display='block';
+  home.classList.remove('hidden');
+}
+function enforceCitizenGate(){
+  if(isMerveilCitizen()){unlockArenaUI();return}
+  gate.classList.remove('hidden');
+  document.getElementById('gateSignIn').onclick=()=>{
+    // Ask parent app to open auth, or redirect
+    try{window.parent.postMessage({type:'merveil:require-signin',source:'arena-sahra'},'*')}catch(e){}
+    if(window.parent===window){
+      alert('Open Merveil, sign in with your Passport, then launch Arena from the app.');
+    }
+  };
+  // Live unlock if parent injects user later
+  window.addEventListener('message',(ev)=>{
+    if(ev.data&&ev.data.type==='merveil:session'&&ev.data.user){
+      window.__MERVEIL_USER__=ev.data.user;
+      unlockArenaUI();
+    }
+  });
+}
+enforceCitizenGate();
+
+function resize(){canvas.width=innerWidth*devicePixelRatio;canvas.height=innerHeight*devicePixelRatio;canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+resize();addEventListener('resize',resize);
+
+const ROBE=['#F4EEDD','#2E3A5C','#5C2E3A','#2E5C4A','#4A3B5C'];
+const SCARF=['#06B6D4','#D4A24C','#3FBFA0','#818CF8','#F4EEDD'];
+let avatar={name:'Maryam',robe:ROBE[0],scarf:SCARF[0]};
+function buildSwatches(el,colors,key){
+  el.innerHTML='';
+  colors.forEach((c,i)=>{
+    const d=document.createElement('div');
+    d.className='swatch'+(i===0?' sel':'');
+    d.style.background=c;
+    d.onclick=()=>{[...el.children].forEach(x=>x.classList.remove('sel'));d.classList.add('sel');avatar[key]=c};
+    el.appendChild(d);
+  });
+}
+buildSwatches(document.getElementById('robeSwatches'),ROBE,'robe');
+buildSwatches(document.getElementById('scarfSwatches'),SCARF,'scarf');
+
+const REGIONS=[
+  {name:'The Dunes',from:0,sky:['#E8C285','#B8823F'],ground:'#D9A85C'},
+  {name:'The Wadi',from:350,sky:['#C9A06B','#6B7A5E'],ground:'#A98A5A'},
+  {name:'The Oasis',from:800,sky:['#7FBFA0','#2E6B57'],ground:'#5FA98A'},
+  {name:'Hajar Mountains',from:1300,sky:['#8A93B8','#3A4270'],ground:'#6B7299'},
+];
+const CREDITS=[5,5,7,7,10,10,12,12,15,15,18,18,20,20,25,25,28,28,30,30,35,35,40,40,45,50,55,60,70,100];
+let levelUnlocked=+(localStorage.getItem('sahra_unlock')||1);
+let levelDone={};try{levelDone=JSON.parse(localStorage.getItem('sahra_done')||'{}')}catch{}
+let currentLevel=1;
+// Difficulty: calm 0.75× · standard 1× · expedition 1.35× (persisted)
+let difficulty='standard';
+try{const d=localStorage.getItem('sahra_difficulty');if(['calm','standard','expedition'].includes(d))difficulty=d}catch{}
+const DIFF_MULT={calm:0.75,standard:1,expedition:1.35};
+function diffMult(){return DIFF_MULT[difficulty]||1}
+function paintDiffButtons(){
+  document.querySelectorAll('.diffBtn').forEach(b=>{
+    const on=b.dataset.diff===difficulty;
+    b.style.background=on?'var(--orange)':'transparent';
+    b.style.color=on?'#fff':'var(--dim)';
+    b.style.borderColor=on?'var(--orange)':'rgba(255,255,255,.15)';
+  });
+}
+document.querySelectorAll('.diffBtn').forEach(b=>{
+  b.onclick=()=>{difficulty=b.dataset.diff;try{localStorage.setItem('sahra_difficulty',difficulty)}catch{};paintDiffButtons()};
+});
+paintDiffButtons();
+
+let player,platforms,particles,drops,depth,lives,speed,running,gameOverFlag,currentRegionIdx,floatTexts=[];
+let keys={left:false,right:false};
+let ability={meter:0,max:100,active:false,activeT:0};
+let paused=false;
+
+function currentRegion(){let r=REGIONS[0];for(const reg of REGIONS)if(depth>=reg.from)r=reg;return r}
+function makePlatform(y){
+  const hazard=Math.random()<.2&&depth>40;
+  const w=68+Math.random()*52;
+  const p={x:Math.random()*(innerWidth-w),y,w,h:16,hazard,passed:false};
+  if(!hazard&&Math.random()<.38)drops.push({x:p.x+p.w/2,y:p.y-22,r:6,collected:false});
+  return p;
+}
+function initGame(){
+  player={x:innerWidth/2,y:innerHeight*.32,w:34,h:46,vx:0};
+  platforms=[];particles=[];drops=[];floatTexts=[];
+  depth=0;lives=3;speed=(3+currentLevel*.08)*diffMult();running=false;gameOverFlag=false;paused=false;currentRegionIdx=-1;
+  ability={meter:0,max:100,active:false,activeT:0};
+  let y=innerHeight*.55;
+  for(let i=0;i<8;i++){platforms.push(makePlatform(y));y+=115+Math.random()*20}
+  updateHud();
+}
+function showPauseBtn(on){
+  const el=document.getElementById('pauseBtn');
+  if(el)el.style.display=on?'block':'none';
+}
+function pauseGame(){
+  if(!running||gameOverFlag)return;
+  paused=true;running=false;
+  document.getElementById('pauseScreen').classList.remove('hidden');
+}
+function resumeGame(){
+  if(gameOverFlag)return;
+  document.getElementById('pauseScreen').classList.add('hidden');
+  paused=false;running=true;showPauseBtn(true);
+}
+function updateHud(){
+  depthEl.innerHTML=Math.floor(depth)+'<small>Meters</small>';
+  livesEl.textContent='♥ '.repeat(Math.max(0,lives)).trim()||'—';
+  abilityBtn.classList.toggle('ready',ability.meter>=ability.max&&!ability.active);
+  const reg=currentRegion();
+  const idx=REGIONS.indexOf(reg);
+  if(idx!==currentRegionIdx){
+    currentRegionIdx=idx;
+    regionEl.textContent=reg.name+(idx>0?' · faster':'');
+    regionEl.style.opacity=1;
+    clearTimeout(updateHud._t);
+    updateHud._t=setTimeout(()=>regionEl.style.opacity=0,2000);
+  }
+}
+function startLevel(lv){
+  currentLevel=lv;
+  avatar.name=nameInput.value.trim()||'Maryam';
+  home.classList.add('hidden');levelsScreen.classList.add('hidden');result.classList.add('hidden');
+  document.getElementById('pauseScreen').classList.add('hidden');
+  initGame();running=true;paused=false;showPauseBtn(true);
+}
+document.getElementById('pauseBtn').onclick=(e)=>{e.stopPropagation();pauseGame()};
+document.getElementById('resumeBtn').onclick=()=>resumeGame();
+document.getElementById('restartBtn').onclick=()=>{
+  document.getElementById('pauseScreen').classList.add('hidden');
+  startLevel(currentLevel);
+};
+document.getElementById('pauseHomeBtn').onclick=()=>{
+  document.getElementById('pauseScreen').classList.add('hidden');
+  running=false;paused=false;showPauseBtn(false);
+  home.classList.remove('hidden');
+};
+function loseLife(){
+  if(ability.active)return;
+  lives--;updateHud();
+  try{ArenaAudio.sfx('hit');}catch(e){}
+  for(let i=0;i<12;i++)particles.push({x:player.x,y:innerHeight*.34,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:28,color:'#E5626B'});
+  floatTexts.push({x:player.x,y:innerHeight*.34-20,text:lives<=0?'RUN OVER':`−1 LIFE · ${lives} left`,life:55,vy:-1.0,color:'#E5626B'});
+  if(lives<=0)endGame();else{player.x=innerWidth/2;player.vx=0}
+}
+function endGame(){
+  running=false;gameOverFlag=true;paused=false;showPauseBtn(false);
+  const meters=Math.floor(depth);
+  const goal=180+currentLevel*35;
+  const win=meters>=goal;
+  let credits=0;
+  if(win&&!levelDone[currentLevel]){
+    credits=CREDITS[Math.min(currentLevel-1,29)]||5;
+    levelDone[currentLevel]=true;
+    localStorage.setItem('sahra_done',JSON.stringify(levelDone));
+    if(currentLevel>=levelUnlocked&&currentLevel<30){
+      levelUnlocked=currentLevel+1;
+      localStorage.setItem('sahra_unlock',String(levelUnlocked));
+    }
+  }
+  setTimeout(()=>{
+    result.classList.remove('hidden');
+    result.innerHTML=`
+      <div class="tag">${win?'Level Complete':'Try Again'}</div>
+      <h1 style="font-size:26px;letter-spacing:1px">${win?'SAHRA':'Run Complete'}</h1>
+      <div class="sub">${avatar.name} reached ${meters}m · Level ${currentLevel}${win?' cleared':''}.</div>
+      <div class="stat-row">
+        <div class="stat"><div class="n">${meters}</div><div class="l">Meters</div></div>
+        <div class="stat"><div class="n">${currentRegion().name.split(' ').pop()}</div><div class="l">Region</div></div>
+        ${credits?`<div class="stat"><div class="n">+${credits}</div><div class="l">Credits</div></div>`:''}
+      </div>
+      <button class="btn" id="again">${win&&currentLevel<30?'Next Level':'Try Again'}</button>
+      <button class="btn ghost" id="homeBtn">Home</button>
+      <div class="by">By IVONIX</div>`;
+    document.getElementById('again').onclick=()=>{result.classList.add('hidden');startLevel(win&&currentLevel<30?currentLevel+1:currentLevel)};
+    document.getElementById('homeBtn').onclick=()=>{result.classList.add('hidden');home.classList.remove('hidden')};
+  },350);
+}
+function openLevels(){
+  const grid=document.getElementById('levelGrid');
+  grid.innerHTML='';
+  for(let i=1;i<=30;i++){
+    const d=document.createElement('div');
+    const locked=i>levelUnlocked;
+    d.className='lv'+(locked?' locked':'')+(levelDone[i]?' done':'');
+    d.textContent=i;
+    if(!locked)d.onclick=()=>startLevel(i);
+    grid.appendChild(d);
+  }
+  home.classList.add('hidden');levelsScreen.classList.remove('hidden');
+}
+document.getElementById('startBtn').onclick=()=>{ try{ArenaAudio.unlock('sahra');}catch(e){} startLevel(Math.min(levelUnlocked,30)); };
+document.getElementById('levelsBtn').onclick=openLevels;
+document.getElementById('levelsBack').onclick=()=>{levelsScreen.classList.add('hidden');home.classList.remove('hidden')};
+document.getElementById('helpOpen').onclick=()=>instructions.classList.remove('hidden');
+document.getElementById('helpBtn').onclick=()=>instructions.classList.remove('hidden');
+document.getElementById('closeHelp').onclick=()=>instructions.classList.add('hidden');
+
+addEventListener('keydown',e=>{if(e.code==='ArrowLeft')keys.left=true;if(e.code==='ArrowRight')keys.right=true});
+addEventListener('keyup',e=>{if(e.code==='ArrowLeft')keys.left=false;if(e.code==='ArrowRight')keys.right=false});
+canvas.addEventListener('pointerdown',e=>{if(e.clientX<innerWidth/2)keys.left=true;else keys.right=true});
+canvas.addEventListener('pointerup',()=>{keys.left=false;keys.right=false});
+canvas.addEventListener('pointercancel',()=>{keys.left=false;keys.right=false});
+abilityBtn.addEventListener('pointerdown',e=>{
+  e.stopPropagation();
+  if(ability.meter>=ability.max&&!ability.active&&running){
+    ability.active=true;ability.activeT=85;ability.meter=0;
+    try{ArenaAudio.sfx('dash');}catch(e){}
+  }
+});
+
+function update(){
+  if(!running)return;
+  if(ability.active){ability.activeT--;if(ability.activeT<=0)ability.active=false}
+  const boost=ability.active?1.65:1;
+  const accel=.85*boost,maxV=6.2*boost,friction=.86;
+  if(keys.left)player.vx-=accel;
+  if(keys.right)player.vx+=accel;
+  if(!keys.left&&!keys.right)player.vx*=friction;
+  player.vx=Math.max(-maxV,Math.min(maxV,player.vx));
+  player.x+=player.vx;
+  if(player.x<player.w/2){player.x=player.w/2;player.vx=0}
+  if(player.x>innerWidth-player.w/2){player.x=innerWidth-player.w/2;player.vx=0}
+  speed=(3+currentLevel*.06+depth*.0022)*diffMult()*(ability.active?1.45:1);
+  depth+=speed*.055;
+  for(const p of platforms)p.y-=speed;
+  for(const d of drops)d.y-=speed;
+  platforms=platforms.filter(p=>p.y>-30);
+  while(platforms.length<8){
+    const lastY=platforms.length?Math.max(...platforms.map(p=>p.y)):innerHeight*.5;
+    platforms.push(makePlatform(lastY+105+Math.random()*28));
+  }
+  drops=drops.filter(d=>d.y>-30&&!d.collected);
+  const band=innerHeight*.34;
+  for(const p of platforms){
+    if(!p.passed&&Math.abs(p.y-band)<11){
+      p.passed=true;
+      if(player.x>p.x-8&&player.x<p.x+p.w+8&&p.hazard)loseLife();
+    }
+  }
+  for(const d of drops){
+    if(!d.collected&&Math.hypot(d.x-player.x,d.y-band)<22){
+      d.collected=true; try{ArenaAudio.sfx('collect');}catch(e){}
+      ability.meter=Math.min(ability.max,ability.meter+24);
+      // Satisfying float feedback (+charge / ready)
+      floatTexts.push({
+        x: d.x, y: band - 10,
+        text: ability.meter >= ability.max ? "DASH READY" : "+24 ⚡",
+        life: 48, vy: -1.2,
+        color: ability.meter >= ability.max ? "#3FBFA0" : "#E8C285",
+      });
+      for(let i=0;i<7;i++)particles.push({x:d.x,y:d.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,life:18,color:'#3FBFA0'});
+    }
+  }
+  for(const pt of particles){pt.x+=pt.vx;pt.y+=pt.vy;pt.life--}
+  particles=particles.filter(pt=>pt.life>0);
+  for(const ft of floatTexts){ft.y+=ft.vy;ft.life--}
+  floatTexts=floatTexts.filter(ft=>ft.life>0);
+  // win condition by depth for level
+  const goal=180+currentLevel*35;
+  if(depth>=goal){ try{ArenaAudio.sfx('win');}catch(e){} endGame(); }
+  updateHud();
+}
+function render(){
+  const reg=currentRegion();
+  const g=ctx.createLinearGradient(0,0,0,innerHeight);
+  g.addColorStop(0,reg.sky[0]);g.addColorStop(1,reg.sky[1]);
+  ctx.fillStyle=g;ctx.fillRect(0,0,innerWidth,innerHeight);
+  // sun
+  ctx.save();ctx.globalAlpha=.45;ctx.fillStyle='#FFF3D6';
+  ctx.beginPath();ctx.arc(innerWidth*.82,innerHeight*.16,48,0,Math.PI*2);ctx.fill();ctx.restore();
+  // far dunes
+  ctx.save();ctx.globalAlpha=.2;ctx.fillStyle=reg.ground;
+  ctx.beginPath();ctx.moveTo(0,innerHeight*.7);
+  for(let x=0;x<=innerWidth;x+=40)ctx.quadraticCurveTo(x+20,innerHeight*.7-20-Math.sin(x*.01)*18,x+40,innerHeight*.7);
+  ctx.lineTo(innerWidth,innerHeight);ctx.lineTo(0,innerHeight);ctx.fill();ctx.restore();
+
+  for(const p of platforms){
+    ctx.save();
+    ctx.fillStyle=p.hazard?'#7A3B33':reg.ground;
+    ctx.beginPath();ctx.ellipse(p.x+p.w/2,p.y+8,p.w/2,10,0,0,Math.PI*2);ctx.fill();
+    // 3D edge
+    ctx.fillStyle=p.hazard?'#5A2A24':'rgba(0,0,0,.15)';
+    ctx.beginPath();ctx.ellipse(p.x+p.w/2,p.y+12,p.w/2,6,0,0,Math.PI);ctx.fill();
+    if(p.hazard){
+      ctx.fillStyle='#3A1F1A';
+      for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(p.x+10+i*(p.w-20)/3,p.y);ctx.lineTo(p.x+16+i*(p.w-20)/3,p.y-13);ctx.lineTo(p.x+22+i*(p.w-20)/3,p.y);ctx.fill()}
+    }
+    ctx.restore();
+  }
+  for(const d of drops){
+    if(d.collected)continue;
+    ctx.save();ctx.fillStyle='#3FBFA0';ctx.shadowColor='#3FBFA0';ctx.shadowBlur=12;
+    ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+  // Floating score / charge text (elegant, not casino)
+  for(const ft of floatTexts){
+    ctx.save();
+    ctx.globalAlpha=Math.max(0,ft.life/48);
+    ctx.fillStyle=ft.color||'#E8C285';
+    ctx.font='bold 14px system-ui,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText(ft.text,ft.x,ft.y);
+    ctx.restore();
+  }
+  const py=innerHeight*.34;
+  ctx.save();
+  ctx.translate(player.x,py);
+  ctx.rotate(player.vx*.02);
+  if(ability.active){ctx.shadowColor='#3FBFA0';ctx.shadowBlur=26}
+  // robe body 3D-ish
+  ctx.fillStyle=avatar.robe;
+  ctx.beginPath();
+  ctx.moveTo(-16,-10);ctx.quadraticCurveTo(0,-26,16,-10);ctx.quadraticCurveTo(20,20,10,34);ctx.lineTo(-10,34);ctx.quadraticCurveTo(-20,20,-16,-10);ctx.fill();
+  ctx.fillStyle=avatar.scarf;
+  ctx.beginPath();ctx.arc(0,-20,11,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#3B2A1E';
+  ctx.beginPath();ctx.arc(0,-19,6.5,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  ctx.save();ctx.fillStyle='rgba(255,246,232,.85)';ctx.font='11px system-ui';ctx.textAlign='center';
+  ctx.fillText(avatar.name,player.x,py+48);ctx.restore();
+  for(const pt of particles){
+    ctx.save();ctx.globalAlpha=pt.life/30;ctx.fillStyle=pt.color||'#E5626B';
+    ctx.beginPath();ctx.arc(pt.x,pt.y,3,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
+  // meter
+  const cx=54,cy=innerHeight-58,r=19;
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,.12)';ctx.lineWidth=5;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+  ctx.strokeStyle='#3FBFA0';ctx.lineWidth=5;
+  ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+(ability.meter/ability.max)*Math.PI*2);ctx.stroke();
+  ctx.restore();
+}
+function loop(){update();render();requestAnimationFrame(loop)}
+initGame();requestAnimationFrame(loop);
+
+
+
+
+
+
+// --- Merveil Arena audio (Web Audio API — Chrome, Safari, Firefox) ---
+// Firefox keeps AudioContext suspended until a real user gesture + resume().
+const ArenaAudio = (() => {
+  let ctx = null, master = null, started = false, loopTimer = null, muted = false, kind = "sahra";
+  let volume = 0.4; // 0–1 master volume
+  try {
+    const saved = localStorage.getItem("merveil_arena_audio");
+    if (saved) {
+      const j = JSON.parse(saved);
+      if (typeof j.volume === "number") volume = Math.max(0, Math.min(1, j.volume));
+      if (typeof j.muted === "boolean") muted = j.muted;
+    }
+  } catch {}
+  function persist() {
+    try { localStorage.setItem("merveil_arena_audio", JSON.stringify({ volume, muted })); } catch {}
+  }
+  function applyGain() {
+    if (master) master.gain.value = muted ? 0.0001 : Math.max(0.0001, volume * 0.5);
+  }
+  function ensure() {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    master = ctx.createGain();
+    applyGain();
+    master.connect(ctx.destination);
+    return ctx;
+  }
+  async function resumeIfNeeded() {
+    const c = ensure();
+    if (!c) return null;
+    if (c.state === "suspended") {
+      try { await c.resume(); } catch (e) {}
+    }
+    return c;
+  }
+  function tone(freq, dur, type, gain, when) {
+    if (muted) return;
+    const c = ctx; if (!c || c.state !== "running") return;
+    const t0 = when != null ? when : c.currentTime;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.001, gain || 0.08), t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.05, dur));
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  function schedulePad(at) {
+    if (muted || !ctx || ctx.state !== "running") return;
+    const base = kind === "sahra" ? 110 : kind === "burj" ? 98 : 130.81;
+    const intervals = kind === "connecta" ? [0, 4, 7, 12] : [0, 3, 7, 10];
+    for (let i = 0; i < intervals.length; i++) {
+      const f = base * Math.pow(2, intervals[i] / 12);
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = i % 2 ? "triangle" : "sine";
+      o.frequency.value = f;
+      g.gain.value = 0.03 / (1 + i * 0.4);
+      o.connect(g); g.connect(master);
+      o.start(at);
+      o.stop(at + 3.15);
+    }
+    tone(base * 0.5, 0.16, "sine", 0.05, at);
+    tone(base * 0.5, 0.1, "sine", 0.03, at + 1.6);
+  }
+  function startBgm(k) {
+    kind = k || kind;
+    if (started) return;
+    started = true;
+    schedulePad(ctx.currentTime + 0.05);
+    loopTimer = setInterval(() => {
+      if (!ctx || muted) return;
+      if (ctx.state === "suspended") ctx.resume().catch(()=>{});
+      if (ctx.state === "running") schedulePad(ctx.currentTime + 0.02);
+    }, 3200);
+  }
+  function sfx(name) {
+    if (muted) return;
+    const c = ctx; if (!c || c.state !== "running") return;
+    const t = c.currentTime;
+    // Water collect — bright chime
+    if (name === "collect") {
+      tone(660, 0.07, "square", 0.055, t);
+      tone(880, 0.1, "sine", 0.045, t + 0.05);
+      tone(1320, 0.08, "triangle", 0.025, t + 0.1);
+    }
+    // Hazard / life loss — low thud
+    else if (name === "hit") {
+      tone(95, 0.18, "sawtooth", 0.08, t);
+      tone(55, 0.28, "sine", 0.06, t + 0.02);
+      tone(140, 0.12, "triangle", 0.03, t + 0.08);
+    }
+    // Level complete — rising triad
+    else if (name === "win") {
+      tone(523, 0.14, "triangle", 0.06, t);
+      tone(659, 0.16, "triangle", 0.05, t + 0.11);
+      tone(784, 0.22, "sine", 0.05, t + 0.24);
+      tone(1046, 0.18, "sine", 0.03, t + 0.4);
+    }
+    // Game start
+    else if (name === "start") {
+      tone(220, 0.1, "triangle", 0.05, t);
+      tone(330, 0.14, "sine", 0.04, t + 0.07);
+      tone(440, 0.12, "sine", 0.03, t + 0.16);
+    }
+    // Dash activate — whoosh
+    else if (name === "dash") {
+      tone(280, 0.06, "sawtooth", 0.04, t);
+      tone(420, 0.08, "sawtooth", 0.035, t + 0.04);
+      tone(640, 0.12, "sine", 0.03, t + 0.08);
+      tone(900, 0.1, "triangle", 0.02, t + 0.14);
+    }
+    // Safe land (soft)
+    else if (name === "land") {
+      tone(180, 0.06, "sine", 0.03, t);
+      tone(240, 0.05, "triangle", 0.02, t + 0.03);
+    }
+  }
+  async function unlock(k) {
+    kind = k || kind;
+    // Default audible if previous session left volume at 0 / muted by accident
+    if (volume < 0.15) volume = 0.45;
+    if (muted && volume > 0.05) muted = false;
+    ensure();
+    applyGain();
+    const c = await resumeIfNeeded();
+    if (!c) return;
+    // Retry resume once — Safari/Firefox often need a second tick after gesture
+    if (c.state === "suspended") {
+      try { await c.resume(); } catch (e) {}
+    }
+    started = false; // allow BGM restart after unlock
+    startBgm(kind);
+    sfx("start");
+    // Keep context alive while tab is open
+    try {
+      if (!window.__merveilArenaKeepAlive) {
+        window.__merveilArenaKeepAlive = setInterval(() => {
+          if (!ctx) return;
+          if (ctx.state === "suspended") ctx.resume().catch(() => {});
+        }, 2000);
+      }
+    } catch (e) {}
+  }
+  function setMuted(m) {
+    muted = !!m;
+    applyGain();
+    persist();
+  }
+  function setVolume(v) {
+    volume = Math.max(0, Math.min(1, Number(v) || 0));
+    if (volume <= 0.01) muted = true;
+    else muted = false;
+    applyGain();
+    persist();
+  }
+  function getState() { return { muted, volume }; }
+  return { unlock, sfx, startBgm, ensure, resumeIfNeeded, setMuted, setVolume, getState };
+})();
+
+// Wire home Sound controls + unlock audio on first touch (browser autoplay policy)
+(function wireArenaSoundUi() {
+  const muteBtn = document.getElementById("muteBtn");
+  const volSlider = document.getElementById("volSlider");
+  if (muteBtn && volSlider) {
+    const st = ArenaAudio.getState();
+    volSlider.value = String(Math.round((st.volume || 0.45) * 100));
+    muteBtn.textContent = st.muted ? "Muted" : "Sound on";
+    muteBtn.onclick = () => {
+      const next = !ArenaAudio.getState().muted;
+      ArenaAudio.setMuted(next);
+      muteBtn.textContent = next ? "Muted" : "Sound on";
+      if (!next) try { ArenaAudio.unlock("sahra"); } catch (e) {}
+    };
+    volSlider.oninput = () => {
+      const v = Number(volSlider.value) / 100;
+      ArenaAudio.setVolume(v);
+      if (v > 0.01) ArenaAudio.setMuted(false);
+      muteBtn.textContent = ArenaAudio.getState().muted ? "Muted" : "Sound on";
+      try { ArenaAudio.unlock("sahra"); } catch (e) {}
+    };
+  }
+  // Any first user gesture unlocks Web Audio (required on Chrome/Safari/Firefox)
+  let unlockedOnce = false;
+  const unlockOnce = () => {
+    if (unlockedOnce) return;
+    unlockedOnce = true;
+    try { ArenaAudio.unlock("sahra"); } catch (e) {}
+  };
+  ["pointerdown", "touchstart", "mousedown", "keydown", "click"].forEach((ev) => {
+    document.addEventListener(ev, unlockOnce, { once: true, passive: true, capture: true });
+  });
+})();
+
+
+</script>
+</body>
+</html>
