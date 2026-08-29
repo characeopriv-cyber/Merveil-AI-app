@@ -1,8 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    { "source": "/api/assistant", "destination": "/api/assistant" },
-    { "source": "/api/(.*)", "destination": "/api/router" },
-    { "source": "/((?!arena/|favicon|icons/|manifest|robots|sitemap|sw\\.js|assets/).*)", "destination": "/index.html" }
-  ]
-}
