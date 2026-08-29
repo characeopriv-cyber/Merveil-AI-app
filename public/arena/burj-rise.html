@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Burj Rise — Merveil Arena</title>
+<style>
+  :root{
+    --bg:#0B0E14; --panel:#141822; --line:rgba(255,255,255,.08);
+    --orange:#06B6D4; --gold:#D4A24C; --text:#F3F4F6; --dim:#9CA3AF;
+    --indigo:#818CF8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);overflow:hidden;font-family:system-ui,-apple-system,sans-serif;color:var(--text)}
+  #wrap{position:relative;width:100%;height:100dvh;display:flex;flex-direction:column}
+  canvas{display:block;width:100%;height:100%;touch-action:none;background:linear-gradient(180deg,#1a2140 0%,#0B0E14 60%)}
+  #hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top,0px)) 18px 0;z-index:10;pointer-events:none}
+  #brand{font-size:11px;letter-spacing:2px;font-weight:700;color:var(--orange);text-transform:uppercase}
+  #brand span{color:var(--dim);font-weight:500;letter-spacing:1px}
+  #stage{font-size:11px;color:var(--gold);margin-top:4px;font-weight:700;letter-spacing:.5px}
+  #score{font-size:32px;font-weight:800;text-align:right;line-height:1}
+  #score small{display:block;font-size:10px;letter-spacing:1.5px;color:var(--dim);margin-top:3px;text-transform:uppercase}
+  #goalBar{position:absolute;top:calc(72px + env(safe-area-inset-top,0px));left:18px;right:18px;height:3px;background:rgba(255,255,255,.08);border-radius:4px;z-index:10;overflow:hidden}
+  #goalFill{height:100%;width:0%;background:linear-gradient(90deg,var(--orange),var(--gold));transition:width .2s}
+  #combo{position:absolute;top:calc(86px + env(safe-area-inset-top,0px));right:18px;font-size:12px;font-weight:700;color:var(--gold);opacity:0;transition:opacity .25s;letter-spacing:1px;z-index:10}
+  #integrity{position:absolute;top:calc(86px + env(safe-area-inset-top,0px));left:18px;font-size:11px;color:var(--dim);z-index:10}
+  #integrity b{color:var(--text)}
+  #tapHint{position:absolute;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;color:var(--dim);font-size:12px;letter-spacing:1px;z-index:5;opacity:.7;pointer-events:none}
+  #credit{position:absolute;bottom:calc(6px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;color:var(--dim);font-size:9px;letter-spacing:1.5px;opacity:.4;text-transform:uppercase;z-index:5;pointer-events:none}
+  .screen{position:absolute;inset:0;background:rgba(8,10,16,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:30;padding:24px;text-align:center;overflow-y:auto}
+  .screen.hidden{display:none}
+  .screen h1{font-size:34px;font-weight:800;letter-spacing:3px;color:var(--text);margin-bottom:6px}
+  .screen .tag{font-size:12px;letter-spacing:3px;color:var(--orange);text-transform:uppercase;font-weight:700;margin-bottom:10px}
+  .screen .sub{color:var(--dim);font-size:14px;max-width:300px;line-height:1.5;margin-bottom:22px}
+  .btn{background:var(--orange);color:#fff;border:none;padding:14px 36px;font-size:15px;font-weight:700;border-radius:100px;cursor:pointer;letter-spacing:.3px}
+  .btn:active{transform:scale(.97)}
+  .btn.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);margin-top:10px;padding:11px 28px;font-size:13px}
+  .btn-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:8px}
+  .stat-row{display:flex;gap:28px;margin-bottom:22px}
+  .stat .n{font-size:26px;font-weight:800;color:var(--gold)}
+  .stat .l{font-size:10px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin-top:2px}
+  .route{display:flex;flex-direction:column;gap:8px;width:100%;max-width:340px;margin:12px 0 18px}
+  .stop{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;padding:12px 14px;text-align:left;cursor:pointer}
+  .stop.locked{opacity:.4;cursor:not-allowed}
+  .stop.done{border-color:rgba(212,162,76,.45)}
+  .stop:active:not(.locked){transform:scale(.98)}
+  .stop .idx{width:28px;height:28px;border-radius:50%;background:#2a3148;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0}
+  .stop.done .idx{background:var(--gold);color:#0B0E14}
+  .stop .name{font-size:13px;font-weight:700}
+  .stop .desc{font-size:11px;color:var(--dim);margin-top:2px}
+  .stop .goal{font-size:11px;color:var(--orange);font-weight:700;margin-left:auto}
+  .by{margin-top:18px;font-size:10px;letter-spacing:2px;color:var(--dim);opacity:.55;text-transform:uppercase}
+  #helpBtn{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--dim);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;z-index:15;cursor:pointer;border:1px solid var(--line);pointer-events:auto}
+</style>
+</head>
+<body>
+<div id="wrap">
+    <!-- Citizen gate: guests cannot play Arena -->
+  <div id="gate" class="screen">
+    <div class="tag">Merveil Arena</div>
+    <h1 style="font-size:28px;letter-spacing:2px">Citizens only</h1>
+    <div class="sub">Burj Rise is part of Merveil Arena. Sign in with your Merveil Passport to play. Guests cannot access Arena.</div>
+    <button class="btn" id="gateSignIn">Sign in to play</button>
+    <p style="margin-top:16px;font-size:11px;color:var(--dim);max-width:280px;line-height:1.5">Open the Merveil app, sign in with your Passport, then launch Arena from your account.</p>
+    <div class="by">By IVONIX</div>
+  </div>
+
+  <div id="hud" style="display:none">
+    <div>
+      <div id="brand">BURJ RISE <span>· Arena</span></div>
+      <div id="stage">—</div>
+    </div>
+    <div id="score">0<small>Floors</small></div>
+  </div>
+  <div id="helpBtn" style="display:none">?</div>
+  <div id="pauseBtn" style="display:none;position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:18px;z-index:16;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.15);color:var(--text);font-size:14px;font-weight:700;cursor:pointer">❚❚</div>
+  <div id="goalBar"><div id="goalFill"></div></div>
+  <div id="integrity">Integrity <b>100%</b></div>
+  <div id="combo">PERFECT STACK</div>
+  <canvas id="game" style="display:none"></canvas>
+  <div id="tapHint">tap or space to drop</div>
+  <div id="credit" style="display:none">By IVONIX · Merveil Arena</div>
+  <div id="pauseScreen" class="screen hidden">
+    <div class="tag">Paused</div>
+    <h1 style="font-size:26px;letter-spacing:2px">BURJ RISE</h1>
+    <div class="sub">Resume stacking when ready.</div>
+    <button class="btn" id="resumeBtn">Resume</button>
+    <div class="btn-row">
+      <button class="btn ghost" id="restartBtn">Restart stop</button>
+      <button class="btn ghost" id="pauseHomeBtn">Home</button>
+    </div>
+  </div>
+
+  <div id="home" class="screen hidden">
+    <div class="tag">Merveil Arena</div>
+    <h1>BURJ RISE</h1>
+    <div class="sub">Build Beyond the Skyline. Stack precise 3D floors along Sheikh Zayed Road — Trade Centre to Business Bay.</div>
+    <div class="field" style="margin-bottom:14px;width:100%;max-width:300px;text-align:left">
+      <label style="font-size:11px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;display:block;margin-bottom:8px">Sound</label>
+      <div class="btn-row" style="justify-content:flex-start;margin-top:0">
+        <button type="button" class="btn ghost" id="muteBtn" style="margin-top:0;padding:8px 16px;font-size:12px">Sound on</button>
+        <input type="range" id="volSlider" min="0" max="100" value="40" style="flex:1;max-width:140px;accent-color:var(--orange)">
+      </div>
+    </div>
+    <div class="field" style="margin-bottom:14px;width:100%;max-width:300px;text-align:left">
+      <label style="font-size:11px;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;display:block;margin-bottom:8px">Difficulty</label>
+      <div class="btn-row" style="justify-content:flex-start;margin-top:0;gap:8px">
+        <button type="button" class="btn ghost diffBtn" data-diff="calm" style="margin-top:0;padding:8px 14px;font-size:12px">Calm</button>
+        <button type="button" class="btn ghost diffBtn" data-diff="standard" style="margin-top:0;padding:8px 14px;font-size:12px">Standard</button>
+        <button type="button" class="btn ghost diffBtn" data-diff="expedition" style="margin-top:0;padding:8px 14px;font-size:12px">Expedition</button>
+      </div>
+    </div>
+    <button class="btn" id="startBtn">Start</button>
+    <div class="btn-row">
+      <button class="btn ghost" id="routeBtn">Route Map</button>
+      <button class="btn ghost" id="helpOpen">How to Play</button>
+    </div>
+    <div class="by">By IVONIX</div>
+  </div>
+
+  <div id="routeScreen" class="screen hidden">
+    <div class="tag">Route</div>
+    <h1 style="font-size:22px;letter-spacing:1px">Sheikh Zayed Road</h1>
+    <div class="sub">Unlock each stop by reaching its floor goal.</div>
+    <div class="route" id="routeList"></div>
+    <button class="btn ghost" id="routeBack">Back</button>
+    <div class="by">By IVONIX</div>
+  </div>
+
+  <div id="result" class="screen hidden"></div>
+
+  <div id="instructions" class="screen hidden">
+    <h1 style="font-size:22px">How to Play</h1>
+    <ul style="color:var(--dim);font-size:13.5px;line-height:1.75;max-width:320px;text-align:left;padding-left:18px;margin:12px 0 20px">
+      <li><b style="color:var(--text)">Tap or Space</b> to drop the moving 3D brick.</li>
+      <li>Align with the block below for a <b style="color:var(--text)">Perfect Stack</b> bonus.</li>
+      <li>Misaligned drops trim the brick and lower <b style="color:var(--text)">Integrity</b>.</li>
+      <li>Reach the floor goal to complete the stop and unlock the next tower.</li>
+      <li>Speed rises with height and later stops.</li>
+    </ul>
+    <button class="btn" id="closeHelp">Got it</button>
+  </div>
+</div>
+<script>
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+
+const gate=document.getElementById('gate');
+function isMerveilCitizen(){
+  try{
+    if(window.parent!==window&&window.parent.__MERVEIL_USER__)return true;
+    if(window.__MERVEIL_USER__)return true;
+    const q=new URLSearchParams(location.search);
+    if(q.get('citizen')==='1')return true;
+    if(localStorage.getItem('merveil_session')||localStorage.getItem('sb-access-token'))return true;
+  }catch(e){}
+  return false;
+}
+function unlockArenaUI(){
+  if(gate) gate.classList.add('hidden');
+  const hud=document.getElementById('hud'); if(hud) hud.style.display='';
+  const hb=document.getElementById('helpBtn'); if(hb) hb.style.display='';
+  const cv=document.getElementById('game'); if(cv) cv.style.display='block';
+  const ab=document.getElementById('abilityBtn'); if(ab) ab.style.display='flex';
+  const cr=document.getElementById('credit'); if(cr) cr.style.display='block';
+  const hm=document.getElementById('home'); if(hm) hm.classList.remove('hidden');
+}
+function enforceCitizenGate(){
+  if(isMerveilCitizen()){unlockArenaUI();return}
+  if(gate) gate.classList.remove('hidden');
+  const btn=document.getElementById('gateSignIn');
+  if(btn) btn.onclick=()=>{
+    try{window.parent.postMessage({type:'merveil:require-signin',source:'arena'},'*')}catch(e){}
+    if(window.parent===window) alert('Open Merveil, sign in with your Passport, then launch Arena from the app.');
+  };
+  window.addEventListener('message',(ev)=>{
+    if(ev.data&&ev.data.type==='merveil:session'&&ev.data.user){
+      window.__MERVEIL_USER__=ev.data.user;
+      unlockArenaUI();
+    }
+  });
+}
+enforceCitizenGate();
+const scoreEl=document.getElementById('score');
+const stageEl=document.getElementById('stage');
+const comboEl=document.getElementById('combo');
+const goalFill=document.getElementById('goalFill');
+const integrityEl=document.getElementById('integrity');
+const home=document.getElementById('home');
+const routeScreen=document.getElementById('routeScreen');
+const result=document.getElementById('result');
+const instructions=document.getElementById('instructions');
+const routeList=document.getElementById('routeList');
+
+function resize(){canvas.width=innerWidth*devicePixelRatio;canvas.height=innerHeight*devicePixelRatio;canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+resize();addEventListener('resize',resize);
+
+const ROUTE=[
+  {name:'Trade Centre',desc:'Metro line · SZR',goal:10,speed:2.5,tint:'#1a2140'},
+  {name:'World Trade Centre',desc:'Exhibition district',goal:13,speed:2.8,tint:'#22284a'},
+  {name:'Emirates Towers',desc:'Financial corridor',goal:16,speed:3.1,tint:'#2a2450'},
+  {name:'DIFC',desc:'Financial centre',goal:19,speed:3.4,tint:'#302850'},
+  {name:'Downtown Dubai',desc:'Burj Khalifa district',goal:23,speed:3.8,tint:'#3a2a50'},
+  {name:'Business Bay',desc:'Canal district · final',goal:28,speed:4.2,tint:'#44305a'},
+];
+const CREDITS=[5,5,7,7,10,10,12,12,15,15,18,18,20,20,25,25,28,28,30,30,35,35,40,40,45,50,55,60,70,100];
+
+let progress=+(localStorage.getItem('br_progress')||0);
+let best={};try{best=JSON.parse(localStorage.getItem('br_best')||'{}')}catch{}
+let currentStop=0,stopConfig=ROUTE[0];
+let blocks=[],moving=null,camY=0,speed=2.6,dir=1;
+let score=0,combo=0,running=false,integrity=100,gameOverFlag=false;
+let floatTexts=[];
+// Difficulty: calm slower brick · standard · expedition faster + tighter lean
+let difficulty='standard';
+try{const d=localStorage.getItem('burj_difficulty');if(['calm','standard','expedition'].includes(d))difficulty=d}catch{}
+const DIFF_MULT={calm:0.72,standard:1,expedition:1.38};
+function diffMult(){return DIFF_MULT[difficulty]||1}
+function paintDiffButtons(){
+  document.querySelectorAll('.diffBtn').forEach(b=>{
+    const on=b.dataset.diff===difficulty;
+    b.style.background=on?'var(--orange)':'transparent';
+    b.style.color=on?'#fff':'var(--dim)';
+    b.style.borderColor=on?'var(--orange)':'rgba(255,255,255,.15)';
+  });
+}
+document.querySelectorAll('.diffBtn').forEach(b=>{
+  b.onclick=()=>{difficulty=b.dataset.diff;try{localStorage.setItem('burj_difficulty',difficulty)}catch{};paintDiffButtons()};
+});
+paintDiffButtons();
+function pushFloat(x,y,text,color){
+  floatTexts.push({x,y,text,color:color||'#D4A24C',life:50,vy:-1.15});
+}
+const BLOCK_H=36;
+const palette=['#06B6D4','#22D3EE','#0891B2','#D97706','#818CF8','#A78BFA'];
+
+function baseWidth(){return Math.min(210,innerWidth*0.48)}
+function shade(hex,amt){
+  const n=parseInt(hex.slice(1),16);
+  let r=(n>>16)+Math.round(255*amt),g=((n>>8)&255)+Math.round(255*amt),b=(n&255)+Math.round(255*amt);
+  return`rgb(${Math.max(0,Math.min(255,r))},${Math.max(0,Math.min(255,g))},${Math.max(0,Math.min(255,b))})`;
+}
+function drawBrick3D(x,y,w,h,color,perfect,active){
+  const d=11;
+  ctx.save();
+  ctx.shadowColor=perfect?'rgba(212,162,76,.55)':'rgba(249,115,22,.18)';
+  ctx.shadowBlur=perfect?18:8;
+  // front
+  ctx.fillStyle=color;
+  ctx.fillRect(x,y,w,h-2);
+  // top (lighter isometric)
+  ctx.fillStyle=shade(color,.32);
+  ctx.beginPath();
+  ctx.moveTo(x,y);
+  ctx.lineTo(x+d,y-d*.65);
+  ctx.lineTo(x+w+d,y-d*.65);
+  ctx.lineTo(x+w,y);
+  ctx.closePath();ctx.fill();
+  // right (darker)
+  ctx.fillStyle=shade(color,-.28);
+  ctx.beginPath();
+  ctx.moveTo(x+w,y);
+  ctx.lineTo(x+w+d,y-d*.65);
+  ctx.lineTo(x+w+d,y+h-2-d*.65);
+  ctx.lineTo(x+w,y+h-2);
+  ctx.closePath();ctx.fill();
+  // edge highlight
+  ctx.strokeStyle='rgba(255,255,255,.12)';
+  ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+w,y);ctx.stroke();
+  if(active){ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=1.5;ctx.strokeRect(x+.5,y+.5,w-1,h-3)}
+  if(perfect){ctx.fillStyle='rgba(212,162,76,.95)';ctx.fillRect(x,y,w,3)}
+  ctx.restore();
+}
+function drawSkyline(){
+  ctx.save();
+  ctx.globalAlpha=.16;
+  ctx.fillStyle=stopConfig.tint||'#1C2340';
+  [[.04,.55],[.14,.72],[.26,.44],[.6,.68],[.74,.5],[.86,.62]].forEach(([bx,bh])=>{
+    const w=innerWidth*.085,h=innerHeight*bh*.48;
+    ctx.fillRect(innerWidth*bx,innerHeight-110-h,w,h);
+  });
+  ctx.restore();
+}
+
+function initTower(){
+  blocks=[];camY=0;speed=stopConfig.speed*diffMult();score=0;combo=0;integrity=100;gameOverFlag=false;floatTexts=[];
+  const w=baseWidth();
+  blocks.push({x:innerWidth/2-w/2,w,color:'#3A4270',perfect:false,y:0});
+  blocks.push({x:innerWidth/2-w/2+6,w:w-12,color:'#4C5490',perfect:false,y:1});
+  spawnMoving();updateScore();
+}
+function spawnMoving(){
+  const top=blocks[blocks.length-1];
+  moving={x:16,w:top.w,color:palette[blocks.length%palette.length],y:blocks.length};
+  dir=Math.random()<.5?-1:1;
+  speed=Math.min(11,(stopConfig.speed+blocks.length*.11)*diffMult());
+}
+function updateScore(){
+  const floors=Math.max(0,blocks.length-2);
+  scoreEl.innerHTML=floors+'<small>Floors</small>';
+  goalFill.style.width=Math.min(100,(floors/stopConfig.goal)*100)+'%';
+  integrityEl.innerHTML=`Integrity <b>${Math.max(0,Math.round(integrity))}%</b>`;
+  if(floors>=stopConfig.goal&&running)completeStop();
+}
+function showCombo(){
+  comboEl.style.opacity=1;
+  comboEl.textContent=combo>1?`PERFECT ×${combo}`:'PERFECT STACK';
+  clearTimeout(showCombo._t);
+  showCombo._t=setTimeout(()=>comboEl.style.opacity=0,700);
+}
+function drop(){
+  if(!running||gameOverFlag)return;
+  try{ArenaAudio.sfx('drop');}catch(e){}
+  const top=blocks[blocks.length-1];
+  const left=Math.max(moving.x,top.x);
+  const right=Math.min(moving.x+moving.w,top.x+top.w);
+  const overlap=right-left;
+  if(overlap<=5){integrity=0; try{ArenaAudio.sfx('hit');}catch(e){} endGame();return}
+  // Expedition: tighter perfect window
+  const perfectTol=difficulty==='expedition'?3:difficulty==='calm'?8:5;
+  const perfect=Math.abs(moving.x-top.x)<perfectTol&&Math.abs(moving.w-top.w)<(perfectTol-1);
+  const newW=perfect?top.w:overlap;
+  const newX=perfect?top.x:left;
+  blocks.push({x:newX,w:newW,color:moving.color,perfect,y:blocks.length});
+  const stackY=innerHeight-140-blocks.length*BLOCK_H+camY;
+  if(perfect){
+    combo++;showCombo(); try{ArenaAudio.sfx('collect');}catch(e){}
+    pushFloat(newX+newW/2,stackY,'+1 FLOOR',combo>2?'#3FBFA0':'#D4A24C');
+    if(combo>=3)pushFloat(newX+newW/2,stackY-18,`STREAK ×${combo}`,'#818CF8');
+  }else{
+    combo=0;
+    const lean=1-(overlap/top.w);
+    // Expedition takes more integrity damage on lean
+    const dmg=lean*20*(difficulty==='expedition'?1.35:difficulty==='calm'?0.75:1);
+    integrity-=dmg;
+    try{ArenaAudio.sfx('hit');}catch(e){}
+    pushFloat(newX+newW/2,stackY,`−${Math.round(dmg)}%`, '#E5626B');
+  }
+  if(integrity<=0){endGame();return}
+  updateScore();
+  const stackTop=innerHeight-140-blocks.length*BLOCK_H+camY;
+  if(stackTop<innerHeight*.38)camY+=(innerHeight*.38-stackTop);
+  spawnMoving();
+}
+function completeStop(){ try{ArenaAudio.sfx('win');}catch(e){}
+  running=false;
+  progress=Math.max(progress,currentStop+1);
+  localStorage.setItem('br_progress',String(progress));
+  const floors=blocks.length-2;
+  const prev=best[currentStop]||0;
+  if(floors>prev){best[currentStop]=floors;localStorage.setItem('br_best',JSON.stringify(best))}
+  const isFirst=progress===currentStop+1&&!(best._credited&&best._credited[currentStop]);
+  const credits=isFirst?(CREDITS[Math.min(currentStop*5,29)]||15):0;
+  if(isFirst){best._credited=best._credited||{};best._credited[currentStop]=true;localStorage.setItem('br_best',JSON.stringify(best))}
+  setTimeout(()=>{
+    result.classList.remove('hidden');
+    const isLast=currentStop===ROUTE.length-1;
+    result.innerHTML=`
+      <div class="tag">Level Complete</div>
+      <h1 style="font-size:26px;letter-spacing:1px">${stopConfig.name}</h1>
+      <div class="sub">${isLast?'Corridor complete — Business Bay reached.':'Stop cleared. Next tower unlocked.'}</div>
+      <div class="stat-row">
+        <div class="stat"><div class="n">${floors}</div><div class="l">Floors</div></div>
+        <div class="stat"><div class="n">${Math.round(integrity)}%</div><div class="l">Integrity</div></div>
+        ${credits?`<div class="stat"><div class="n">+${credits}</div><div class="l">Credits</div></div>`:''}
+      </div>
+      <button class="btn" id="resMap">Route Map</button>
+      <button class="btn ghost" id="resRetry">Replay</button>
+      <div class="by">By IVONIX</div>`;
+    document.getElementById('resMap').onclick=()=>{result.classList.add('hidden');openRoute()};
+    document.getElementById('resRetry').onclick=()=>{result.classList.add('hidden');beginStop(currentStop)};
+  },450);
+}
+function showPauseBtn(on){const el=document.getElementById('pauseBtn');if(el)el.style.display=on?'block':'none'}
+function pauseGame(){
+  if(!running||gameOverFlag)return;
+  running=false;
+  document.getElementById('pauseScreen').classList.remove('hidden');
+}
+function resumeGame(){
+  if(gameOverFlag)return;
+  document.getElementById('pauseScreen').classList.add('hidden');
+  running=true;showPauseBtn(true);
+}
+function endGame(){
+  gameOverFlag=true;running=false;showPauseBtn(false);
+  setTimeout(()=>{
+    result.classList.remove('hidden');
+    result.innerHTML=`
+      <div class="tag">Try Again</div>
+      <h1 style="font-size:26px">Tower Down</h1>
+      <div class="sub">${stopConfig.name} fell before ${stopConfig.goal} floors.</div>
+      <div class="stat-row">
+        <div class="stat"><div class="n">${Math.max(0,blocks.length-2)}</div><div class="l">Floors</div></div>
+        <div class="stat"><div class="n">${stopConfig.goal}</div><div class="l">Goal</div></div>
+      </div>
+      <button class="btn" id="resRetry2">Retry</button>
+      <button class="btn ghost" id="resMap2">Route Map</button>
+      <div class="by">By IVONIX</div>`;
+    document.getElementById('resRetry2').onclick=()=>{result.classList.add('hidden');beginStop(currentStop)};
+    document.getElementById('resMap2').onclick=()=>{result.classList.add('hidden');openRoute()};
+  },400);
+}
+function beginStop(i){
+  currentStop=i;stopConfig=ROUTE[i];
+  stageEl.textContent=stopConfig.name;
+  home.classList.add('hidden');routeScreen.classList.add('hidden');result.classList.add('hidden');
+  document.getElementById('pauseScreen').classList.add('hidden');
+  initTower();running=true;showPauseBtn(true);
+}
+document.getElementById('pauseBtn').onclick=(e)=>{e.stopPropagation();pauseGame()};
+document.getElementById('resumeBtn').onclick=()=>resumeGame();
+document.getElementById('restartBtn').onclick=()=>{document.getElementById('pauseScreen').classList.add('hidden');beginStop(currentStop)};
+document.getElementById('pauseHomeBtn').onclick=()=>{
+  document.getElementById('pauseScreen').classList.add('hidden');
+  running=false;showPauseBtn(false);home.classList.remove('hidden');
+};
+function openRoute(){
+  routeList.innerHTML='';
+  ROUTE.forEach((s,i)=>{
+    const locked=i>progress,done=i<progress;
+    const div=document.createElement('div');
+    div.className='stop'+(locked?' locked':'')+(done?' done':'');
+    const pb=best[i]!=null?` · best ${best[i]}`:'';
+    div.innerHTML=`<div class="idx">${i+1}</div><div><div class="name">${s.name}</div><div class="desc">${s.desc}${pb}</div></div><div class="goal">${s.goal} fl</div>`;
+    if(!locked)div.onclick=()=>beginStop(i);
+    routeList.appendChild(div);
+  });
+  home.classList.add('hidden');result.classList.add('hidden');
+  routeScreen.classList.remove('hidden');
+}
+document.getElementById('startBtn').onclick=()=>{ try{ArenaAudio.unlock('burj');}catch(e){} beginStop(Math.min(progress,ROUTE.length-1)); };
+document.getElementById('routeBtn').onclick=openRoute;
+document.getElementById('routeBack').onclick=()=>{routeScreen.classList.add('hidden');home.classList.remove('hidden')};
+document.getElementById('helpOpen').onclick=()=>instructions.classList.remove('hidden');
+document.getElementById('helpBtn').onclick=()=>instructions.classList.remove('hidden');
+document.getElementById('closeHelp').onclick=()=>instructions.classList.add('hidden');
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();drop()}});
+canvas.addEventListener('pointerdown',drop);
+
+function loop(){
+  if(running&&moving){
+    moving.x+=dir*speed;
+    if(moving.x<=0){moving.x=0;dir=1}
+    if(moving.x+moving.w>=innerWidth){moving.x=innerWidth-moving.w;dir=-1}
+  }
+  for(const ft of floatTexts){ft.y+=ft.vy;ft.life--}
+  floatTexts=floatTexts.filter(ft=>ft.life>0);
+  ctx.clearRect(0,0,innerWidth,innerHeight);
+  drawSkyline();
+  const baseY=innerHeight-115;
+  for(const b of blocks){
+    const y=baseY-b.y*BLOCK_H+camY;
+    if(y<-BLOCK_H||y>innerHeight)continue;
+    drawBrick3D(b.x,y,b.w,BLOCK_H,b.color,b.perfect,false);
+  }
+  if(moving&&running){
+    const y=baseY-moving.y*BLOCK_H+camY;
+    drawBrick3D(moving.x,y,moving.w,BLOCK_H,moving.color,false,true);
+  }
+  // Floating score / integrity feedback
+  for(const ft of floatTexts){
+    ctx.save();
+    ctx.globalAlpha=Math.max(0,ft.life/50);
+    ctx.fillStyle=ft.color||'#D4A24C';
+    ctx.font='bold 13px system-ui,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText(ft.text,ft.x,ft.y);
+    ctx.restore();
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+
+
+// --- Merveil Arena audio (Web Audio API — Chrome, Safari, Firefox) ---
+// Firefox keeps AudioContext suspended until a real user gesture + resume().
+const ArenaAudio = (() => {
+  let ctx = null, master = null, started = false, loopTimer = null, muted = false, kind = "sahra";
+  function ensure() {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = muted ? 0.0001 : 0.2;
+    master.connect(ctx.destination);
+    return ctx;
+  }
+  async function resumeIfNeeded() {
+    const c = ensure();
+    if (!c) return null;
+    if (c.state === "suspended") {
+      try { await c.resume(); } catch (e) {}
+    }
+    return c;
+  }
+  function tone(freq, dur, type, gain, when) {
+    if (muted) return;
+    const c = ctx; if (!c || c.state !== "running") return;
+    const t0 = when != null ? when : c.currentTime;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.001, gain || 0.08), t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.05, dur));
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  function schedulePad(at) {
+    if (muted || !ctx || ctx.state !== "running") return;
+    const base = kind === "sahra" ? 110 : kind === "burj" ? 98 : 130.81;
+    const intervals = kind === "connecta" ? [0, 4, 7, 12] : [0, 3, 7, 10];
+    for (let i = 0; i < intervals.length; i++) {
+      const f = base * Math.pow(2, intervals[i] / 12);
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = i % 2 ? "triangle" : "sine";
+      o.frequency.value = f;
+      g.gain.value = 0.03 / (1 + i * 0.4);
+      o.connect(g); g.connect(master);
+      o.start(at);
+      o.stop(at + 3.15);
+    }
+    tone(base * 0.5, 0.16, "sine", 0.05, at);
+    tone(base * 0.5, 0.1, "sine", 0.03, at + 1.6);
+  }
+  function startBgm(k) {
+    kind = k || kind;
+    if (started) return;
+    started = true;
+    schedulePad(ctx.currentTime + 0.05);
+    loopTimer = setInterval(() => {
+      if (!ctx || muted) return;
+      if (ctx.state === "suspended") ctx.resume().catch(()=>{});
+      if (ctx.state === "running") schedulePad(ctx.currentTime + 0.02);
+    }, 3200);
+  }
+  function sfx(name) {
+    if (muted) return;
+    const c = ctx; if (!c || c.state !== "running") return;
+    const t = c.currentTime;
+    if (name === "collect") {
+      // Perfect stack — clear click + chime
+      tone(520, 0.05, "square", 0.05, t);
+      tone(780, 0.09, "sine", 0.045, t + 0.04);
+      tone(1040, 0.08, "triangle", 0.025, t + 0.1);
+    } else if (name === "hit") {
+      // Lean / miss — dull thud
+      tone(95, 0.18, "sawtooth", 0.08, t);
+      tone(55, 0.28, "sine", 0.06, t + 0.02);
+      tone(140, 0.12, "triangle", 0.03, t + 0.08);
+    } else if (name === "win") {
+      tone(523, 0.14, "triangle", 0.06, t);
+      tone(659, 0.16, "triangle", 0.05, t + 0.11);
+      tone(784, 0.22, "sine", 0.05, t + 0.24);
+      tone(1046, 0.18, "sine", 0.03, t + 0.4);
+    } else if (name === "start") {
+      tone(220, 0.1, "triangle", 0.05, t);
+      tone(330, 0.14, "sine", 0.04, t + 0.07);
+      tone(440, 0.12, "sine", 0.03, t + 0.16);
+    } else if (name === "drop") {
+      // Block drop soft tick
+      tone(200, 0.05, "sine", 0.03, t);
+      tone(150, 0.07, "triangle", 0.02, t + 0.02);
+    }
+  }
+  let volume = 0.45;
+  try {
+    const s = JSON.parse(localStorage.getItem("merveil_arena_audio") || "{}");
+    if (typeof s.volume === "number") volume = s.volume;
+    if (typeof s.muted === "boolean") muted = s.muted;
+  } catch {}
+  function applyGain() {
+    if (master) master.gain.value = muted ? 0.0001 : Math.max(0.0001, volume * 0.55);
+  }
+  async function unlock(k) {
+    kind = k || kind;
+    if (volume < 0.15) volume = 0.45;
+    if (muted && volume > 0.05) muted = false;
+    ensure();
+    applyGain();
+    const c = await resumeIfNeeded();
+    if (!c) return;
+    if (c.state === "suspended") {
+      try { await c.resume(); } catch (e) {}
+    }
+    started = false;
+    startBgm(kind);
+    sfx("start");
+    try {
+      if (!window.__merveilArenaKeepAlive) {
+        window.__merveilArenaKeepAlive = setInterval(() => {
+          if (!ctx) return;
+          if (ctx.state === "suspended") ctx.resume().catch(() => {});
+        }, 2000);
+      }
+    } catch (e) {}
+  }
+  function setMuted(m) {
+    muted = !!m;
+    applyGain();
+    try { localStorage.setItem("merveil_arena_audio", JSON.stringify({ volume, muted })); } catch {}
+  }
+  function setVolume(v) {
+    volume = Math.max(0, Math.min(1, Number(v) || 0));
+    if (volume <= 0.01) muted = true;
+    else muted = false;
+    applyGain();
+    try { localStorage.setItem("merveil_arena_audio", JSON.stringify({ volume, muted })); } catch {}
+  }
+  function getState() { return { muted, volume }; }
+  return { unlock, sfx, startBgm, ensure, resumeIfNeeded, setMuted, setVolume, getState };
+})();
+
+(function wireArenaSoundUi() {
+  const muteBtn = document.getElementById("muteBtn");
+  const volSlider = document.getElementById("volSlider");
+  if (muteBtn && volSlider) {
+    const st = ArenaAudio.getState ? ArenaAudio.getState() : { muted: false, volume: 0.45 };
+    volSlider.value = String(Math.round((st.volume || 0.45) * 100));
+    muteBtn.textContent = st.muted ? "Muted" : "Sound on";
+    muteBtn.onclick = () => {
+      const next = !(ArenaAudio.getState && ArenaAudio.getState().muted);
+      ArenaAudio.setMuted(next);
+      muteBtn.textContent = next ? "Muted" : "Sound on";
+      if (!next) try { ArenaAudio.unlock("burj"); } catch (e) {}
+    };
+    volSlider.oninput = () => {
+      const v = Number(volSlider.value) / 100;
+      if (ArenaAudio.setVolume) ArenaAudio.setVolume(v);
+      if (v > 0.01) ArenaAudio.setMuted(false);
+      muteBtn.textContent = (ArenaAudio.getState && ArenaAudio.getState().muted) ? "Muted" : "Sound on";
+      try { ArenaAudio.unlock("burj"); } catch (e) {}
+    };
+  }
+  let unlockedOnce = false;
+  const unlockOnce = () => {
+    if (unlockedOnce) return;
+    unlockedOnce = true;
+    try { ArenaAudio.unlock("burj"); } catch (e) {}
+  };
+  ["pointerdown", "touchstart", "mousedown", "keydown", "click"].forEach((ev) => {
+    document.addEventListener(ev, unlockOnce, { once: true, passive: true, capture: true });
+  });
+})();
+
+</script>
+</body>
+</html>
