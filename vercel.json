@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/router" },
-    { "source": "/merveil-admin-x9k2", "destination": "/index.html" },
-    { "source": "/merveil-admin-x9k2/(.*)", "destination": "/index.html" },
-    { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/).*)", "destination": "/index.html" }
-  ]
-}
