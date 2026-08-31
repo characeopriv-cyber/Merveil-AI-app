@@ -1,0 +1,19 @@
+# Merveil AI / Junction
+User-agent: *
+Allow: /
+
+# App shell & static
+Allow: /manifest.webmanifest
+Allow: /sw.js
+Allow: /favicon.svg
+Allow: /icons/
+Allow: /arena/
+Allow: /privacy-policy.html
+Allow: /terms.html
+
+# Do not index internal / API paths
+Disallow: /api/
+Disallow: /merveil-admin-x9k2
+Disallow: /merveil-admin-x9k2/
+
+Sitemap: https://www.junction.technology/sitemap.xml
