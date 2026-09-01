@@ -4,43 +4,37 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Merveil AI — Identity, network &amp; opportunity</title>
-    <meta
-      name="description"
-      content="Merveil AI is the super-app for verified identity, global networking, careers, services, investment, and trusted connections — powered by your Passport."
-    />
+    <meta name="description" content="Merveil AI is the super-app for verified identity, global networking, careers, services, investment, and trusted connections — powered by your Passport." />
     <meta name="theme-color" content="#06B6D4" />
     <meta name="application-name" content="Merveil AI" />
     <meta name="apple-mobile-web-app-title" content="Merveil AI" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-
-    <!-- Open Graph — Facebook / Instagram / LinkedIn share card -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Merveil AI" />
     <meta property="og:title" content="Merveil AI — Identity, network & opportunity" />
-    <meta
-      property="og:description"
-      content="One Passport. Real citizens. Jobs, services, investment, World reels, and trusted connections — not just property."
-    />
+    <meta property="og:description" content="One Passport. Real citizens. Jobs, services, investment, World reels, and trusted connections — not just property." />
     <meta property="og:url" content="https://www.junction.technology/" />
     <meta property="og:image" content="https://www.junction.technology/og-merveil.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:locale" content="en_US" />
-
-    <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Merveil AI — Identity, network & opportunity" />
-    <meta
-      name="twitter:description"
-      content="Verified identity, careers, services, investment, and global networking in one super-app."
-    />
+    <meta name="twitter:description" content="Verified identity, careers, services, investment, and global networking in one super-app." />
     <meta name="twitter:image" content="https://www.junction.technology/og-merveil.png" />
-
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      #merveil-ai-call-launcher{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:2147483000;border:1px solid rgba(91,220,235,.35);background:rgba(7,17,24,.94);color:#e9fbff;border-radius:999px;padding:11px 15px;font:700 13px/1 system-ui,sans-serif;letter-spacing:.01em;box-shadow:0 10px 34px rgba(0,0,0,.35);backdrop-filter:blur(12px);cursor:pointer;display:none}
+      #merveil-ai-call-launcher span{display:inline-block;width:8px;height:8px;border-radius:50%;background:#5ee7b1;box-shadow:0 0 12px #5ee7b1;margin-right:8px}
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <button id="merveil-ai-call-launcher" aria-label="Open Merveil AI Call"><span></span>AI Call</button>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      (()=>{const b=document.getElementById('merveil-ai-call-launcher');let shown=false;const scan=()=>{const els=[...document.querySelectorAll('button,a,[role="button"]')];const hit=els.some(e=>/\bcalls?\b/i.test((e.textContent||'').trim()));if(hit&&!shown){b.style.display='block';shown=true}};b.onclick=()=>location.href='/ai-call.html';new MutationObserver(scan).observe(document.getElementById('root'),{childList:true,subtree:true});setTimeout(scan,900);})();
+    </script>
   </body>
 </html>
