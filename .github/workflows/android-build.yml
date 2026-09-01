@@ -1,7 +1,15 @@
 name: Android Build (Merveil AI)
 
+# Manual trigger only for now — go to the Actions tab on GitHub, pick this
+# workflow, and click "Run workflow". Once we're confident in it, a
+# `push:` trigger can be added so it builds automatically.
 on:
   workflow_dispatch: {}
+
+# Needed so this workflow can commit the scaffolded android/ folder back
+# to the repo (see "Commit generated android/ folder" step below).
+permissions:
+  contents: write
 
 jobs:
   build-apk:
@@ -34,6 +42,23 @@ jobs:
             npx cap add android
           else
             echo "android/ folder already exists — skipping scaffold."
+          fi
+
+      # This is the important addition: without this, android/ only ever
+      # exists inside this ephemeral runner and gets thrown away after the
+      # build. Committing it back makes it a permanent, editable part of
+      # the repo — required before any custom native code (like the music
+      # library plugin) can be added on top of it.
+      - name: Commit generated android/ folder back to the repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add android
+          if git diff --cached --quiet; then
+            echo "No android/ changes to commit."
+          else
+            git commit -m "chore: scaffold Capacitor Android project [skip ci]"
+            git push
           fi
 
       - name: Sync web build + plugins into the native project
