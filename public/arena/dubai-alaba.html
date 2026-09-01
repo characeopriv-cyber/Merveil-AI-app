@@ -1,0 +1,1733 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>DUBAI ALABA · MERVEIL AI</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      overflow: hidden;
+      background: #0a0e17;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #fff;
+      touch-action: none;
+      user-select: none;
+    }
+    canvas#game {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* ─── OVERLAY UI ─────────────────────────────────────────── */
+    #ui-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 14, 23, 0.85);
+      backdrop-filter: blur(12px);
+      transition: opacity 0.6s;
+    }
+    #ui-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #ui-overlay .menu-box {
+      pointer-events: auto;
+      background: rgba(7, 19, 29, 0.9);
+      border: 1px solid rgba(101, 215, 255, 0.15);
+      border-radius: 24px;
+      padding: 30px 40px;
+      max-width: 700px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+    }
+    .menu-box h1 {
+      text-align: center;
+      font-size: 28px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #65d7ff, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+    }
+    .menu-box .sub {
+      text-align: center;
+      font-size: 12px;
+      color: #8aa4b8;
+      letter-spacing: 2px;
+      margin-bottom: 20px;
+    }
+    .menu-box .sub span {
+      color: #65d7ff;
+    }
+    .menu-section {
+      margin-bottom: 18px;
+    }
+    .menu-section label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #65d7ff;
+      margin-bottom: 6px;
+    }
+    .menu-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .menu-options .opt {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 6px 14px;
+      font-size: 13px;
+      color: #b0c8d8;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .menu-options .opt:hover {
+      background: rgba(101, 215, 255, 0.1);
+      border-color: rgba(101, 215, 255, 0.3);
+    }
+    .menu-options .opt.selected {
+      background: rgba(101, 215, 255, 0.15);
+      border-color: #65d7ff;
+      color: #fff;
+    }
+    .btn-start {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      margin-top: 10px;
+      background: linear-gradient(135deg, #65d7ff, #a78bfa);
+      border: none;
+      border-radius: 14px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #0a0e17;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .btn-start:hover {
+      transform: scale(1.02);
+    }
+    .btn-start:active {
+      transform: scale(0.97);
+    }
+
+    /* ─── HUD ────────────────────────────────────────────────── */
+    #hud {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 14px;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .card {
+      background: rgba(7, 19, 29, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      padding: 7px 12px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .brand b {
+      font-size: 15px;
+      letter-spacing: 0.5px;
+      background: linear-gradient(135deg, #65d7ff, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand .small {
+      font-size: 9px;
+      color: #8aa4b8;
+      letter-spacing: 0.8px;
+    }
+    .stats {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .stat {
+      display: flex;
+      flex-direction: column;
+      min-width: 60px;
+    }
+    .stat b {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .stat span {
+      font-size: 8px;
+      color: #8aa4b8;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    #mission-panel {
+      position: fixed;
+      top: 82px;
+      left: 14px;
+      width: min(340px, calc(100% - 28px));
+      pointer-events: none;
+      z-index: 11;
+    }
+    #mission-panel .card {
+      padding: 10px 14px;
+    }
+    .mission-title {
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #65d7ff;
+    }
+    .mission-name {
+      font-size: 16px;
+      font-weight: 800;
+      margin: 2px 0 3px;
+      color: #fff;
+    }
+    .mission-desc {
+      font-size: 11px;
+      color: #b0c8d8;
+      line-height: 1.4;
+    }
+    .mission-progress {
+      margin-top: 6px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .mission-progress .fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #65d7ff, #a78bfa);
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+    #merveil-toast {
+      position: fixed;
+      bottom: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(7, 19, 29, 0.92);
+      border: 1px solid rgba(101, 215, 255, 0.25);
+      padding: 10px 20px;
+      border-radius: 14px;
+      backdrop-filter: blur(12px);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      z-index: 20;
+      text-align: center;
+      max-width: 90%;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+    }
+    #merveil-toast .label {
+      font-size: 9px;
+      letter-spacing: 1.5px;
+      color: #65d7ff;
+      text-transform: uppercase;
+    }
+    #merveil-toast .msg {
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    #merveil-toast .sub {
+      font-size: 11px;
+      color: #b0c8d8;
+      margin-top: 2px;
+    }
+    #merveil-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    #minimap {
+      position: fixed;
+      right: 14px;
+      top: 82px;
+      width: 150px;
+      height: 110px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(7, 19, 29, 0.8);
+      backdrop-filter: blur(6px);
+      pointer-events: none;
+      z-index: 11;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+    }
+    #minimap canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    #controls {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 12;
+      gap: 8px;
+    }
+    .ctrl-group {
+      pointer-events: auto;
+      display: flex;
+      gap: 6px;
+    }
+    .ctrl-btn {
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(7, 19, 29, 0.75);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 20px;
+      touch-action: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 52px;
+      height: 52px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      padding: 0 6px;
+      transition: background 0.1s;
+    }
+    .ctrl-btn:active,
+    .ctrl-btn.active {
+      background: rgba(101, 215, 255, 0.2);
+      border-color: rgba(101, 215, 255, 0.3);
+    }
+    .ctrl-btn.small {
+      font-size: 11px;
+      min-width: 60px;
+      height: 44px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .pad-grid {
+      display: grid;
+      grid-template-columns: 52px 52px 52px;
+      grid-template-rows: 52px 52px;
+      gap: 4px;
+    }
+    .pad-grid .ctrl-btn {
+      min-width: unset;
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+      font-size: 18px;
+    }
+    .pad-up {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .pad-left {
+      grid-column: 1;
+      grid-row: 2;
+    }
+    .pad-right {
+      grid-column: 3;
+      grid-row: 2;
+    }
+    .pad-down {
+      grid-column: 2;
+      grid-row: 2;
+    }
+    .action-group {
+      display: flex;
+      gap: 6px;
+      align-items: flex-end;
+    }
+    .action-group .ctrl-btn {
+      height: 44px;
+      min-width: 60px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    #portal-indicator {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 15;
+      opacity: 0;
+      transition: opacity 0.4s;
+      text-align: center;
+      background: rgba(7, 19, 29, 0.85);
+      border: 1px solid rgba(101, 215, 255, 0.2);
+      border-radius: 20px;
+      padding: 18px 30px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 0 60px rgba(101, 215, 255, 0.08);
+    }
+    #portal-indicator.show {
+      opacity: 1;
+    }
+    #portal-indicator .big {
+      font-size: 28px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #65d7ff, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    #portal-indicator .sub {
+      font-size: 12px;
+      color: #b0c8d8;
+      margin-top: 4px;
+    }
+    #portal-indicator .tag {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #65d7ff;
+      text-transform: uppercase;
+      margin-top: 6px;
+    }
+    .credit {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.2);
+      letter-spacing: 1px;
+      z-index: 5;
+      pointer-events: none;
+    }
+    @media (max-width: 600px) {
+      .menu-box {
+        padding: 20px !important;
+      }
+      .top-bar {
+        padding: 8px 10px;
+        gap: 4px;
+      }
+      .card {
+        padding: 5px 10px;
+        border-radius: 10px;
+      }
+      .brand b {
+        font-size: 12px;
+      }
+      .stat b {
+        font-size: 11px;
+      }
+      #mission-panel {
+        top: 68px;
+        left: 10px;
+        width: calc(100% - 20px);
+      }
+      #mission-panel .card {
+        padding: 8px 12px;
+      }
+      .mission-name {
+        font-size: 13px;
+      }
+      #minimap {
+        width: 110px;
+        height: 85px;
+        right: 10px;
+        top: 68px;
+      }
+      .ctrl-btn {
+        min-width: 42px;
+        height: 42px;
+        font-size: 16px;
+        border-radius: 10px;
+      }
+      .pad-grid {
+        grid-template-columns: 42px 42px 42px;
+        grid-template-rows: 42px 42px;
+        gap: 3px;
+      }
+      .ctrl-btn.small {
+        min-width: 48px;
+        height: 38px;
+        font-size: 9px;
+      }
+      .action-group .ctrl-btn {
+        height: 38px;
+        min-width: 48px;
+        font-size: 9px;
+      }
+      #controls {
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
+        gap: 4px;
+      }
+      #merveil-toast {
+        bottom: 85px;
+        padding: 8px 14px;
+      }
+      #merveil-toast .msg {
+        font-size: 12px;
+      }
+      #portal-indicator {
+        padding: 12px 20px;
+      }
+      #portal-indicator .big {
+        font-size: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Three.js canvas -->
+  <canvas id="game"></canvas>
+
+  <!-- Main Menu Overlay -->
+  <div id="ui-overlay">
+    <div class="menu-box">
+      <h1>DUBAI ALABA</h1>
+      <div class="sub">MERVEIL AI · <span>THE INTELLIGENCE BEYOND INTERACTION</span></div>
+
+      <!-- Character Selection -->
+      <div class="menu-section">
+        <label>👤 Choose Alaba</label>
+        <div class="menu-options" id="char-select">
+          <div class="opt selected" data-char="default">Default Alaba</div>
+          <div class="opt" data-char="business">Business</div>
+          <div class="opt" data-char="casual">Casual</div>
+          <div class="opt" data-char="sporty">Sporty</div>
+        </div>
+      </div>
+
+      <!-- Vehicle Selection -->
+      <div class="menu-section">
+        <label>🚗 Choose Vehicle</label>
+        <div class="menu-options" id="vehicle-select">
+          <div class="opt selected" data-vehicle="0">🚕 Taxi</div>
+          <div class="opt" data-vehicle="1">🚓 Police</div>
+          <div class="opt" data-vehicle="2">🚑 Ambulance</div>
+          <div class="opt" data-vehicle="3">🏎️ Supercar</div>
+        </div>
+      </div>
+
+      <!-- Mission Selection -->
+      <div class="menu-section">
+        <label>📋 Choose Mission</label>
+        <div class="menu-options" id="mission-select">
+          <div class="opt selected" data-mission="0">✈️ Airport VIP</div>
+          <div class="opt" data-mission="1">🚨 Emergency</div>
+          <div class="opt" data-mission="2">🏥 Critical Call</div>
+          <div class="opt" data-mission="3">💎 Supercar Delivery</div>
+          <div class="opt" data-mission="4">✦ Merveil Discovery</div>
+        </div>
+      </div>
+
+      <button class="btn-start" id="start-btn">▶ START GAME</button>
+      <div style="text-align:center;margin-top:12px;font-size:10px;color:#445566;letter-spacing:1px;">Game By IVONIX · Merveil Arena</div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" style="display:none;">
+    <div class="top-bar">
+      <div class="card brand">
+        <b>DUBAI ALABA</b>
+        <span class="small">MERVEIL AI · IVONIX</span>
+      </div>
+      <div class="stats">
+        <div class="card stat"><b id="cash">AED 0</b><span>Cash</span></div>
+        <div class="card stat"><b id="rep">0</b><span>Rep</span></div>
+        <div class="card stat"><b id="spd">0</b><span>KM/H</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="mission-panel" style="display:none;">
+    <div class="card">
+      <div class="mission-title">Active Mission</div>
+      <div class="mission-name" id="mn">Explore Dubai</div>
+      <div class="mission-desc" id="mt">Drive around and discover Merveil AI.</div>
+      <div class="mission-progress"><div class="fill" id="mp" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <div id="minimap" style="display:none;"><canvas id="mini"></canvas></div>
+
+  <div id="merveil-toast" style="display:none;">
+    <div class="label">MERVEIL AI</div>
+    <div class="msg" id="toast-msg">The Intelligence Beyond Interaction</div>
+    <div class="sub" id="toast-sub">Welcome, Alaba.</div>
+  </div>
+
+  <div id="portal-indicator" style="display:none;">
+    <div class="tag">MERVEIL INTELLIGENCE PORTAL</div>
+    <div class="big" id="portal-title">✦ CONNECTED ✦</div>
+    <div class="sub" id="portal-desc">The city is alive with intelligence.</div>
+  </div>
+
+  <div id="controls" style="display:none;">
+    <div class="ctrl-group">
+      <div class="pad-grid">
+        <button class="ctrl-btn pad-up" data-key="up">▲</button>
+        <button class="ctrl-btn pad-left" data-key="left">◀</button>
+        <button class="ctrl-btn pad-right" data-key="right">▶</button>
+        <button class="ctrl-btn pad-down" data-key="down">▼</button>
+      </div>
+    </div>
+    <div class="ctrl-group action-group">
+      <button class="ctrl-btn small" data-key="brake">⏹ BRAKE</button>
+      <button class="ctrl-btn small" data-key="switch">🚗 CAR</button>
+      <button class="ctrl-btn small" data-key="radio">📻</button>
+    </div>
+  </div>
+
+  <div class="credit" id="credit" style="display:none;">Game By IVONIX</div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // ─── DOM REFS ─────────────────────────────────────────────
+    const overlay = document.getElementById('ui-overlay');
+    const startBtn = document.getElementById('start-btn');
+    const hud = document.getElementById('hud');
+    const missionPanel = document.getElementById('mission-panel');
+    const minimapEl = document.getElementById('minimap');
+    const toastEl = document.getElementById('merveil-toast');
+    const portalEl = document.getElementById('portal-indicator');
+    const controlsEl = document.getElementById('controls');
+    const creditEl = document.getElementById('credit');
+
+    const cashEl = document.getElementById('cash');
+    const repEl = document.getElementById('rep');
+    const spdEl = document.getElementById('spd');
+    const mnEl = document.getElementById('mn');
+    const mtEl = document.getElementById('mt');
+    const mpEl = document.getElementById('mp');
+    const toastMsg = document.getElementById('toast-msg');
+    const toastSub = document.getElementById('toast-sub');
+    const portalTitle = document.getElementById('portal-title');
+    const portalDesc = document.getElementById('portal-desc');
+
+    // ─── MENU STATE ────────────────────────────────────────────
+    let selectedChar = 'default';
+    let selectedVehicle = 0;
+    let selectedMission = 0;
+
+    document.querySelectorAll('#char-select .opt').forEach(el => {
+      el.addEventListener('click', () => {
+        document.querySelectorAll('#char-select .opt').forEach(o => o.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedChar = el.dataset.char;
+      });
+    });
+    document.querySelectorAll('#vehicle-select .opt').forEach(el => {
+      el.addEventListener('click', () => {
+        document.querySelectorAll('#vehicle-select .opt').forEach(o => o.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedVehicle = parseInt(el.dataset.vehicle);
+      });
+    });
+    document.querySelectorAll('#mission-select .opt').forEach(el => {
+      el.addEventListener('click', () => {
+        document.querySelectorAll('#mission-select .opt').forEach(o => o.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedMission = parseInt(el.dataset.mission);
+      });
+    });
+
+    // ─── GAME START ────────────────────────────────────────────
+    startBtn.addEventListener('click', () => {
+      overlay.classList.add('hidden');
+      hud.style.display = 'block';
+      missionPanel.style.display = 'block';
+      minimapEl.style.display = 'block';
+      toastEl.style.display = 'block';
+      portalEl.style.display = 'block';
+      controlsEl.style.display = 'flex';
+      creditEl.style.display = 'block';
+      initGame();
+    });
+
+    // ─── THREE.JS SETUP ──────────────────────────────────────
+    const canvas = document.getElementById('game');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 400, 900);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1200);
+
+    // ─── LIGHTS ──────────────────────────────────────────────
+    const ambientLight = new THREE.AmbientLight(0x8899aa, 0.5);
+    scene.add(ambientLight);
+    const sunLight = new THREE.DirectionalLight(0xffeedd, 2.0);
+    sunLight.position.set(80, 120, 60);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 400;
+    sunLight.shadow.camera.left = -300;
+    sunLight.shadow.camera.right = 300;
+    sunLight.shadow.camera.top = 300;
+    sunLight.shadow.camera.bottom = -300;
+    scene.add(sunLight);
+    const fillLight = new THREE.DirectionalLight(0x88bbff, 0.4);
+    fillLight.position.set(-60, 40, -80);
+    scene.add(fillLight);
+    const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x362d1e, 0.5);
+    scene.add(hemiLight);
+
+    // ─── GAME CONSTANTS ──────────────────────────────────────
+    const WORLD_SIZE = 1200;
+    const ROAD_WIDTH = 16;
+    const BLOCK_SIZE = 60;
+    const GRID = 14;
+    const HALF = GRID / 2 * BLOCK_SIZE;
+
+    const VEHICLES = [{
+      id: 'taxi',
+      label: '🚕 TAXI',
+      color: 0xf5c842,
+      accel: 4.0,
+      maxSpeed: 22,
+      brakeForce: 5.5,
+      turnSpeed: 2.8,
+      mass: 1.0,
+      width: 1.6,
+      height: 0.8,
+      length: 2.2,
+    }, {
+      id: 'police',
+      label: '🚓 POLICE',
+      color: 0x1a2a6c,
+      accel: 5.2,
+      maxSpeed: 28,
+      brakeForce: 7.0,
+      turnSpeed: 3.2,
+      mass: 1.1,
+      width: 1.7,
+      height: 0.85,
+      length: 2.3,
+    }, {
+      id: 'ambulance',
+      label: '🚑 AMBULANCE',
+      color: 0xcc2233,
+      accel: 4.6,
+      maxSpeed: 24,
+      brakeForce: 6.5,
+      turnSpeed: 2.6,
+      mass: 1.2,
+      width: 1.7,
+      height: 0.9,
+      length: 2.5,
+    }, {
+      id: 'supercar',
+      label: '🏎️ SUPERCAR',
+      color: 0xe03030,
+      accel: 7.2,
+      maxSpeed: 38,
+      brakeForce: 8.5,
+      turnSpeed: 3.8,
+      mass: 0.8,
+      width: 1.8,
+      height: 0.6,
+      length: 2.4,
+    }];
+
+    const MISSIONS = [{
+      name: 'Airport VIP Transfer',
+      desc: 'Pick up the VIP near the airport and deliver to the hotel.',
+      target: [280, 140],
+      dest: [-200, -300],
+      reward: 800,
+      icon: '✈️'
+    }, {
+      name: 'Emergency Response',
+      desc: 'Respond to the incident zone and secure the area.',
+      target: [-340, 260],
+      dest: [-340, 260],
+      reward: 1200,
+      icon: '🚨'
+    }, {
+      name: 'Critical Call',
+      desc: 'Reach the accident scene and transport the patient.',
+      target: [400, -320],
+      dest: [-120, 420],
+      reward: 1500,
+      icon: '🏥'
+    }, {
+      name: 'Supercar Delivery',
+      desc: 'Deliver the supercar safely across the city.',
+      target: [-500, -400],
+      dest: [500, 400],
+      reward: 2500,
+      icon: '💎'
+    }, {
+      name: 'Merveil Discovery',
+      desc: 'Locate the Merveil Intelligence Portal near the marina.',
+      target: [600, -100],
+      dest: [600, -100],
+      reward: 1800,
+      icon: '✦'
+    }];
+
+    // ─── WORLD BUILDING ──────────────────────────────────────
+    const buildings = [];
+    const roadMeshes = [];
+    const buildingMeshes = [];
+    const cityObjects = [];
+    const billboards = [];
+    const portals = [];
+    const trafficVehicles = [];
+
+    function buildCity() {
+      const half = GRID / 2 * BLOCK_SIZE;
+
+      // Roads
+      const roadMat = new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.85, metalness: 0.0 });
+      for (let i = 0; i <= GRID; i++) {
+        const pos = -half + i * BLOCK_SIZE;
+        const hRoad = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE + 20, ROAD_WIDTH), roadMat);
+        hRoad.rotation.x = -Math.PI / 2;
+        hRoad.position.set(0, 0.01, pos);
+        hRoad.receiveShadow = true;
+        scene.add(hRoad);
+        roadMeshes.push(hRoad);
+        const vRoad = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, WORLD_SIZE + 20), roadMat);
+        vRoad.rotation.x = -Math.PI / 2;
+        vRoad.position.set(pos, 0.01, 0);
+        vRoad.receiveShadow = true;
+        scene.add(vRoad);
+        roadMeshes.push(vRoad);
+      }
+
+      // Markings
+      const markMat = new THREE.MeshStandardMaterial({ color: 0xddd8c8, roughness: 0.6 });
+      for (let i = 0; i < GRID; i++) {
+        const pos = -half + (i + 0.5) * BLOCK_SIZE;
+        for (let j = 0; j < 8; j++) {
+          const z = -half + j * BLOCK_SIZE / 2 + BLOCK_SIZE / 4;
+          const m = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 4.5), markMat);
+          m.rotation.x = -Math.PI / 2;
+          m.position.set(pos, 0.02, z);
+          scene.add(m);
+          const m2 = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 2.5), markMat);
+          m2.rotation.x = -Math.PI / 2;
+          m2.position.set(z, 0.02, pos);
+          scene.add(m2);
+        }
+      }
+
+      // Buildings
+      const colors = [0x8a9ba8, 0x9aabb8, 0x7a8b98, 0x6a7b88, 0xbaa99a, 0xcaa99a, 0x9a8a7a, 0x8a7a6a, 0x4a6a7a, 0x5a7a8a, 0x6a8a9a,
+        0x3a5a6a, 0xccbbaa, 0xbbaa99, 0xddccbb, 0x998877
+      ];
+      const glassColors = [0x4a8aaa, 0x5a9aba, 0x3a7a9a, 0x6aaaca, 0x88bbdd, 0x77aacc, 0x99ccdd, 0x66aabb];
+      for (let i = 0; i < GRID; i++) {
+        for (let j = 0; j < GRID; j++) {
+          const cx = -half + i * BLOCK_SIZE + BLOCK_SIZE / 2;
+          const cz = -half + j * BLOCK_SIZE + BLOCK_SIZE / 2;
+          if (Math.abs(i - GRID / 2) < 1 && Math.abs(j - GRID / 2) < 1) continue;
+          if (Math.abs(i - GRID / 2 + 2) < 1 && Math.abs(j - GRID / 2 + 1) < 1) continue;
+          const h = 3 + Math.random() * 28;
+          const w = 8 + Math.random() * 14;
+          const d = 8 + Math.random() * 14;
+          const isModern = Math.random() > 0.5;
+          const color = isModern ? glassColors[Math.floor(Math.random() * glassColors.length)] :
+            colors[Math.floor(Math.random() * colors.length)];
+          const mat = new THREE.MeshStandardMaterial({
+            color,
+            roughness: isModern ? 0.15 : 0.7,
+            metalness: isModern ? 0.6 : 0.1,
+            emissive: isModern ? new THREE.Color(color).multiplyScalar(0.02) : new THREE.Color(0x000000),
+          });
+          const geo = new THREE.BoxGeometry(w, h, d);
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.set(cx, h / 2, cz);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          scene.add(mesh);
+          buildingMeshes.push(mesh);
+          buildings.push({ mesh, x: cx, z: cz, w, h, d });
+        }
+      }
+
+      // Landmarks
+      // Burj Khalifa
+      const bkMat = new THREE.MeshStandardMaterial({
+        color: 0x8a9aaa,
+        roughness: 0.2,
+        metalness: 0.5,
+        emissive: new THREE.Color(0x445566).multiplyScalar(0.05)
+      });
+      const bkBase = new THREE.Mesh(new THREE.CylinderGeometry(8, 12, 12, 8), bkMat);
+      bkBase.position.set(0, 6, 0);
+      bkBase.castShadow = true;
+      scene.add(bkBase);
+      for (let i = 0; i < 8; i++) {
+        const t = new THREE.Mesh(new THREE.CylinderGeometry(7 - i * 0.5, 8 - i * 0.5, 10, 8), bkMat);
+        t.position.set(0, 12 + i * 10 + 5, 0);
+        t.castShadow = true;
+        scene.add(t);
+      }
+      const spireMat = new THREE.MeshStandardMaterial({
+        color: 0xccddee,
+        emissive: new THREE.Color(0x4488aa).multiplyScalar(0.1),
+        metalness: 0.8,
+        roughness: 0.2
+      });
+      const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.8, 18, 6), spireMat);
+      spire.position.set(0, 92, 0);
+      spire.castShadow = true;
+      scene.add(spire);
+
+      // Burj Al Arab
+      const baMat = new THREE.MeshStandardMaterial({
+        color: 0xe8e0d8,
+        roughness: 0.1,
+        metalness: 0.3,
+        emissive: new THREE.Color(0x334455).multiplyScalar(0.03)
+      });
+      const ba = new THREE.Mesh(new THREE.BoxGeometry(10, 28, 8), baMat);
+      ba.position.set(-240, 14, -200);
+      ba.castShadow = true;
+      scene.add(ba);
+      const baTop = new THREE.Mesh(new THREE.ConeGeometry(8, 8, 4), baMat);
+      baTop.position.set(-240, 32, -200);
+      baTop.rotation.y = Math.PI / 4;
+      baTop.castShadow = true;
+      scene.add(baTop);
+      const heliMat = new THREE.MeshStandardMaterial({ color: 0x44aa88, roughness: 0.3, metalness: 0.5 });
+      const heli = new THREE.Mesh(new THREE.CircleGeometry(3.5, 16), heliMat);
+      heli.rotation.x = -Math.PI / 2;
+      heli.position.set(-240, 36, -200);
+      scene.add(heli);
+
+      // Dubai Frame
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0xccbbaa, roughness: 0.2, metalness: 0.7 });
+      const frame1 = new THREE.Mesh(new THREE.BoxGeometry(14, 2, 2), frameMat);
+      frame1.position.set(180, 30, 160);
+      scene.add(frame1);
+      const frame2 = new THREE.Mesh(new THREE.BoxGeometry(2, 28, 2), frameMat);
+      frame2.position.set(180, 16, 160);
+      scene.add(frame2);
+      const frame3 = new THREE.Mesh(new THREE.BoxGeometry(2, 28, 2), frameMat);
+      frame3.position.set(180, 16, 160 + 12);
+      scene.add(frame3);
+      const frame4 = new THREE.Mesh(new THREE.BoxGeometry(14, 2, 2), frameMat);
+      frame4.position.set(180, 2, 160);
+      scene.add(frame4);
+
+      // Bridge
+      const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.5, metalness: 0.3 });
+      const bridgeRoad = new THREE.Mesh(new THREE.BoxGeometry(20, 1.5, 120), bridgeMat);
+      bridgeRoad.position.set(0, 1.0, 200);
+      bridgeRoad.castShadow = true;
+      bridgeRoad.receiveShadow = true;
+      scene.add(bridgeRoad);
+      const pillarMat2 = new THREE.MeshStandardMaterial({ color: 0x667788, roughness: 0.6 });
+      for (let z = -50; z <= 50; z += 25) {
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, 6, 6), pillarMat2);
+        pillar.position.set(-4, 3, 200 + z);
+        pillar.castShadow = true;
+        scene.add(pillar);
+        const pillar2 = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, 6, 6), pillarMat2);
+        pillar2.position.set(4, 3, 200 + z);
+        pillar2.castShadow = true;
+        scene.add(pillar2);
+      }
+      const railMat = new THREE.MeshStandardMaterial({ color: 0x99aabb, metalness: 0.5, roughness: 0.3 });
+      for (let z = -55; z <= 55; z += 4) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.0, 0.2), railMat);
+        rail.position.set(-8, 1.8, 200 + z);
+        scene.add(rail);
+        const rail2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.0, 0.2), railMat);
+        rail2.position.set(8, 1.8, 200 + z);
+        scene.add(rail2);
+      }
+
+      // Merveil Billboards
+      const billboardPositions = [
+        [-180, 80],
+        [220, -120],
+        [-60, -200],
+        [300, 260],
+        [-320, -80],
+        [60, 300],
+        [-400, 180],
+        [380, -280],
+        [0, 150],
+        [100, -400],
+        [-300, -300]
+      ];
+      billboardPositions.forEach(([x, z]) => {
+        const bb = createMerveilBillboard(x, z);
+        billboards.push(bb);
+      });
+
+      // Merveil Portals
+      const portalPositions = [
+        [0, -140],
+        [-300, 60],
+        [340, -40],
+        [120, 320],
+        [-420, -260],
+        [440, 200],
+        [0, 220]
+      ];
+      portalPositions.forEach(([x, z]) => {
+        const p = createMerveilPortal(x, z);
+        portals.push(p);
+      });
+
+      // Traffic
+      for (let i = 0; i < 40; i++) spawnTrafficVehicle();
+    }
+
+    function createMerveilBillboard(x, z) {
+      const group = new THREE.Group();
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0x445566, roughness: 0.5, metalness: 0.3 });
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 6, 6), poleMat);
+      pole.position.y = 3;
+      group.add(pole);
+      const boardMat = new THREE.MeshStandardMaterial({
+        color: 0x0a1628,
+        roughness: 0.1,
+        metalness: 0.2,
+        emissive: new THREE.Color(0x112244).multiplyScalar(0.15),
+      });
+      const board = new THREE.Mesh(new THREE.BoxGeometry(6, 3.6, 0.3), boardMat);
+      board.position.y = 6.8;
+      board.castShadow = true;
+      group.add(board);
+      const glowMat = new THREE.MeshStandardMaterial({
+        color: 0x65d7ff,
+        emissive: new THREE.Color(0x65d7ff).multiplyScalar(0.2),
+        transparent: true,
+        opacity: 0.6,
+      });
+      const border = new THREE.Mesh(new THREE.BoxGeometry(6.4, 4, 0.1), glowMat);
+      border.position.y = 6.8;
+      border.position.z = 0.2;
+      group.add(border);
+      // Text dots
+      const textMat = new THREE.MeshStandardMaterial({
+        color: 0x65d7ff,
+        emissive: new THREE.Color(0x65d7ff).multiplyScalar(0.15)
+      });
+      for (let i = 0; i < 8; i++) {
+        const dot = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.1), textMat);
+        dot.position.set(-2.2 + i * 0.6, 7.6, 0.25);
+        group.add(dot);
+      }
+      for (let i = 0; i < 4; i++) {
+        const dot = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.1), textMat);
+        dot.position.set(0.8 + i * 0.6, 7.0, 0.25);
+        group.add(dot);
+      }
+      const subMat = new THREE.MeshStandardMaterial({
+        color: 0x8aa4b8,
+        emissive: new THREE.Color(0x224466).multiplyScalar(0.05)
+      });
+      for (let i = 0; i < 6; i++) {
+        const dot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), subMat);
+        dot.position.set(-1.6 + i * 0.55, 6.4, 0.25);
+        group.add(dot);
+      }
+      group.position.set(x, 0, z);
+      group.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(group);
+      cityObjects.push(group);
+      return group;
+    }
+
+    function createMerveilPortal(x, z) {
+      const group = new THREE.Group();
+      const baseMat = new THREE.MeshStandardMaterial({
+        color: 0x0a1628,
+        roughness: 0.1,
+        metalness: 0.8,
+        emissive: new THREE.Color(0x112244).multiplyScalar(0.1),
+      });
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 3.5, 0.8, 12), baseMat);
+      base.position.y = 0.4;
+      base.receiveShadow = true;
+      group.add(base);
+      const ringMat = new THREE.MeshStandardMaterial({
+        color: 0x65d7ff,
+        emissive: new THREE.Color(0x65d7ff).multiplyScalar(0.3),
+        transparent: true,
+        opacity: 0.7,
+        roughness: 0.1,
+        metalness: 0.9,
+      });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.25, 12, 24), ringMat);
+      ring.position.y = 3.5;
+      ring.rotation.x = Math.PI / 2;
+      group.add(ring);
+      const glowMat = new THREE.MeshStandardMaterial({
+        color: 0x65d7ff,
+        emissive: new THREE.Color(0x65d7ff).multiplyScalar(0.25),
+        transparent: true,
+        opacity: 0.25,
+        side: THREE.DoubleSide,
+      });
+      const glowDisk = new THREE.Mesh(new THREE.CircleGeometry(1.9, 24), glowMat);
+      glowDisk.position.y = 3.5;
+      glowDisk.rotation.x = -Math.PI / 2;
+      group.add(glowDisk);
+      const pillarMat = new THREE.MeshStandardMaterial({
+        color: 0x1a2a3a,
+        roughness: 0.2,
+        metalness: 0.7,
+        emissive: new THREE.Color(0x224466).multiplyScalar(0.05),
+      });
+      for (let i = 0; i < 2; i++) {
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 3.2, 8), pillarMat);
+        p.position.set(i === 0 ? -2.2 : 2.2, 1.8, 0);
+        group.add(p);
+      }
+      const topBar = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.2, 0.4), pillarMat);
+      topBar.position.y = 3.4;
+      group.add(topBar);
+      group.position.set(x, 0, z);
+      group.userData.isPortal = true;
+      group.userData.portalRadius = 4.0;
+      group.userData.triggered = false;
+      scene.add(group);
+      cityObjects.push(group);
+      return group;
+    }
+
+    function spawnTrafficVehicle() {
+      const colors = [0xcc2233, 0x2244aa, 0x44aa44, 0xcc8844, 0x888888, 0xaa8833, 0xdddddd, 0x3366aa];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const w = 1.4 + Math.random() * 0.6;
+      const h = 0.6 + Math.random() * 0.4;
+      const l = 2.0 + Math.random() * 0.8;
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.3 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), mat);
+      body.castShadow = true;
+      body.receiveShadow = true;
+      const cabinMat = new THREE.MeshStandardMaterial({
+        color: 0x88bbdd,
+        roughness: 0.1,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.6,
+      });
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, h * 0.5, l * 0.5), cabinMat);
+      cabin.position.y = h / 2 + h * 0.25;
+      body.add(cabin);
+      const group = new THREE.Group();
+      group.add(body);
+      const side = Math.random() > 0.5 ? 1 : -1;
+      const roadIdx = Math.floor(Math.random() * GRID);
+      const pos = -GRID / 2 * BLOCK_SIZE + roadIdx * BLOCK_SIZE + BLOCK_SIZE / 2;
+      const isHorizontal = Math.random() > 0.5;
+      const offset = (Math.random() - 0.5) * ROAD_WIDTH * 0.5;
+      if (isHorizontal) {
+        group.position.set((Math.random() - 0.5) * WORLD_SIZE * 0.8, 0.15, pos + offset);
+        group.rotation.y = Math.random() > 0.5 ? 0 : Math.PI;
+      } else {
+        group.position.set(pos + offset, 0.15, (Math.random() - 0.5) * WORLD_SIZE * 0.8);
+        group.rotation.y = Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2;
+      }
+      const speed = 3 + Math.random() * 8;
+      const dir = Math.random() > 0.5 ? 1 : -1;
+      scene.add(group);
+      trafficVehicles.push({
+        mesh: group,
+        speed: speed * dir,
+        isHorizontal,
+        roadIdx,
+        offset,
+        wobble: Math.random() * 100,
+      });
+    }
+
+    function updateTraffic(dt) {
+      const half = GRID / 2 * BLOCK_SIZE;
+      trafficVehicles.forEach(t => {
+        const s = t.speed * dt * 0.6;
+        if (t.isHorizontal) {
+          t.mesh.position.x += s;
+          if (t.mesh.position.x > half) t.mesh.position.x = -half;
+          if (t.mesh.position.x < -half) t.mesh.position.x = half;
+        } else {
+          t.mesh.position.z += s;
+          if (t.mesh.position.z > half) t.mesh.position.z = -half;
+          if (t.mesh.position.z < -half) t.mesh.position.z = half;
+        }
+        t.mesh.position.y = 0.15 + Math.sin(t.wobble + gameTime * 2) * 0.02;
+        t.wobble += dt * 0.5;
+      });
+    }
+
+    // ─── PLAYER VEHICLE ──────────────────────────────────────
+    let playerGroup = new THREE.Group();
+    scene.add(playerGroup);
+    let velocity = 0,
+      angle = 0,
+      playerX = 0,
+      playerZ = 0,
+      isBraking = false,
+      currentCarIndex = selectedVehicle;
+    let gameTime = 0,
+      isNight = false;
+    let cash = 120,
+      reputation = 0;
+    let missionPhase = 0; // 0=target, 1=dest
+    let currentMissionIndex = selectedMission;
+    let signatureTriggered = false;
+    let portalCooldown = 0;
+    let missionsCompleted = 0;
+
+    function buildPlayerVehicle(index) {
+      while (playerGroup.children.length) {
+        const child = playerGroup.children[0];
+        playerGroup.remove(child);
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+          else child.material.dispose();
+        }
+      }
+      const v = VEHICLES[index];
+      const w = v.width,
+        h = v.height,
+        l = v.length;
+      const bodyMat = new THREE.MeshStandardMaterial({ color: v.color, roughness: 0.2, metalness: 0.6 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), bodyMat);
+      body.position.y = h / 2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      playerGroup.add(body);
+      const cabinMat = new THREE.MeshStandardMaterial({
+        color: 0x88bbdd,
+        roughness: 0.1,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.5,
+      });
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, h * 0.5, l * 0.5), cabinMat);
+      cabin.position.set(0, h + h * 0.2, -l * 0.05);
+      cabin.castShadow = true;
+      playerGroup.add(cabin);
+      const hlMat = new THREE.MeshStandardMaterial({
+        color: 0xffffee,
+        emissive: new THREE.Color(0xffffaa).multiplyScalar(0.3)
+      });
+      for (let side of [-1, 1]) {
+        const hl = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 6), hlMat);
+        hl.position.set(side * w * 0.3, h * 0.4, l / 2 + 0.05);
+        playerGroup.add(hl);
+      }
+      const tlMat = new THREE.MeshStandardMaterial({
+        color: 0xff2200,
+        emissive: new THREE.Color(0xff2200).multiplyScalar(0.2)
+      });
+      for (let side of [-1, 1]) {
+        const tl = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 6), tlMat);
+        tl.position.set(side * w * 0.3, h * 0.4, -l / 2 - 0.05);
+        playerGroup.add(tl);
+      }
+      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+      for (let side of [-1, 1]) {
+        for (let front of [-1, 1]) {
+          const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.12, 8), wheelMat);
+          wh.rotation.z = Math.PI / 2;
+          wh.position.set(side * (w / 2 + 0.12), 0.2, front * l * 0.35);
+          playerGroup.add(wh);
+        }
+      }
+      playerGroup.scale.set(0.9, 0.9, 0.9);
+    }
+
+    // ─── AUDIO SYSTEM HOOKS ──────────────────────────────────
+    let audioCtx = null;
+    let engineOsc = null;
+    let engineGain = null;
+    let ambientGain = null;
+    let isAudioReady = false;
+
+    function initAudio() {
+      if (audioCtx) return;
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // Engine sound oscillator
+        engineOsc = audioCtx.createOscillator();
+        engineOsc.type = 'sawtooth';
+        engineOsc.frequency.setValueAtTime(50, audioCtx.currentTime);
+        engineGain = audioCtx.createGain();
+        engineGain.gain.setValueAtTime(0.0, audioCtx.currentTime);
+        engineOsc.connect(engineGain);
+        engineGain.connect(audioCtx.destination);
+        engineOsc.start();
+
+        // Ambient noise (city drone)
+        const bufferSize = 2 * audioCtx.sampleRate;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * 0.02;
+        }
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+        noise.loop = true;
+        const noiseGain = audioCtx.createGain();
+        noiseGain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+        noise.connect(noiseGain);
+        noiseGain.connect(audioCtx.destination);
+        noise.start();
+
+        isAudioReady = true;
+      } catch (e) {
+        console.warn('Audio not supported');
+      }
+    }
+
+    function updateAudio(speed) {
+      if (!isAudioReady || !engineOsc) return;
+      const freq = 40 + Math.abs(speed) * 8;
+      engineOsc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.1);
+      const vol = Math.min(0.08, Math.abs(speed) * 0.005);
+      engineGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.05);
+    }
+
+    // ─── INPUT ──────────────────────────────────────────────────
+    const keys = {};
+    window._keys = keys;
+    document.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      keys[k] = true;
+      if (k === ' ' || k === 'c') {
+        e.preventDefault();
+        switchVehicle(1);
+      }
+    });
+    document.addEventListener('keyup', (e) => {
+      keys[e.key.toLowerCase()] = false;
+    });
+
+    document.querySelectorAll('[data-key]').forEach(btn => {
+      const k = btn.dataset.key;
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        keys[k] = true;
+        if (k === 'switch') switchVehicle(1);
+        if (k === 'radio') showToast('📻 Radio: City Beats', 'Merveil recommends this frequency.');
+        if (!audioCtx) initAudio();
+      });
+      btn.addEventListener('pointerup', () => { keys[k] = false; });
+      btn.addEventListener('pointercancel', () => { keys[k] = false; });
+    });
+
+    // ─── UI HELPERS ──────────────────────────────────────────
+    let toastTimeout = null,
+      portalTimeout = null;
+
+    function showToast(msg, sub = '') {
+      toastMsg.textContent = msg;
+      toastSub.textContent = sub || 'Merveil AI · The Intelligence Beyond Interaction';
+      toastEl.classList.add('show');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => toastEl.classList.remove('show'), 3000);
+    }
+
+    function showPortal(title, desc) {
+      portalTitle.textContent = title;
+      portalDesc.textContent = desc;
+      portalEl.classList.add('show');
+      clearTimeout(portalTimeout);
+      portalTimeout = setTimeout(() => portalEl.classList.remove('show'), 4000);
+    }
+
+    function switchVehicle(dir) {
+      const old = currentCarIndex;
+      currentCarIndex = (currentCarIndex + dir + VEHICLES.length) % VEHICLES.length;
+      if (currentCarIndex !== old) {
+        buildPlayerVehicle(currentCarIndex);
+        showToast('Switched to ' + VEHICLES[currentCarIndex].label, 'Vehicle updated');
+        velocity = Math.min(velocity, 5);
+      }
+    }
+
+    function updateMissionUI() {
+      const m = MISSIONS[currentMissionIndex];
+      if (m) {
+        mnEl.textContent = m.icon + ' ' + m.name;
+        mtEl.textContent = missionPhase === 0 ? 'Go to the green marker.' : 'Reach the blue destination.';
+      }
+    }
+
+    function reportArenaCredits(amount, level) {
+      try {
+        window.parent.postMessage({
+          type: 'merveil:arena-credits',
+          experience: 'dubai-alaba',
+          level: level || missionsCompleted,
+          score: Math.round(cash + reputation * 10),
+          amount: amount
+        }, '*');
+      } catch (e) {}
+    }
+
+    // ─── PHYSICS UPDATE ──────────────────────────────────────
+    function updatePlayer(dt) {
+      const v = VEHICLES[currentCarIndex];
+      let accel = 0,
+        steer = 0;
+      if (keys.up || keys.w || keys.arrowup) accel = 1;
+      if (keys.down || keys.s || keys.arrowdown) accel = -0.6;
+      if (keys.left || keys.a || keys.arrowleft) steer = -1;
+      if (keys.right || keys.d || keys.arrowright) steer = 1;
+
+      if (keys.brake) {
+        isBraking = true;
+        if (Math.abs(velocity) < 0.5) velocity = 0;
+        else velocity *= (1 - v.brakeForce * dt * 0.8);
+      } else {
+        isBraking = false;
+      }
+
+      if (accel !== 0 && !isBraking) {
+        const target = accel > 0 ? v.maxSpeed : -v.maxSpeed * 0.4;
+        const rate = accel > 0 ? v.accel : v.accel * 0.5;
+        velocity += accel * rate * dt * 2.5;
+        if (Math.abs(velocity) > Math.abs(target)) velocity = target;
+      } else if (!isBraking) {
+        velocity *= (1 - 0.6 * dt);
+        if (Math.abs(velocity) < 0.05) velocity = 0;
+      }
+
+      if (Math.abs(velocity) > 0.3) {
+        const turnFactor = Math.min(1, Math.abs(velocity) / v.maxSpeed * 1.2);
+        angle += steer * v.turnSpeed * dt * turnFactor * (velocity > 0 ? 1 : -1);
+      }
+
+      const dx = Math.sin(angle) * velocity * dt;
+      const dz = Math.cos(angle) * velocity * dt;
+      playerX += dx;
+      playerZ += dz;
+
+      const bound = WORLD_SIZE / 2 - 10;
+      if (playerX > bound) { playerX = bound; velocity *= -0.3; }
+      if (playerX < -bound) { playerX = -bound; velocity *= -0.3; }
+      if (playerZ > bound) { playerZ = bound; velocity *= -0.3; }
+      if (playerZ < -bound) { playerZ = -bound; velocity *= -0.3; }
+
+      playerGroup.position.set(playerX, 0.15, playerZ);
+      playerGroup.rotation.y = angle;
+      const tilt = -steer * Math.min(0.06, Math.abs(velocity) * 0.002);
+      playerGroup.rotation.z = tilt;
+
+      // HUD
+      const speedKmh = Math.abs(velocity) * 4.2;
+      spdEl.textContent = Math.round(speedKmh);
+      cashEl.textContent = 'AED ' + Math.round(cash).toLocaleString();
+      repEl.textContent = Math.round(reputation);
+
+      // Camera
+      const camDist = 22 + Math.abs(velocity) * 0.12;
+      const camHeight = 14 + Math.abs(velocity) * 0.08;
+      const camAngle = angle + (steer * 0.08);
+      const cx = playerX - Math.sin(camAngle) * camDist;
+      const cz = playerZ - Math.cos(camAngle) * camDist;
+      camera.position.lerp(new THREE.Vector3(cx, camHeight, cz), 0.08);
+      camera.lookAt(playerX, 0.5, playerZ);
+
+      // Audio
+      updateAudio(velocity);
+
+      // Portals
+      portals.forEach(p => {
+        const dx2 = playerX - p.position.x;
+        const dz2 = playerZ - p.position.z;
+        const dist2 = Math.sqrt(dx2 * dx2 + dz2 * dz2);
+        if (dist2 < p.userData.portalRadius && !p.userData.triggered) {
+          p.userData.triggered = true;
+          showPortal('✦ MERVEIL PORTAL ACTIVATED ✦', 'You discovered an intelligence node. +AED 500, +5 Rep');
+          cash += 500;
+          reputation += 5;
+          showToast('+AED 500 · Rep +5', 'Merveil Intelligence Point discovered.');
+          reportArenaCredits(5, missionsCompleted);
+          if (Math.random() > 0.5) {
+            currentMissionIndex = (currentMissionIndex + 1) % MISSIONS.length;
+            missionPhase = 0;
+            updateMissionUI();
+          }
+        }
+      });
+
+      // Signature bridge moment
+      if (!signatureTriggered && Math.abs(playerX) < 30 && Math.abs(playerZ - 200) < 30 && isNight) {
+        signatureTriggered = true;
+        showPortal('✦ MERVEIL AI · BEYOND INTERACTION ✦', 'Alaba, I found something interesting for you.');
+        setTimeout(() => {
+          showToast('MISSION DISCOVERED: VIP Transport', 'Merveil has a special job for you.');
+          const specialMission = {
+            name: 'Merveil VIP Transport',
+            desc: 'A high-value client needs a discreet ride.',
+            target: [100, 50],
+            dest: [-400, -200],
+            reward: 3000,
+            icon: '✦'
+          };
+          MISSIONS.push(specialMission);
+          currentMissionIndex = MISSIONS.length - 1;
+          missionPhase = 0;
+          updateMissionUI();
+        }, 1500);
+      }
+
+      // Mission check
+      const m = MISSIONS[currentMissionIndex];
+      if (m) {
+        const target = missionPhase === 0 ? m.target : m.dest;
+        const dx2 = playerX - target[0];
+        const dz2 = playerZ - target[1];
+        const dist2 = Math.sqrt(dx2 * dx2 + dz2 * dz2);
+        if (dist2 < 12) {
+          if (missionPhase === 0) {
+            missionPhase = 1;
+            showToast('Checkpoint reached! Proceed to destination.', 'Merveil is tracking your progress.');
+            updateMissionUI();
+          } else {
+            cash += m.reward;
+            reputation += 10;
+            missionsCompleted++;
+            showToast(`MISSION COMPLETE! +AED ${m.reward} · +10 Rep`, m.name);
+            reportArenaCredits(Math.min(25, 8 + Math.floor(m.reward / 200)), missionsCompleted);
+            currentMissionIndex = (currentMissionIndex + 1) % MISSIONS.length;
+            missionPhase = 0;
+            updateMissionUI();
+            if (Math.random() > 0.6) {
+              setTimeout(() => {
+                showToast('🔴 CITY EVENT: Traffic ahead. Merveil suggests an alternative route.', 'Intelligence at work.');
+              }, 1000);
+            }
+          }
+        }
+        const totalDist = Math.sqrt(
+          Math.pow(m.target[0] - m.dest[0], 2) + Math.pow(m.target[1] - m.dest[1], 2)
+        );
+        const currentDist = missionPhase === 0 ?
+          Math.sqrt(Math.pow(playerX - m.target[0], 2) + Math.pow(playerZ - m.target[1], 2)) :
+          Math.sqrt(Math.pow(playerX - m.dest[0], 2) + Math.pow(playerZ - m.dest[1], 2));
+        const progress = Math.max(0, Math.min(1, 1 - currentDist / (totalDist || 1)));
+        mpEl.style.width = (progress * 100) + '%';
+      }
+      updateMissionUI();
+    }
+
+    // ─── MINIMAP ──────────────────────────────────────────────
+    const miniCanvas = document.getElementById('mini');
+    const miniCtx = miniCanvas.getContext('2d');
+    let miniW = 150,
+      miniH = 110;
+
+    function resizeMini() {
+      const rect = miniCanvas.parentElement.getBoundingClientRect();
+      miniW = rect.width || 150;
+      miniH = rect.height || 110;
+      miniCanvas.width = miniW * devicePixelRatio;
+      miniCanvas.height = miniH * devicePixelRatio;
+      miniCanvas.style.width = miniW + 'px';
+      miniCanvas.style.height = miniH + 'px';
+      miniCtx.setTransform(1, 0, 0, 1, 0, 0);
+      miniCtx.scale(devicePixelRatio, devicePixelRatio);
+    }
+    resizeMini();
+    window.addEventListener('resize', resizeMini);
+
+    function updateMinimap() {
+      const w = miniW,
+        h = miniH;
+      miniCtx.clearRect(0, 0, w, h);
+      miniCtx.fillStyle = 'rgba(7,19,29,0.85)';
+      miniCtx.fillRect(0, 0, w, h);
+
+      const scale = 0.45;
+      const cx = w / 2,
+        cy = h / 2;
+
+      miniCtx.strokeStyle = 'rgba(80,90,100,0.5)';
+      miniCtx.lineWidth = 1.5;
+      const half = GRID / 2 * BLOCK_SIZE * scale;
+      for (let i = 0; i <= GRID; i++) {
+        const pos = -half + i * BLOCK_SIZE * scale;
+        miniCtx.beginPath();
+        miniCtx.moveTo(cx - half, cy + pos);
+        miniCtx.lineTo(cx + half, cy + pos);
+        miniCtx.stroke();
+        miniCtx.beginPath();
+        miniCtx.moveTo(cx + pos, cy - half);
+        miniCtx.lineTo(cx + pos, cy + half);
+        miniCtx.stroke();
+      }
+
+      buildings.forEach(b => {
+        const bx = (b.x - playerX) * scale + cx;
+        const bz = (b.z - playerZ) * scale + cy;
+        if (bx > -5 && bx < w + 5 && bz > -5 && bz < h + 5) {
+          const size = Math.max(1.5, Math.min(4, b.h * 0.06));
+          miniCtx.fillStyle = 'rgba(180,190,200,0.5)';
+          miniCtx.fillRect(bx - size / 2, bz - size / 2, size, size);
+        }
+      });
+
+      const m = MISSIONS[currentMissionIndex];
+      if (m) {
+        const target = missionPhase === 0 ? m.target : m.dest;
+        const tx = (target[0] - playerX) * scale + cx;
+        const tz = (target[1] - playerZ) * scale + cy;
+        if (tx > -10 && tx < w + 10 && tz > -10 && tz < h + 10) {
+          miniCtx.fillStyle = missionPhase === 0 ? 'rgba(50,230,140,0.8)' : 'rgba(100,167,255,0.8)';
+          miniCtx.beginPath();
+          miniCtx.arc(tx, tz, 4, 0, Math.PI * 2);
+          miniCtx.fill();
+          miniCtx.strokeStyle = 'rgba(255,255,255,0.3)';
+          miniCtx.lineWidth = 1;
+          miniCtx.stroke();
+        }
+      }
+
+      portals.forEach(p => {
+        const px = (p.position.x - playerX) * scale + cx;
+        const pz = (p.position.z - playerZ) * scale + cy;
+        if (px > 0 && px < w && pz > 0 && pz < h) {
+          miniCtx.fillStyle = 'rgba(101,215,255,0.6)';
+          miniCtx.beginPath();
+          miniCtx.arc(px, pz, 3, 0, Math.PI * 2);
+          miniCtx.fill();
+        }
+      });
+
+      miniCtx.fillStyle = '#65d7ff';
+      miniCtx.shadowColor = '#65d7ff';
+      miniCtx.shadowBlur = 8;
+      miniCtx.beginPath();
+      miniCtx.arc(cx, cy, 4, 0, Math.PI * 2);
+      miniCtx.fill();
+      miniCtx.shadowBlur = 0;
+      miniCtx.strokeStyle = '#65d7ff';
+      miniCtx.lineWidth = 2;
+      miniCtx.beginPath();
+      miniCtx.moveTo(cx, cy);
+      miniCtx.lineTo(cx - Math.sin(angle) * 8, cy - Math.cos(angle) * 8);
+      miniCtx.stroke();
+      miniCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+      miniCtx.lineWidth = 1;
+      miniCtx.strokeRect(0, 0, w, h);
+    }
+
+    // ─── GAME LOOP ────────────────────────────────────────────
+    let prevTime = 0;
+
+    function animate(time) {
+      const dt = Math.min((time - prevTime) / 1000, 0.05);
+      prevTime = time;
+      gameTime += dt;
+
+      const cycle = (gameTime % 60) / 60;
+      isNight = cycle > 0.4 && cycle < 0.9;
+      sunLight.intensity = 0.4 + 1.6 * (1 - (isNight ? 0.8 : 0));
+      scene.background.setHSL(0.6, 0.4, 0.3 + 0.5 * (1 - (isNight ? 0.6 : 0)));
+      ambientLight.intensity = 0.2 + 0.4 * (1 - (isNight ? 0.6 : 0));
+
+      updateTraffic(dt);
+      updatePlayer(dt);
+      updateMinimap();
+
+      // Random city events
+      if (Math.random() < 0.001) {
+        const events = [
+          '🚦 Traffic intelligence: Merveil detects congestion ahead.',
+          '📡 New Merveil Intelligence Point available nearby.',
+          '🚨 Emergency services are responding to an incident.',
+          '🌆 A major event is starting in Downtown Dubai.',
+          '✨ Merveil AI: "Your city is moving. Your opportunities are moving with it."',
+        ];
+        showToast(events[Math.floor(Math.random() * events.length)], 'Merveil City Event');
+      }
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    // ─── INIT GAME ─────────────────────────────────────────────
+    function initGame() {
+      buildCity();
+      buildPlayerVehicle(selectedVehicle);
+      currentCarIndex = selectedVehicle;
+      currentMissionIndex = selectedMission;
+      missionPhase = 0;
+      updateMissionUI();
+      showToast('Welcome, Alaba.', 'Dubai is alive with Merveil Intelligence.');
+      setTimeout(() => {
+        showToast('Explore the city to discover Merveil Portals.', 'The Intelligence Beyond Interaction');
+      }, 2000);
+
+      // Start audio on first interaction
+      document.addEventListener('click', () => {
+        if (!audioCtx) initAudio();
+      }, { once: true });
+
+      animate(performance.now());
+    }
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      resizeMini();
+    });
+
+  </script>
+</body>
+</html>
