@@ -1,1 +1,64 @@
-d
+name: Android Build (Merveil AI)
+
+# Manual trigger only for now — go to the Actions tab on GitHub, pick this
+# workflow, and click "Run workflow". Once we're confident in it, a
+# `push:` trigger can be added so it builds automatically.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java (for Gradle/Android)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install web app dependencies
+        run: npm install
+
+      - name: Build web app (creates dist/)
+        run: npm run build
+
+      - name: Scaffold Android project (first run only)
+        run: |
+          if [ ! -d "android" ]; then
+            echo "No android/ folder found — generating it with Capacitor's official CLI."
+            npx cap add android
+          else
+            echo "android/ folder already exists — skipping scaffold."
+          fi
+
+      - name: Sync web build + plugins into the native project
+        run: npx cap sync android
+
+      - name: Grant execute permission to Gradle wrapper
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Locate APK
+        id: find_apk
+        run: |
+          APK_PATH=$(find android -name "*-debug.apk" | head -n 1)
+          echo "APK found at: $APK_PATH"
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK as downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: merveil-ai-debug-apk
+          path: ${{ steps.find_apk.outputs.apk_path }}
+          retention-days: 14
