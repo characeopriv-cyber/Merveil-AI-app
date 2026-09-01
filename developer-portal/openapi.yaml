@@ -1,0 +1,78 @@
+openapi: 3.0.3
+info:
+  title: Merveil API
+  version: 1.0.0
+  description: Secure APIs for integrating authorized Merveil identity, Passport and intelligence capabilities.
+servers:
+  - url: https://api.merveil.ai
+security:
+  - ApiKeyAuth: []
+paths:
+  /api/v1/health:
+    get:
+      security: []
+      summary: API health
+      responses:
+        '200':
+          description: Operational
+  /api/v1/profile:
+    get:
+      summary: Read the profile belonging to the API application owner
+      responses:
+        '200': {description: Profile returned}
+        '401': {description: Invalid API key}
+        '403': {description: Missing profile:read scope}
+  /api/v1/passport:
+    get:
+      summary: Read the authorized Merveil Passport summary
+      responses:
+        '200': {description: Passport returned}
+        '401': {description: Invalid API key}
+        '403': {description: Missing passport:read scope}
+  /api/v1/apps:
+    get:
+      security:
+        - UserBearerAuth: []
+      summary: List the signed-in user's developer applications
+      responses:
+        '200': {description: Applications returned}
+    post:
+      security:
+        - UserBearerAuth: []
+      summary: Create a developer application and issue an API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplication'
+      responses:
+        '201': {description: Application and one-time API key returned}
+        '401': {description: Invalid Merveil session}
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    UserBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CreateApplication:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        environment:
+          type: string
+          enum: [sandbox, production]
+          default: sandbox
+        scopes:
+          type: array
+          items:
+            type: string
+            enum: [profile:read, passport:read, connect:read, connect:write, ai:use]
