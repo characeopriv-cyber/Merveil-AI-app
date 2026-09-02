@@ -1,0 +1,11 @@
+{
+  "name": "@merveil-ai/sdk",
+  "version": "1.0.0",
+  "description": "Official JavaScript SDK for the Merveil AI Intelligence Layer.",
+  "type": "module",
+  "main": "index.js",
+  "exports": { ".": "./index.js" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "publishConfig": { "access": "public" }
+}
