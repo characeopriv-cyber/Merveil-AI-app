@@ -1,10 +1,12 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/v1(?:/|$)).*)",
       "has": [{ "type": "host", "value": "developers.merveil.ai" }],
       "destination": "/developer-portal/$1"
     },
+    { "source": "/api/v1/(.*)", "destination": "/api/v1?route=$1" },
+    { "source": "/api/v1", "destination": "/api/v1?route=health" },
     { "source": "/api/(?!v1/)(.*)", "destination": "/api/router" },
     { "source": "/merveil-admin-x9k2", "destination": "/index.html" },
     { "source": "/merveil-admin-x9k2/(.*)", "destination": "/index.html" },
