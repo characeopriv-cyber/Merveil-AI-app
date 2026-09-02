@@ -1,15 +1,71 @@
 import crypto from 'node:crypto';
 import { json, requireUser, newSecret, hashKey, SCOPES, supabaseAdmin } from './_lib.js';
 
-function body(req){return typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});}
+function body(req){try{return typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});}catch{return{};}}
+const cleanScopes=(value)=>Array.isArray(value)?[...new Set(value.map(String).filter(s=>SCOPES.includes(s)&&s!=='oauth:manage'))]:[];
+const b64url=(buf)=>Buffer.from(buf).toString('base64url');
+const randomToken=(prefix)=>`${prefix}${b64url(crypto.randomBytes(32))}`;
+function pkce(verifier,challenge,method){if(!challenge)return true;if(!verifier||method!=='S256')return false;const expected=b64url(crypto.createHash('sha256').update(verifier).digest());return crypto.timingSafeEqual(Buffer.from(expected),Buffer.from(challenge));}
+function redirect(res,uri,params={}){const u=new URL(uri);for(const [k,v] of Object.entries(params))if(v!==undefined)u.searchParams.set(k,String(v));return res.redirect(302,u.toString());}
+
+async function client(clientId){const {data,error}=await supabaseAdmin.from('api_oauth_clients').select('id,application_id,client_id,client_secret_hash,redirect_uris,scopes,status,public_client,token_endpoint_auth_method').eq('client_id',clientId).maybeSingle();if(error||!data)return null;return data;}
+
 export default async function handler(req,res){
-  if(req.method==='OPTIONS') return json(res,204,null);
-  const auth=await requireUser(req); if(auth.error) return json(res,401,{error:'unauthorized',message:auth.error});
-  if(!auth.user) return json(res,401,{error:'unauthorized'});
-  const appId=String(req.query?.app_id||''); if(!appId) return json(res,400,{error:'app_id_required'});
-  const {data:app}=await supabaseAdmin.from('api_applications').select('id').eq('id',appId).eq('user_id',auth.user.id).maybeSingle();
-  if(!app)return json(res,404,{error:'application_not_found'});
-  if(req.method==='GET'){const {data,error}=await supabaseAdmin.from('api_oauth_clients').select('id,client_id,redirect_uris,scopes,status,created_at').eq('application_id',appId).order('created_at',{ascending:false});if(error)return json(res,500,{error:'database_error'});return json(res,200,{data});}
-  if(req.method==='POST'){const b=body(req);const redirectUris=Array.isArray(b.redirect_uris)?b.redirect_uris.filter(u=>typeof u==='string'&&/^https:\/\//i.test(u)).slice(0,20):[];if(!redirectUris.length)return json(res,400,{error:'redirect_uris_required'});const scopes=Array.isArray(b.scopes)?[...new Set(b.scopes.filter(s=>SCOPES.includes(s)&&s!=='oauth:manage'))]:['profile:read'];const clientId=`mvc_${crypto.randomBytes(18).toString('base64url')}`;const secret=newSecret('mvs_');const {data,error}=await supabaseAdmin.from('api_oauth_clients').insert({application_id:appId,client_id:clientId,client_secret_hash:hashKey(secret.value),redirect_uris:redirectUris,scopes}).select('id,client_id,redirect_uris,scopes,status,created_at').single();if(error)return json(res,500,{error:'database_error'});return json(res,201,{data,client_secret:secret.value,warning:'Store the client secret securely. It will not be shown again.'});}
+  if(req.method==='OPTIONS')return json(res,204,null);
+  const action=String(req.query?.action||'');
+
+  if(action==='authorize'){
+    const auth=await requireUser(req); if(auth.error)return json(res,401,{error:'login_required',message:'Sign in to Merveil before authorizing an application.'});
+    const clientId=String(req.query?.client_id||'');const redirectUri=String(req.query?.redirect_uri||'');const responseType=String(req.query?.response_type||'');const state=String(req.query?.state||'');const challenge=String(req.query?.code_challenge||'');const method=String(req.query?.code_challenge_method||'');
+    const c=await client(clientId);if(!c||c.status!=='active')return json(res,400,{error:'invalid_client'});
+    if(responseType!=='code')return redirect(res,redirectUri,{error:'unsupported_response_type',state});
+    if(!redirectUri||!(c.redirect_uris||[]).includes(redirectUri))return json(res,400,{error:'invalid_redirect_uri'});
+    if(challenge&&method!=='S256')return redirect(res,redirectUri,{error:'invalid_request',error_description:'Only S256 PKCE is supported',state});
+    const requested=String(req.query?.scope||'').split(/\s+/).filter(Boolean);const scopes=cleanScopes(requested.length?requested:c.scopes);const allowed=new Set(c.scopes||[]);if(scopes.some(s=>!allowed.has(s)))return redirect(res,redirectUri,{error:'invalid_scope',state});
+    if(!scopes.length)return redirect(res,redirectUri,{error:'invalid_scope',state});
+    const raw=randomToken('mvo_code_');const {error}=await supabaseAdmin.from('api_oauth_codes').insert({client_id:c.client_id,user_id:auth.user.id,redirect_uri,scope:scopes,code_challenge:challenge||null,code_challenge_method:challenge?'S256':null,code_hash:hashKey(raw),expires_at:new Date(Date.now()+5*60*1000).toISOString()});
+    if(error)return json(res,500,{error:'database_error'});
+    return redirect(res,redirectUri,{code:raw,state});
+  }
+
+  if(action==='token'){
+    if(req.method!=='POST')return json(res,405,{error:'method_not_allowed'});
+    const b=body(req);const grant=String(b.grant_type||'authorization_code');const clientId=String(b.client_id||'');const c=await client(clientId);if(!c||c.status!=='active')return json(res,401,{error:'invalid_client'});
+    if(!c.public_client){const supplied=String(b.client_secret||'');if(!supplied||hashKey(supplied)!==c.client_secret_hash)return json(res,401,{error:'invalid_client'});}
+    if(grant==='authorization_code'){
+      const code=String(b.code||'');const redirectUri=String(b.redirect_uri||'');if(!code||!redirectUri)return json(res,400,{error:'invalid_request'});
+      const {data,rowError}=await supabaseAdmin.from('api_oauth_codes').select('*').eq('client_id',c.client_id).eq('code_hash',hashKey(code)).is('consumed_at',null).gt('expires_at',new Date().toISOString()).maybeSingle();if(rowError||!data)return json(res,400,{error:'invalid_grant'});
+      if(data.redirect_uri!==redirectUri)return json(res,400,{error:'invalid_grant'});if(!pkce(b.code_verifier,data.code_challenge,data.code_challenge_method))return json(res,400,{error:'invalid_grant',error_description:'PKCE verification failed'});
+      const {data:consumed,error:consumeError}=await supabaseAdmin.from('api_oauth_codes').update({consumed_at:new Date().toISOString()}).eq('id',data.id).is('consumed_at',null).select('id').maybeSingle();if(consumeError||!consumed)return json(res,400,{error:'invalid_grant'});
+      return issueTokens(res,c,data.user_id,data.scope);
+    }
+    if(grant==='refresh_token'){
+      const supplied=String(b.refresh_token||'');if(!supplied)return json(res,400,{error:'invalid_request'});
+      const {data:r}=await supabaseAdmin.from('api_oauth_refresh_tokens').select('*').eq('token_hash',hashKey(supplied)).eq('client_id',c.client_id).is('revoked_at',null).gt('expires_at',new Date().toISOString()).maybeSingle();if(!r)return json(res,400,{error:'invalid_grant'});
+      const requested=cleanScopes(String(b.scope||'').split(/\s+/).filter(Boolean));const scope=requested.length?requested:r.scope;if(scope.some(s=>!(r.scope||[]).includes(s)))return json(res,400,{error:'invalid_scope'});
+      const {data:revoked,error}=await supabaseAdmin.from('api_oauth_refresh_tokens').update({revoked_at:new Date().toISOString(),last_used_at:new Date().toISOString()}).eq('id',r.id).is('revoked_at',null).select('id').maybeSingle();if(error||!revoked)return json(res,400,{error:'invalid_grant'});
+      return issueTokens(res,c,r.user_id,scope,r.id);
+    }
+    return json(res,400,{error:'unsupported_grant_type'});
+  }
+
+  if(action==='revoke'){
+    if(req.method!=='POST')return json(res,405,{error:'method_not_allowed'});const b=body(req);const c=await client(String(b.client_id||''));if(!c||c.status!=='active')return json(res,200,{revoked:true});if(!c.public_client&&hashKey(String(b.client_secret||''))!==c.client_secret_hash)return json(res,401,{error:'invalid_client'});const token=String(b.token||'');await supabaseAdmin.from('api_oauth_tokens').update({revoked_at:new Date().toISOString()}).eq('access_token_hash',hashKey(token)).eq('client_id',c.client_id);await supabaseAdmin.from('api_oauth_refresh_tokens').update({revoked_at:new Date().toISOString()}).eq('token_hash',hashKey(token)).eq('client_id',c.client_id);return json(res,200,{revoked:true});
+  }
+
+  const auth=await requireUser(req);if(auth.error)return json(res,401,{error:'unauthorized',message:auth.error});
+  if(!auth.user)return json(res,401,{error:'unauthorized'});
+  const appId=String(req.query?.app_id||'');if(!appId)return json(res,400,{error:'app_id_required'});
+  const {data:app}=await supabaseAdmin.from('api_applications').select('id').eq('id',appId).eq('user_id',auth.user.id).maybeSingle();if(!app)return json(res,404,{error:'application_not_found'});
+  if(req.method==='GET'){const {data,error}=await supabaseAdmin.from('api_oauth_clients').select('id,client_id,redirect_uris,scopes,status,public_client,token_endpoint_auth_method,created_at').eq('application_id',appId).order('created_at',{ascending:false});if(error)return json(res,500,{error:'database_error'});return json(res,200,{data});}
+  if(req.method==='POST'){const b=body(req);const redirectUris=Array.isArray(b.redirect_uris)?b.redirect_uris.filter(u=>typeof u==='string'&&/^https:\/\//i.test(u)).slice(0,20):[];if(!redirectUris.length)return json(res,400,{error:'redirect_uris_required'});const scopes=cleanScopes(b.scopes);const clientId=`mvc_${crypto.randomBytes(18).toString('base64url')}`;const isPublic=Boolean(b.public_client);const secret=isPublic?null:newSecret('mvs_');const {data,error}=await supabaseAdmin.from('api_oauth_clients').insert({application_id:appId,client_id:clientId,client_secret_hash:secret?hashKey(secret.value):null,redirect_uris:redirectUris,scopes:scopes.length?scopes:['profile:read'],public_client:isPublic,token_endpoint_auth_method:isPublic?'none':'client_secret_post'}).select('id,client_id,redirect_uris,scopes,status,public_client,token_endpoint_auth_method,created_at').single();if(error)return json(res,500,{error:'database_error'});return json(res,201,{data,...(secret?{client_secret:secret.value,warning:'Store the client secret securely. It will not be shown again.'}:{}),authorization_endpoint:'https://api.merveil.ai/api/v1/oauth?action=authorize',token_endpoint:'https://api.merveil.ai/api/v1/oauth?action=token',revocation_endpoint:'https://api.merveil.ai/api/v1/oauth?action=revoke'});}
   return json(res,405,{error:'method_not_allowed'});
+}
+
+async function issueTokens(res,c,userId,scope,replacedRefreshId=null){
+  const access=randomToken('mvo_at_');const refresh=randomToken('mvo_rt_');const accessExpires=new Date(Date.now()+60*60*1000);const refreshExpires=new Date(Date.now()+30*24*60*60*1000);
+  const {data:at,error}=await supabaseAdmin.from('api_oauth_tokens').insert({client_id:c.client_id,user_id:userId,access_token_hash:hashKey(access),scope,expires_at:accessExpires.toISOString()}).select('id').single();if(error)return json(res,500,{error:'database_error'});
+  const {data:rt,error:re}=await supabaseAdmin.from('api_oauth_refresh_tokens').insert({client_id:c.client_id,user_id:userId,access_token_id:at.id,token_hash:hashKey(refresh),scope,expires_at:refreshExpires.toISOString(),replaced_by_id:null}).select('id').single();if(re)return json(res,500,{error:'database_error'});
+  if(replacedRefreshId)await supabaseAdmin.from('api_oauth_refresh_tokens').update({replaced_by_id:rt.id}).eq('id',replacedRefreshId);
+  return json(res,200,{access_token:access,token_type:'Bearer',expires_in:3600,refresh_token:refresh,refresh_token_expires_in:30*24*60*60,scope:scope.join(' ')});
 }
