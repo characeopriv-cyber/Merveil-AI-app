@@ -5,7 +5,7 @@ const db=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE
 const json=(res,status,body)=>res.status(status).json(body);
 const sign=(secret,timestamp,body)=>`t=${timestamp},v1=${crypto.createHmac('sha256',secret).update(`${timestamp}.${body}`).digest('hex')}`;
 async function deliver(h,e){
- let secret;try{secret=decryptWebhookSecret(h.secret_ciphertext)}catch{x;secret='';}if(!secret)throw new Error('Webhook secret unavailable');
+ let secret;try{secret=decryptWebhookSecret(h.secret_ciphertext)}catch{secret='';}if(!secret)throw new Error('Webhook secret unavailable');
  const body=JSON.stringify({id:e.event_id,type:e.event_type,data:e.payload||{},created_at:e.created_at||new Date().toISOString()}),ts=Math.floor(Date.now()/1000),signature=sign(secret,ts,body),now=new Date().toISOString();
  const {data:d,error}=await db.from('api_webhook_deliveries').insert({webhook_id:h.id,event_id:e.event_id,event_type:e.event_type,payload:e.payload||{},attempt:1,status:'pending',signature}).select('id').single();
  if(error&&error.code==='23505')return{duplicate:true};if(error)throw error;
