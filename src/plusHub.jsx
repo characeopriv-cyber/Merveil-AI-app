@@ -23,8 +23,7 @@ function isVisible(element) {
 function findOriginalFeature(label) {
   const target = normalize(label);
   const candidates = Array.from(document.querySelectorAll("button, a, [role='button'], [onclick]"));
-  return candidates
-    .filter((el) => isVisible(el) && !el.closest("[data-merveil-plus-root]"))
+  return candidates.filter((el) => isVisible(el) && !el.closest("[data-merveil-plus-root]"))
     .filter((el) => normalize(el.innerText || el.getAttribute("aria-label") || el.getAttribute("title")) === target)
     .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0] || null;
 }
@@ -60,72 +59,32 @@ function activateOriginalFeature(label) {
 
 function PlusHub() {
   const [open, setOpen] = useState(false);
-
   useEffect(() => {
     hideSecondaryFeatureStrip();
     const observer = new MutationObserver(() => hideSecondaryFeatureStrip());
     observer.observe(document.body, { childList: true, subtree: true });
     const onResize = () => hideSecondaryFeatureStrip();
     window.addEventListener("resize", onResize);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", onResize);
-      originalTargets.clear();
-    };
+    return () => { observer.disconnect(); window.removeEventListener("resize", onResize); originalTargets.clear(); };
   }, []);
-
-  useEffect(() => {
-    document.body.classList.toggle("merveil-no-scroll", open);
-    return () => document.body.classList.remove("merveil-no-scroll");
-  }, [open]);
-
+  useEffect(() => { document.body.classList.toggle("merveil-no-scroll", open); return () => document.body.classList.remove("merveil-no-scroll"); }, [open]);
   const activate = (label) => {
     setOpen(false);
+    if (label === "Sounds") {
+      window.dispatchEvent(new CustomEvent("merveil:open-sounds"));
+      return;
+    }
     activateOriginalFeature(label);
   };
-
-  return (
-    <div data-merveil-plus-root="true" className="merveil-plus-root">
-      <button
-        type="button"
-        className="merveil-plus-trigger"
-        aria-label="Plus"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Plus size={18} strokeWidth={2.4} />
-        <span>Plus</span>
-      </button>
-
-      {open && (
-        <div className="merveil-plus-overlay" role="dialog" aria-modal="true" aria-label="Plus">
-          <button className="merveil-plus-backdrop" aria-label="Close Plus" onClick={() => setOpen(false)} />
-          <section className="merveil-plus-panel">
-            <header className="merveil-plus-header">
-              <div>
-                <div className="merveil-plus-eyebrow">MERVEIL</div>
-                <h2>Plus</h2>
-                <p>Community, New to UAE, Sounds, Arena, AI Call and Transaction.</p>
-              </div>
-              <button type="button" className="merveil-plus-close" aria-label="Close Plus" onClick={() => setOpen(false)}>
-                <X size={20} />
-              </button>
-            </header>
-
-            <div className="merveil-plus-list">
-              {FEATURES.map(({ label, icon: Icon }) => (
-                <button key={label} type="button" className="merveil-plus-item" onClick={() => activate(label)}>
-                  <span className="merveil-plus-icon"><Icon size={20} /></span>
-                  <span className="merveil-plus-label">{label}</span>
-                  <ChevronRight size={18} className="merveil-plus-chevron" />
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
-    </div>
-  );
+  return <div data-merveil-plus-root="true" className="merveil-plus-root">
+    <button type="button" className="merveil-plus-trigger" aria-label="Plus" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Plus size={18} strokeWidth={2.4}/><span>Plus</span></button>
+    {open && <div className="merveil-plus-overlay" role="dialog" aria-modal="true" aria-label="Plus">
+      <button className="merveil-plus-backdrop" aria-label="Close Plus" onClick={() => setOpen(false)}/>
+      <section className="merveil-plus-panel">
+        <header className="merveil-plus-header"><div><div className="merveil-plus-eyebrow">MERVEIL</div><h2>Plus</h2><p>Community, New to UAE, Sounds, Arena, AI Call and Transaction.</p></div><button type="button" className="merveil-plus-close" aria-label="Close Plus" onClick={() => setOpen(false)}><X size={20}/></button></header>
+        <div className="merveil-plus-list">{FEATURES.map(({ label, icon: Icon }) => <button key={label} type="button" className="merveil-plus-item" onClick={() => activate(label)}><span className="merveil-plus-icon"><Icon size={20}/></span><span className="merveil-plus-label">{label}</span><ChevronRight size={18} className="merveil-plus-chevron"/></button>)}</div>
+      </section>
+    </div>}
+  </div>;
 }
-
 export default PlusHub;
