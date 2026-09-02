@@ -2,18 +2,17 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Merveil AI Intelligence Platform API",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "The intelligence layer beyond interaction. Integrate Merveil through one governed API boundary for intelligence, identity, connection, voice, world, business, property and capital capabilities."
   },
   "servers": [
-    { "url": "https://api.merveil.ai/api/v1", "description": "Production" },
-    { "url": "https://api.merveil.ai/api/v1", "description": "Sandbox — use an mv_test_* credential" }
+    { "url": "https://api.merveil.ai/api/v1", "description": "Merveil API — use mv_live_* for production or mv_test_* for sandbox" }
   ],
   "security": [{ "ApiKeyAuth": [] }, { "OAuth2": ["ai:use"] }],
   "paths": {
     "/health": { "get": { "security": [], "summary": "Health", "responses": { "200": { "description": "API is available" } } } },
     "/catalog": { "get": { "security": [], "summary": "API catalog", "responses": { "200": { "description": "Capabilities, endpoints and commercial metadata" } } } },
-    "/ai": { "post": { "summary": "Ask Merveil Intelligence", "security": [{ "ApiKeyAuth": ["ai:use"] }, { "OAuth2": ["ai:use"] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiRequest" } } } }, "responses": { "200": { "description": "Intelligence response", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiResponse" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" }, "429": { "$ref": "#/components/responses/RateLimited" } } } },
+    "/ai": { "post": { "summary": "Ask Merveil Intelligence", "security": [{ "ApiKeyAuth": ["ai:use"] }, { "OAuth2": ["ai:use"] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiRequest" }, "examples": { "prompt": { "value": { "capability": "general", "prompt": "Summarize this opportunity." } }, "messages": { "value": { "capability": "real_estate", "messages": [{ "role": "user", "content": "Analyze this property opportunity." }] } } } } } }, "responses": { "200": { "description": "Intelligence response", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiResponse" } } } }, "401": { "$ref": "#/components/responses/Unauthorized" }, "429": { "$ref": "#/components/responses/RateLimited" } } } },
     "/profile": { "get": { "summary": "Read authorized profile", "responses": { "200": { "description": "Profile" } } } },
     "/passport": { "get": { "summary": "Read authorized Passport summary", "responses": { "200": { "description": "Passport" } } } },
     "/verification": { "get": { "summary": "Read verification status", "responses": { "200": { "description": "Verification status" } } } },
@@ -34,11 +33,10 @@
   "components": {
     "securitySchemes": {
       "ApiKeyAuth": { "type": "apiKey", "in": "header", "name": "X-API-Key" },
-      "OAuth2": { "type": "oauth2", "flows": { "clientCredentials": { "tokenUrl": "https://api.merveil.ai/api/v1/oauth/token", "scopes": { "ai:use": "Use Merveil Intelligence", "profile:read": "Read authorized profile", "passport:read": "Read authorized Passport", "connect:read": "Read connections", "connect:write": "Create connections", "call:read": "Read call sessions", "call:write": "Create call operations", "companies:read": "Read companies", "companies:write": "Create companies", "properties:read": "Read properties", "properties:write": "Create properties", "world:read": "Read World", "world:write": "Create World content", "investors:read": "Read investor intelligence", "webhooks:manage": "Manage webhooks", "oauth:manage": "Manage OAuth" } } } },
-      "ApiKeyAuth": { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+      "OAuth2": { "type": "oauth2", "flows": { "clientCredentials": { "tokenUrl": "https://api.merveil.ai/api/v1/oauth/token", "scopes": { "ai:use": "Use Merveil Intelligence", "profile:read": "Read authorized profile", "passport:read": "Read authorized Passport", "connect:read": "Read connections", "connect:write": "Create connections", "call:read": "Read call sessions", "call:write": "Create call operations", "companies:read": "Read companies", "companies:write": "Create companies", "properties:read": "Read properties", "properties:write": "Create properties", "world:read": "Read World", "world:write": "Create World content", "investors:read": "Read investor intelligence", "webhooks:manage": "Manage webhooks", "oauth:manage": "Manage OAuth" } } } }
     },
     "schemas": {
-      "AiRequest": { "type": "object", "properties": { "messages": { "type": "array", "items": { "type": "object", "required": ["role", "content"], "properties": { "role": { "type": "string", "enum": ["system", "user", "assistant"] }, "content": { "type": "string" } } } }, "prompt": { "type": "string" }, "context": { "type": "object", "additionalProperties": true }, "capability": { "type": "string", "description": "Merveil capability such as general, trading, real_estate, business, game, agent, vision, image, video or voice." }, "maxTokens": { "type": "integer", "minimum": 1 }, "temperature": { "type": "number", "minimum": 0, "maximum": 2 } }, "minProperties": 1 },
+      "AiRequest": { "type": "object", "properties": { "messages": { "type": "array", "items": { "type": "object", "required": ["role", "content"], "properties": { "role": { "type": "string", "enum": ["system", "user", "assistant"] }, "content": { "type": "string" } } } }, "prompt": { "type": "string" }, "context": { "type": "object", "additionalProperties": true }, "capability": { "type": "string", "enum": ["general", "website", "game", "agent", "real_estate", "business", "trading", "vision", "image", "video", "voice"] }, "maxTokens": { "type": "integer", "minimum": 1 }, "temperature": { "type": "number", "minimum": 0, "maximum": 2 } }, "minProperties": 1 },
       "AiResponse": { "type": "object", "properties": { "reply": { "type": "string" }, "model": { "type": "string", "example": "merveil-intelligence" }, "capability": { "type": "string" }, "capability_label": { "type": "string" }, "provider": { "type": "string", "example": "merveil" }, "routing": { "type": "string", "example": "automatic" } } },
       "Error": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" }, "request_id": { "type": "string" } } }
     },
@@ -50,6 +48,7 @@
   "x-merveil": {
     "principle": "Developers integrate once with Merveil; Merveil evolves the intelligence layer underneath.",
     "requestHeaders": ["X-Request-Id", "X-RateLimit-*", "X-Quota-*"],
-    "environments": ["mv_test_*", "mv_live_*"]
+    "credentials": { "sandbox": "mv_test_*", "production": "mv_live_*" },
+    "security": "API keys are server-side credentials. Do not embed them in browser or mobile client code."
   }
 }
