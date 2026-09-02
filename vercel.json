@@ -1,6 +1,11 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/router" },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "developers.merveil.ai" }],
+      "destination": "/developer-portal/$1"
+    },
+    { "source": "/api/(?!v1/)(.*)", "destination": "/api/router" },
     { "source": "/merveil-admin-x9k2", "destination": "/index.html" },
     { "source": "/merveil-admin-x9k2/(.*)", "destination": "/index.html" },
     {
@@ -9,6 +14,12 @@
     }
   ],
   "headers": [
+    {
+      "source": "/api/v1/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
     {
       "source": "/.well-known/assetlinks.json",
       "headers": [
