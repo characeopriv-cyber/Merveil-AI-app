@@ -15,7 +15,7 @@
     { "source": "/api/(.*)", "destination": "/api/router" },
     { "source": "/merveil-admin-x9k2", "destination": "/index.html" },
     { "source": "/merveil-admin-x9k2/(.*)", "destination": "/index.html" },
-    { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/|developer(?:/|$)|onboarding(?:/|$)).*)", "destination": "/index.html" }
   ],
   "headers": [
     { "source": "/api/v1/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
