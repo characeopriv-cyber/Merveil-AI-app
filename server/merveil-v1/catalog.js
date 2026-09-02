@@ -27,11 +27,15 @@ const developer = [
   ['DELETE','/webhooks','webhooks:manage','Developer','Remove a webhook endpoint.'],
   ['GET','/oauth','oauth:manage','Developer','Manage OAuth clients and delegated integrations.'],
   ['GET','/usage',null,'Developer','Read developer usage analytics.'],
-  ['GET','/apps',null,'Developer','Manage developer applications.']
+  ['GET','/apps',null,'Developer','Manage developer applications.'],
+  ['GET','/organization',null,'Commercial','Read organization, plan, subscription, usage and application status.'],
+  ['POST','/organization',null,'Commercial','Create an organization or start a verified subscription checkout.'],
+  ['GET','/billing',null,'Commercial','Read billing profile, invoices and billing events.'],
+  ['POST','/billing',null,'Commercial','Create/update commercial onboarding and billing profile data.']
 ].map(([method,path,scope,category,description])=>({method,path,scope,category,description}));
 
 export default async function handler(req,res){
   if(req.method==='OPTIONS') return json(res,204,null);
   if(req.method!=='GET') return json(res,405,{error:'method_not_allowed'});
-  return json(res,200,{data:{version:'v1',base_path:'/api/v1',authentication:['X-API-Key','Bearer OAuth access token'],intelligence:intelligenceCatalog(),capabilities:['intelligence','voice','connection','trust','world','real_estate','business','capital','trading'],endpoints:[...core,...developer],internal_services:['credits','billing','organization'],note:'Merveil exposes a small set of core capabilities; trading is available through Merveil Intelligence rather than a separate fragmented API.',headers:{request_id:'X-Request-Id',rate_limit:'X-RateLimit-*',quota:'X-Quota-*'},environments:{sandbox:'mv_test_*',production:'mv_live_*'}}});
+  return json(res,200,{data:{version:'v1',base_path:'/api/v1',authentication:['X-API-Key','Bearer OAuth access token'],intelligence:intelligenceCatalog(),capabilities:['intelligence','voice','connection','trust','world','real_estate','business','capital','trading'],endpoints:[...core,...developer],commercial:{plans:['sandbox','developer','growth','business','enterprise'],subscription:'organization.upgrade',payment_provider:'stripe',activation:'verified_payment_webhook_only'},headers:{request_id:'X-Request-Id',rate_limit:'X-RateLimit-*',quota:'X-Quota-*'},environments:{sandbox:'mv_test_*',production:'mv_live_*'},principle:'Developers integrate once with Merveil; Merveil evolves the intelligence layer underneath.'}});
 }
