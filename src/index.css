@@ -25,3 +25,158 @@ body {
   width: 100%;
   height: 100%;
 }
+
+/* Merveil Plus — secondary feature hub */
+.merveil-plus-root {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 2147483000;
+  font-family: inherit;
+}
+
+.merveil-plus-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 999px;
+  background: rgba(10,10,11,.82);
+  color: #f4f4f5;
+  box-shadow: 0 10px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+
+.merveil-plus-trigger:hover { transform: translateY(-1px); }
+.merveil-plus-trigger:active { transform: translateY(0); }
+
+.merveil-plus-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: max(72px, calc(env(safe-area-inset-top) + 64px)) max(14px, env(safe-area-inset-right)) 14px;
+  z-index: 2147483001;
+}
+
+.merveil-plus-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0,0,0,.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.merveil-plus-panel {
+  position: relative;
+  width: min(430px, 100%);
+  max-height: calc(100vh - 88px);
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(22,24,29,.98), rgba(10,11,14,.98));
+  box-shadow: 0 28px 90px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);
+  color: #f4f4f5;
+  animation: merveilPlusIn .18s ease-out;
+}
+
+.merveil-plus-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 22px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.merveil-plus-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .22em;
+  opacity: .55;
+}
+
+.merveil-plus-header h2 {
+  margin: 5px 0 3px;
+  font-size: 28px;
+  line-height: 1.05;
+}
+
+.merveil-plus-header p {
+  margin: 0;
+  max-width: 300px;
+  color: rgba(244,244,245,.58);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.merveil-plus-close {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 50%;
+  background: rgba(255,255,255,.045);
+  color: #f4f4f5;
+  cursor: pointer;
+}
+
+.merveil-plus-list { padding: 10px; }
+
+.merveil-plus-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 44px 1fr 22px;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: #f4f4f5;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.merveil-plus-item:hover { background: rgba(255,255,255,.065); }
+.merveil-plus-item:active { background: rgba(255,255,255,.09); }
+
+.merveil-plus-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(6,182,212,.20);
+  border-radius: 15px;
+  background: rgba(6,182,212,.09);
+  color: #22d3ee;
+}
+
+.merveil-plus-label { font-size: 15px; font-weight: 650; }
+.merveil-plus-chevron { opacity: .42; }
+
+@keyframes merveilPlusIn {
+  from { opacity: 0; transform: translateY(-8px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 640px) {
+  .merveil-plus-root { right: 8px; }
+  .merveil-plus-trigger { min-height: 40px; padding: 0 12px; }
+  .merveil-plus-overlay { padding: 60px 8px 8px; }
+  .merveil-plus-panel { width: 100%; max-height: calc(100vh - 68px); border-radius: 24px; }
+  .merveil-plus-header { padding: 20px 18px 14px; }
+}
