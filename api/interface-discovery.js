@@ -16,30 +16,19 @@ export default async function handler(req, res) {
     const session = await getSession(req, res);
     if (!session?.user?.id || !session.token) return sendJson(res, 401, { error: "Authentication required" });
     const svc = adminClient();
-
     if (req.method === "GET") {
       const limit = Math.min(50, Math.max(1, Number(req.query?.limit || 12)));
-      const { data, error } = await svc.rpc("merveil_interface_discovery", { p_limit: limit, p_user_id: session.user.id });
+      const { data, error } = await svc.rpc("merveil_interface_discovery", { p_limit: limit });
       if (error) throw error;
       return sendJson(res, 200, { interfaces: data || [], algorithm: "merveil-discovery-v1" });
     }
-
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const interfaceId = body.interface_id;
     const eventType = String(body.event_type || "visit");
     const allowed = new Set(["visit", "interaction", "activate", "subscribe"]);
     if (!interfaceId || !allowed.has(eventType)) return sendJson(res, 400, { error: "Invalid discovery event" });
-
-    const userClient = createClient(SUPABASE_URL, ANON_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${session.token}` } },
-    });
-    const { data, error } = await userClient.rpc("merveil_interface_record_event", {
-      p_interface_id: interfaceId,
-      p_event_type: eventType,
-      p_source: body.source || "explore",
-      p_metadata: body.metadata || {},
-    });
+    const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers: { Authorization: `Bearer ${session.token}` } } });
+    const { data, error } = await userClient.rpc("merveil_interface_record_event", { p_interface_id: interfaceId, p_event_type: eventType, p_source: body.source || "explore", p_metadata: body.metadata || {} });
     if (error) throw error;
     return sendJson(res, 200, { event_id: data });
   } catch (error) {
