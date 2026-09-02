@@ -3,19 +3,39 @@
 @tailwind utilities;
 
 html, body, #root {
-  height: 100%;
+  min-height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
-  overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
 
+html {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: none;
+}
+
 body {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   background: #0a0a0b;
   color: #f4f4f5;
+  -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  min-height: 100dvh;
+  overflow-x: clip;
+}
+
+button, a, input, textarea, select {
+  touch-action: manipulation;
 }
 
 .merveil-no-scroll {
@@ -26,7 +46,16 @@ body {
   height: 100%;
 }
 
-/* Merveil Plus — secondary feature hub */
+/* Safe, independently scrollable surfaces. */
+.merveil-scroll-surface {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 .merveil-plus-root {
   position: fixed;
   top: max(10px, env(safe-area-inset-top));
@@ -63,8 +92,9 @@ body {
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
-  padding: max(72px, calc(env(safe-area-inset-top) + 64px)) max(14px, env(safe-area-inset-right)) 14px;
+  padding: max(72px, calc(env(safe-area-inset-top) + 64px)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom));
   z-index: 2147483001;
+  overflow: hidden;
 }
 
 .merveil-plus-backdrop {
@@ -80,8 +110,11 @@ body {
 .merveil-plus-panel {
   position: relative;
   width: min(430px, 100%);
-  max-height: calc(100vh - 88px);
-  overflow: auto;
+  max-height: min(calc(100dvh - 88px), 760px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   border: 1px solid rgba(255,255,255,.13);
   border-radius: 28px;
   background: linear-gradient(180deg, rgba(22,24,29,.98), rgba(10,11,14,.98));
@@ -98,73 +131,15 @@ body {
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
 
-.merveil-plus-eyebrow {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .22em;
-  opacity: .55;
-}
-
-.merveil-plus-header h2 {
-  margin: 5px 0 3px;
-  font-size: 28px;
-  line-height: 1.05;
-}
-
-.merveil-plus-header p {
-  margin: 0;
-  max-width: 300px;
-  color: rgba(244,244,245,.58);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.merveil-plus-close {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255,255,255,.1);
-  border-radius: 50%;
-  background: rgba(255,255,255,.045);
-  color: #f4f4f5;
-  cursor: pointer;
-}
-
+.merveil-plus-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .22em; opacity: .55; }
+.merveil-plus-header h2 { margin: 5px 0 3px; font-size: 28px; line-height: 1.05; }
+.merveil-plus-header p { margin: 0; max-width: 300px; color: rgba(244,244,245,.58); font-size: 12px; line-height: 1.45; }
+.merveil-plus-close { flex: 0 0 auto; width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; background: rgba(255,255,255,.045); color: #f4f4f5; cursor: pointer; }
 .merveil-plus-list { padding: 10px; }
-
-.merveil-plus-item {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 44px 1fr 22px;
-  align-items: center;
-  gap: 12px;
-  min-height: 68px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 18px;
-  background: transparent;
-  color: #f4f4f5;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-}
-
+.merveil-plus-item { width: 100%; display: grid; grid-template-columns: 44px 1fr 22px; align-items: center; gap: 12px; min-height: 68px; padding: 8px 10px; border: 0; border-radius: 18px; background: transparent; color: #f4f4f5; text-align: left; cursor: pointer; font: inherit; }
 .merveil-plus-item:hover { background: rgba(255,255,255,.065); }
 .merveil-plus-item:active { background: rgba(255,255,255,.09); }
-
-.merveil-plus-icon {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(6,182,212,.20);
-  border-radius: 15px;
-  background: rgba(6,182,212,.09);
-  color: #22d3ee;
-}
-
+.merveil-plus-icon { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid rgba(6,182,212,.20); border-radius: 15px; background: rgba(6,182,212,.09); color: #22d3ee; }
 .merveil-plus-label { font-size: 15px; font-weight: 650; }
 .merveil-plus-chevron { opacity: .42; }
 
@@ -176,7 +151,7 @@ body {
 @media (max-width: 640px) {
   .merveil-plus-root { right: 8px; }
   .merveil-plus-trigger { min-height: 40px; padding: 0 12px; }
-  .merveil-plus-overlay { padding: 60px 8px 8px; }
-  .merveil-plus-panel { width: 100%; max-height: calc(100vh - 68px); border-radius: 24px; }
+  .merveil-plus-overlay { padding: max(60px, calc(env(safe-area-inset-top) + 52px)) 8px max(8px, env(safe-area-inset-bottom)); }
+  .merveil-plus-panel { width: 100%; max-height: calc(100dvh - 68px); border-radius: 24px; }
   .merveil-plus-header { padding: 20px 18px 14px; }
 }
