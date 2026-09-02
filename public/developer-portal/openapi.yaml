@@ -1,0 +1,153 @@
+openapi: 3.0.3
+info:
+  title: Merveil AI Developer API
+  version: 1.1.0
+  description: >-
+    Production API for applications integrating the Merveil AI Intelligence Layer,
+    trusted identity, connections, voice, world content and domain intelligence.
+servers:
+  - url: https://api.merveil.ai
+security:
+  - ApiKeyAuth: []
+tags:
+  - {name: System}
+  - {name: Intelligence}
+  - {name: Identity}
+  - {name: Connection}
+  - {name: Voice}
+  - {name: Ecosystem}
+  - {name: Developer}
+  - {name: Commercial}
+paths:
+  /api/v1/health:
+    get: {tags: [System], security: [], summary: API health, responses: {'200': {description: Operational}}}
+  /api/v1/catalog:
+    get: {tags: [System], security: [], summary: Discover capabilities and endpoints, responses: {'200': {description: Catalog returned}}}
+  /api/v1/ai:
+    post:
+      tags: [Intelligence]
+      summary: Generate through Merveil Intelligence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiRequest'}
+      responses: {'200': {description: Generated}, '401': {description: Unauthorized}, '403': {description: Missing ai:use scope}, '429': {description: Rate or daily limit}}
+  /api/v1/profile:
+    get: {tags: [Identity], summary: Read privacy-safe profile, responses: {'200': {description: Profile returned}}}
+  /api/v1/passport:
+    get: {tags: [Identity], summary: Read authorized Passport summary, responses: {'200': {description: Passport returned}}}
+  /api/v1/verification:
+    get: {tags: [Identity], summary: Read privacy-safe verification status, responses: {'200': {description: Verification returned}}}
+  /api/v1/connect:
+    get: {tags: [Connection], summary: Read authorized connections, responses: {'200': {description: Connections returned}}}
+    post:
+      tags: [Connection]
+      summary: Create a connection request
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {'201': {description: Created}}
+  /api/v1/messages:
+    get:
+      tags: [Connection]
+      summary: Read participant-authorized messages
+      parameters: [{name: conversation_id, in: query, required: true, schema: {type: string, format: uuid}}]
+      responses: {'200': {description: Messages returned}, '403': {description: Not a participant}}
+  /api/v1/call:
+    get: {tags: [Voice], summary: Check Merveil AI Call capability, responses: {'200': {description: Capability status}}}
+    post:
+      tags: [Voice]
+      summary: Start an authorized AI Call operation
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CallRequest'}}}}
+      responses: {'201': {description: Call queued}, '400': {description: Invalid input}, '503': {description: Call provider not configured}}
+  /api/v1/companies:
+    get: {tags: [Ecosystem], summary: Read authorized company data, responses: {'200': {description: Companies returned}}}
+    post: {tags: [Ecosystem], summary: Create company data, responses: {'201': {description: Created}}}
+  /api/v1/properties:
+    get: {tags: [Ecosystem], summary: Read authorized property listings, responses: {'200': {description: Properties returned}}}
+    post: {tags: [Ecosystem], summary: Create property listings, responses: {'201': {description: Created}}}
+  /api/v1/world:
+    get: {tags: [Ecosystem], summary: Read World content, responses: {'200': {description: Content returned}}}
+    post: {tags: [Ecosystem], summary: Create World content, responses: {'201': {description: Created}}}
+  /api/v1/investors:
+    get: {tags: [Ecosystem], summary: Read investor intelligence, responses: {'200': {description: Investor intelligence returned}}}
+  /api/v1/credits:
+    get: {tags: [Ecosystem], summary: Read Merveil credit balance, responses: {'200': {description: Balance returned}}}
+  /api/v1/apps:
+    get: {tags: [Developer], security: [{UserBearerAuth: []}], summary: List applications, responses: {'200': {description: Applications returned}}}
+    post:
+      tags: [Developer]
+      security: [{UserBearerAuth: []}]
+      summary: Create an application and receive a one-time API key
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateApplication'}}}}
+      responses: {'201': {description: Created}}
+    patch:
+      tags: [Developer]
+      security: [{UserBearerAuth: []}]
+      summary: Update or rotate an application
+      parameters: [{name: id, in: query, required: true, schema: {type: string, format: uuid}}]
+      responses: {'200': {description: Updated}}
+    delete:
+      tags: [Developer]
+      security: [{UserBearerAuth: []}]
+      summary: Revoke an application
+      parameters: [{name: id, in: query, required: true, schema: {type: string, format: uuid}}]
+      responses: {'200': {description: Revoked}}
+  /api/v1/usage:
+    get: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Read usage analytics, responses: {'200': {description: Usage returned}}}
+  /api/v1/webhooks:
+    get: {tags: [Developer], security: [{UserBearerAuth: []}], summary: List webhooks, responses: {'200': {description: Webhooks returned}}}
+    post: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Register a webhook, responses: {'201': {description: Created with one-time signing secret}}}
+    delete: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Delete a webhook, responses: {'200': {description: Deleted}}}
+  /api/v1/oauth:
+    get: {tags: [Developer], security: [{UserBearerAuth: []}], summary: List OAuth clients, responses: {'200': {description: Clients returned}}}
+    post: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Register OAuth client, responses: {'201': {description: Client credentials returned once}}}
+  /api/v1/organization:
+    get: {tags: [Commercial], security: [{UserBearerAuth: []}], summary: Read organization, plans, subscription and usage, responses: {'200': {description: Commercial state returned}}}
+    post:
+      tags: [Commercial]
+      security: [{UserBearerAuth: []}]
+      summary: Create organization or start a subscription checkout
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OrganizationAction'}}}}
+      responses: {'201': {description: Organization created}, '202': {description: Checkout created}, '403': {description: Organization admin required}}
+    patch: {tags: [Commercial], security: [{UserBearerAuth: []}], summary: Update organization, responses: {'200': {description: Updated}}}
+  /api/v1/billing:
+    get: {tags: [Commercial], security: [{UserBearerAuth: []}], summary: Read billing profile, invoices and events, responses: {'200': {description: Billing returned}}}
+    post: {tags: [Commercial], security: [{UserBearerAuth: []}], summary: Submit commercial onboarding or billing profile data, responses: {'201': {description: Submitted}, '200': {description: Updated}}}
+components:
+  securitySchemes:
+    ApiKeyAuth: {type: apiKey, in: header, name: X-API-Key}
+    UserBearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  schemas:
+    CreateApplication:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        environment: {type: string, enum: [sandbox, production]}
+        redirect_uris: {type: array, items: {type: string, format: uri}}
+        scopes: {type: array, items: {type: string}}
+    AiRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages: {type: array, minItems: 1, items: {type: object}}
+        capability: {type: string, enum: [general, website, game, agent, real_estate, business, trading, vision, image, video, voice]}
+        max_tokens: {type: integer, maximum: 2048}
+        temperature: {type: number, minimum: 0, maximum: 2}
+    CallRequest:
+      type: object
+      required: [assistant_id, customer_number]
+      properties:
+        assistant_id: {type: string}
+        phone_number_id: {type: string}
+        customer_number: {type: string, description: E.164 phone number}
+        language: {type: string}
+        voice: {type: string}
+    OrganizationAction:
+      type: object
+      properties:
+        action: {type: string, enum: [create, upgrade]}
+        name: {type: string}
+        plan_code: {type: string, enum: [sandbox, developer, growth, business, enterprise]}
+        organization_id: {type: string, format: uuid}
