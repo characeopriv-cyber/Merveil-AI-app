@@ -1,9 +1,11 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+// Merveil production Supabase project. Keep the service-role credential in
+// Vercel only; never hardcode or expose it in source code.
+const supabaseUrl = 'https://dixfybqlepticyudikuz.supabase.co';
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!supabaseUrl || !serviceRoleKey) throw new Error('Missing server-side Supabase configuration');
+if (!serviceRoleKey) throw new Error('Missing server-side Supabase service-role configuration');
 export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
 export const SCOPES = ['profile:read','passport:read','connect:read','connect:write','ai:use','call:read','call:write','companies:read','companies:write','properties:read','properties:write','world:read','world:write','investors:read','credits:read','verification:read','webhooks:manage','oauth:manage'];
