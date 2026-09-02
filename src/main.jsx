@@ -9,7 +9,15 @@ import "./index.css";
 
 const path = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") || "/" : "/";
 const isAdminPath = path === "/merveil-admin-x9k2";
-const isInterfacePath = path === "/interface" || path === "/interface/store";
+const interfacePaths = new Set([
+  "/interface",
+  "/interface/family",
+  "/interface/organization",
+  "/interface/community",
+  "/interface/companion",
+  "/interface/store",
+]);
+const isInterfacePath = interfacePaths.has(path);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
