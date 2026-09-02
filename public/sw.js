@@ -1,8 +1,5 @@
-/* Merveil AI service worker — push + force-fresh navigations (Firefox/Chrome/Safari).
- * Deploy at site root: /sw.js
- * Bump CACHE_VER when shipping UI fixes so browsers drop stale shells.
- */
-const CACHE_VER = "merveil-v1-2026-08-30-push";
+/* Merveil AI service worker — push + force-fresh navigations + Arena audio guard. */
+const CACHE_VER = "merveil-v2-2026-09-02-arena-audio";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -15,14 +12,11 @@ self.addEventListener("activate", (event) => {
       await Promise.all(keys.filter((k) => k !== CACHE_VER).map((k) => caches.delete(k)));
       await self.clients.claim();
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const client of clients) {
-        client.postMessage({ type: "merveil:sw-updated", version: CACHE_VER });
-      }
+      for (const client of clients) client.postMessage({ type: "merveil:sw-updated", version: CACHE_VER });
     })()
   );
 });
 
-// HTML / navigations: network-first so Firefox does not keep an old index shell.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
@@ -36,7 +30,24 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     (async () => {
       try {
-        return await fetch(req, { cache: "no-store" });
+        const response = await fetch(req, { cache: "no-store" });
+        const isArena = /^\/arena\/(sahra|burj-rise|connecta)\.html$/i.test(url.pathname);
+        if (!isArena || !response.ok) return response;
+
+        // Inject after the page's inline ArenaAudio engine so the guard can use it.
+        const type = response.headers.get("content-type") || "";
+        if (!type.includes("text/html")) return response;
+        const html = await response.text();
+        if (html.includes("arena-audio-guard.js")) {
+          return new Response(html, { status: response.status, statusText: response.statusText, headers: response.headers });
+        }
+        const patched = html.replace(
+          /<\/body>/i,
+          '<script src="/arena/arena-audio-guard.js" defer></script></body>'
+        );
+        const headers = new Headers(response.headers);
+        headers.set("cache-control", "no-store, max-age=0");
+        return new Response(patched, { status: response.status, statusText: response.statusText, headers });
       } catch {
         const cached = await caches.match(req);
         if (cached) return cached;
@@ -51,9 +62,7 @@ self.addEventListener("push", (event) => {
   try {
     if (event.data) payload = { ...payload, ...event.data.json() };
   } catch {
-    try {
-      payload.body = event.data ? event.data.text() : payload.body;
-    } catch {}
+    try { payload.body = event.data ? event.data.text() : payload.body; } catch {}
   }
   const opts = {
     body: payload.body || "",
