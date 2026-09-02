@@ -2,6 +2,7 @@
   "rewrites": [
     { "source": "/api/v1/(.*)", "destination": "/api/v1?route=$1" },
     { "source": "/api/v1", "destination": "/api/v1?route=health" },
+
     { "source": "/developer", "destination": "/developer-portal/console.html" },
     { "source": "/developer/", "destination": "/developer-portal/console.html" },
     { "source": "/developer/onboarding", "destination": "/developer-portal/onboarding.html" },
@@ -20,6 +21,13 @@
     { "source": "/onboarding", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
     { "source": "/onboarding/", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/$1" },
+
+    { "source": "/", "has": [{ "type": "host", "value": "interface.junction.technology" }], "destination": "/interface" },
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "interface.junction.technology" }], "destination": "/interface/$1" },
+
+    { "source": "/", "has": [{ "type": "host", "value": "admin.junction.technology" }], "destination": "/merveil-admin-x9k2" },
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "admin.junction.technology" }], "destination": "/merveil-admin-x9k2/$1" },
+
     { "source": "/api/auth-session", "destination": "/api/session?kind=auth" },
     { "source": "/api/passport-session", "destination": "/api/session?kind=passport" },
     { "source": "/api/connect-session", "destination": "/api/session?kind=connect" },
