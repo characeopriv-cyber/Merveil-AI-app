@@ -10,4 +10,8 @@ Date: 2026-09-02
 
 ## Deployment note
 
-The GitHub `main` branch contains the API catalog implementation, while the currently aliased Vercel production deployment predates those catalog commits. The next Git-triggered production deployment must include the current `main` branch before client-facing API verification is considered complete.
+The GitHub `main` branch contains the API catalog implementation, while the currently aliased Vercel production deployment predates those catalog commits. A fresh Git-triggered production deployment is required before client-facing API verification is considered complete.
+
+## Deployment trigger
+
+This commit intentionally refreshes the production verification marker so the connected Vercel project receives a new `main` branch deployment from the complete API platform state.
