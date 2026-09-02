@@ -1,0 +1,3 @@
+Merveil AI platform completion deployment trigger.
+
+Includes the official JavaScript SDK, TypeScript declarations, commercial subscription catalog exposure, and synchronized OpenAPI documentation.
