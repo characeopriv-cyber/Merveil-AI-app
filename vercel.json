@@ -1,0 +1,34 @@
+{
+  "rewrites": [
+    { "source": "/api/v1/(.*)", "destination": "/api/v1?route=$1" },
+    { "source": "/api/v1", "destination": "/api/v1?route=health" },
+    { "source": "/developer", "destination": "/developer-portal/console.html" },
+    { "source": "/developer/", "destination": "/developer-portal/console.html" },
+    { "source": "/developer/onboarding", "destination": "/developer-portal/onboarding.html" },
+    { "source": "/developer/onboarding/", "destination": "/developer-portal/onboarding.html" },
+    { "source": "/onboarding", "destination": "/developer-portal/onboarding.html" },
+    { "source": "/onboarding/", "destination": "/developer-portal/onboarding.html" },
+    { "source": "/", "has": [{ "type": "host", "value": "developer.junction.technology" }], "destination": "/developer-portal/console.html" },
+    { "source": "/onboarding", "has": [{ "type": "host", "value": "developer.junction.technology" }], "destination": "/developer-portal/onboarding.html" },
+    { "source": "/onboarding/", "has": [{ "type": "host", "value": "developer.junction.technology" }], "destination": "/developer-portal/onboarding.html" },
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "developer.junction.technology" }], "destination": "/developer-portal/$1" },
+    { "source": "/", "has": [{ "type": "host", "value": "developers.junction.technology" }], "destination": "/developer-portal/console.html" },
+    { "source": "/onboarding", "has": [{ "type": "host", "value": "developers.junction.technology" }], "destination": "/developer-portal/onboarding.html" },
+    { "source": "/onboarding/", "has": [{ "type": "host", "value": "developers.junction.technology" }], "destination": "/developer-portal/onboarding.html" },
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "developers.junction.technology" }], "destination": "/developer-portal/$1" },
+    { "source": "/", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/console.html" },
+    { "source": "/onboarding", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
+    { "source": "/onboarding/", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
+    { "source": "/(.*)", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/$1" },
+    { "source": "/api/(.*)", "destination": "/api/router" },
+    { "source": "/merveil-admin-x9k2", "destination": "/index.html" },
+    { "source": "/merveil-admin-x9k2/(.*)", "destination": "/index.html" },
+    { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/|developer(?:/|$)|developer-portal(?:/|$)|onboarding(?:/|$)).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    { "source": "/api/v1/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
+    { "source": "/.well-known/assetlinks.json", "headers": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Cache-Control", "value": "public, max-age=300" }] },
+    { "source": "/manifest.webmanifest", "headers": [{ "key": "Content-Type", "value": "application/manifest+json" }, { "key": "Cache-Control", "value": "public, max-age=3600" }] },
+    { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }, { "key": "Service-Worker-Allowed", "value": "/" }] }
+  ]
+}
