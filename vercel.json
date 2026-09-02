@@ -21,6 +21,8 @@
     { "source": "/onboarding/", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/$1" },
     { "source": "/api/auth-session", "destination": "/api/auth-session.js" },
+    { "source": "/api/passport-session", "destination": "/api/passport-session.js" },
+    { "source": "/api/connect-session", "destination": "/api/connect-session.js" },
     { "source": "/api/(.*)", "destination": "/api/router" },
     { "source": "/merveil-admin-x9k2", "destination": "/index.html" },
     { "source": "/merveil-admin-x9k2/(.*)", "destination": "/index.html" },
@@ -29,6 +31,8 @@
   "headers": [
     { "source": "/api/v1/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
     { "source": "/api/auth-session", "headers": [{ "key": "Cache-Control", "value": "private, no-store, max-age=0" }] },
+    { "source": "/api/passport-session", "headers": [{ "key": "Cache-Control", "value": "private, no-store, max-age=0" }] },
+    { "source": "/api/connect-session", "headers": [{ "key": "Cache-Control", "value": "private, no-store, max-age=0" }] },
     { "source": "/.well-known/assetlinks.json", "headers": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Cache-Control", "value": "public, max-age=300" }] },
     { "source": "/manifest.webmanifest", "headers": [{ "key": "Content-Type", "value": "application/manifest+json" }, { "key": "Cache-Control", "value": "public, max-age=3600" }] },
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }, { "key": "Service-Worker-Allowed", "value": "/" }] }
