@@ -3,6 +3,30 @@
     { "source": "/api/v1/(.*)", "destination": "/api/v1?route=$1" },
     { "source": "/api/v1", "destination": "/api/v1?route=health" },
     {
+      "source": "/developer",
+      "destination": "/developer-portal/console.html"
+    },
+    {
+      "source": "/developer/",
+      "destination": "/developer-portal/console.html"
+    },
+    {
+      "source": "/developer/onboarding",
+      "destination": "/developer-portal/onboarding.html"
+    },
+    {
+      "source": "/developer/onboarding/",
+      "destination": "/developer-portal/onboarding.html"
+    },
+    {
+      "source": "/onboarding",
+      "destination": "/developer-portal/onboarding.html"
+    },
+    {
+      "source": "/onboarding/",
+      "destination": "/developer-portal/onboarding.html"
+    },
+    {
       "source": "/",
       "has": [{ "type": "host", "value": "developers.merveil.ai" }],
       "destination": "/developer-portal/console.html"
@@ -48,6 +72,7 @@
       "source": "/manifest.webmanifest",
       "headers": [
         { "key": "Content-Type", "value": "application/manifest+json" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" },
         { "key": "Cache-Control", "value": "public, max-age=3600" }
       ]
     },
