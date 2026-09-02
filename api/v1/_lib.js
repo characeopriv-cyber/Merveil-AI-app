@@ -6,15 +6,26 @@ export const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+export const SCOPES = ['profile:read', 'passport:read', 'connect:read', 'connect:write', 'ai:use', 'companies:read', 'companies:write', 'properties:read', 'properties:write', 'world:read', 'world:write', 'investors:read', 'credits:read', 'verification:read', 'webhooks:manage', 'oauth:manage'];
+
 export function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.MERVEIL_API_CORS_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type, x-api-key');
+  const origin = process.env.MERVEIL_API_CORS_ORIGIN || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type, x-api-key, x-request-id');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After');
 }
 
-export function json(res, status, body) {
+export function requestId(req, res) {
+  const id = String(req.headers['x-request-id'] || crypto.randomUUID()).slice(0, 100);
+  res.setHeader('X-Request-Id', id);
+  return id;
+}
+
+export function json(res, status, body, headers = {}) {
   cors(res);
-  res.status(status).json(body);
+  Object.entries(headers).forEach(([k, v]) => res.setHeader(k, v));
+  return res.status(status).json(body);
 }
 
 export function bearer(req) {
@@ -30,9 +41,7 @@ export async function requireUser(req) {
   return { user: data.user };
 }
 
-export function hashKey(key) {
-  return crypto.createHash('sha256').update(key).digest('hex');
-}
+export function hashKey(key) { return crypto.createHash('sha256').update(key).digest('hex'); }
 
 export function newApiKey(environment) {
   const prefix = environment === 'production' ? 'mv_live_' : 'mv_test_';
@@ -41,18 +50,63 @@ export function newApiKey(environment) {
   return { key, prefix: key.slice(0, 13), hash: hashKey(key) };
 }
 
+export function newSecret(prefix = 'mv_secret_') {
+  const value = `${prefix}${crypto.randomBytes(32).toString('base64url')}`;
+  return { value, hash: hashKey(value) };
+}
+
 export function apiKey(req) {
   return req.headers['x-api-key'] || (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || null;
 }
 
-export async function requireApiKey(req) {
+export async function requireApiKey(req, requiredScope = null, res = null) {
+  const started = Date.now();
   const key = apiKey(req);
-  if (!key) return { error: 'Missing API key' };
+  const rid = res ? requestId(req, res) : String(req.headers['x-request-id'] || crypto.randomUUID());
+  if (!key) return { error: 'Missing API key', status: 401, requestId: rid };
   const { data, error } = await supabaseAdmin
     .from('api_applications')
     .select('id,user_id,name,environment,scopes,status')
     .eq('key_hash', hashKey(key))
     .maybeSingle();
-  if (error || !data || data.status !== 'active') return { error: 'Invalid or revoked API key' };
-  return { app: data };
+  if (error || !data || data.status !== 'active') return { error: 'Invalid or revoked API key', status: 401, requestId: rid };
+  if (requiredScope && !(data.scopes || []).includes(requiredScope)) return { error: `Missing required scope: ${requiredScope}`, status: 403, requestId: rid, app: data };
+
+  const limit = data.environment === 'production' ? Number(process.env.MERVEIL_API_RATE_LIMIT || 120) : Number(process.env.MERVEIL_API_SANDBOX_RATE_LIMIT || 30);
+  const windowSeconds = 60;
+  const now = new Date();
+  const bucket = new Date(Math.floor(now.getTime() / (windowSeconds * 1000)) * windowSeconds * 1000).toISOString();
+  const { data: allowedData, error: rateError } = await supabaseAdmin.rpc('consume_api_rate_limit', { p_application_id: data.id, p_bucket_start: bucket, p_limit: limit });
+  if (!rateError && allowedData === false) {
+    const reset = Math.ceil((Date.parse(bucket) + windowSeconds * 1000) / 1000);
+    if (res) { res.setHeader('X-RateLimit-Limit', String(limit)); res.setHeader('X-RateLimit-Remaining', '0'); res.setHeader('X-RateLimit-Reset', String(reset)); }
+    return { error: 'Rate limit exceeded', status: 429, requestId: rid, headers: { 'Retry-After': String(Math.max(1, reset - Math.floor(Date.now() / 1000))) }, app: data };
+  }
+  if (res) {
+    const reset = Math.ceil((Date.parse(bucket) + windowSeconds * 1000) / 1000);
+    res.setHeader('X-RateLimit-Limit', String(limit));
+    res.setHeader('X-RateLimit-Reset', String(reset));
+  }
+  await supabaseAdmin.from('api_applications').update({ last_used_at: now.toISOString(), updated_at: now.toISOString() }).eq('id', data.id);
+  return { app: data, requestId: rid, started, limit };
+}
+
+export async function logApiUsage(ctx, req, statusCode) {
+  if (!ctx?.app?.id) return;
+  try {
+    await supabaseAdmin.from('api_usage_logs').insert({
+      application_id: ctx.app.id,
+      user_id: ctx.app.user_id,
+      method: req.method || 'GET',
+      path: req.url?.split('?')[0] || '/',
+      status_code: statusCode,
+      request_id: ctx.requestId || crypto.randomUUID(),
+      latency_ms: Math.max(0, Date.now() - (ctx.started || Date.now()))
+    });
+  } catch (_) {}
+}
+
+export function safeProfile(row) {
+  if (!row) return null;
+  return { id: row.id, name: row.name, bio: row.bio, avatar_url: row.avatar_url, country: row.country, city: row.city, profession: row.profession, skills: row.skills, languages: row.languages, website_url: row.website_url, portfolio_url: row.portfolio_url, account_type: row.account_type, company_name: row.company_name, passport_tier: row.passport_tier, kyc_level: row.kyc_level, kyc_status: row.kyc_status, created_at: row.created_at };
 }
