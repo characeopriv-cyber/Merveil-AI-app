@@ -7,6 +7,7 @@ const CAPABILITIES = {
   agent: { label: 'Merveil Agents', mode: 'reasoning', order: ['anthropic','xai','openai'] },
   real_estate: { label: 'Real Estate Intelligence', mode: 'reasoning', order: ['anthropic','xai','openai'] },
   business: { label: 'Business Intelligence', mode: 'reasoning', order: ['anthropic','xai','openai'] },
+  trading: { label: 'Trading Intelligence', mode: 'reasoning', order: ['xai','anthropic','openai'] },
   vision: { label: 'Vision Intelligence', mode: 'vision', order: ['openai','xai','anthropic'] },
   image: { label: 'Image Intelligence', mode: 'media', order: ['openai','xai'] },
   video: { label: 'Video Intelligence', mode: 'media', order: ['xai','openai'] },
@@ -16,8 +17,7 @@ const CAPABILITIES = {
 function cleanBase(url) { return String(url || '').replace(/\/$/, ''); }
 
 function providers(order) {
-  const configured = String(process.env.MERVEIL_AI_PROVIDER_ORDER || 'xai,anthropic,openai')
-    .split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
+  const configured = String(process.env.MERVEIL_AI_PROVIDER_ORDER || 'xai,anthropic,openai').split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
   const names = order?.length ? order : configured;
   return names.map(name => ({
     name,
