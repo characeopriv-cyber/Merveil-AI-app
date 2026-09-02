@@ -17,6 +17,7 @@ import webhooks from '../server/merveil-v1/webhooks.js';
 import apps from '../server/merveil-v1/apps.js';
 import usage from '../server/merveil-v1/usage.js';
 import commercial from '../server/merveil-v1/commercial.js';
+import billing from '../server/merveil-v1/billing.js';
 import developerConfig from '../server/merveil-v1/developer/config.js';
 import { json, requestId } from '../server/merveil-v1/_lib.js';
 
@@ -26,7 +27,7 @@ const routes = new Map([
   ['companies', companies], ['properties', properties], ['world', world],
   ['investors', investors], ['credits', credits], ['verification', verification],
   ['oauth', oauth], ['webhooks', webhooks], ['apps', apps], ['usage', usage],
-  ['organization', commercial], ['organizations', commercial],
+  ['organization', commercial], ['organizations', commercial], ['billing', billing],
   ['developer/config', developerConfig]
 ]);
 
