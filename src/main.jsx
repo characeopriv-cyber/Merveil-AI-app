@@ -11,7 +11,21 @@ import MerveilConnect from "./MerveilConnect.jsx";
 import MerveilAuthSession from "./MerveilAuthSession.jsx";
 import "./index.css";
 
-const path = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") || "/" : "/";
+const hostname = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
+const rawPath = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") || "/" : "/";
+
+// Platform domains are separate entry points on the same Vercel project.
+// Vercel rewrites preserve the browser pathname, so the client must also
+// resolve the platform from the hostname instead of falling back to App.
+const isInterfaceHost = hostname === "interface.junction.technology";
+const isAdminHost = hostname === "admin.junction.technology";
+
+const path = isInterfaceHost
+  ? (rawPath === "/" ? "/interface" : `/interface${rawPath}`)
+  : isAdminHost
+    ? (rawPath === "/" ? "/merveil-admin-x9k2" : `/merveil-admin-x9k2${rawPath}`)
+    : rawPath;
+
 const isAdminPath = path === "/merveil-admin-x9k2";
 const interfacePaths = new Set([
   "/interface",
