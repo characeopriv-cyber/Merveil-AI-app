@@ -1,0 +1,3 @@
+Merveil AI commercial API production deployment trigger.
+
+Commercial layer includes plans, subscriptions, usage, billing, invoices, payment-event architecture, revenue tracking, and client onboarding.
