@@ -21,3 +21,7 @@ Merveil currently owns the intelligence orchestration, governed API/developer la
 ## Deployment sync
 
 Main-branch source changes should be promoted through the connected Vercel production deployment before the release is treated as current.
+
+## CI verification
+
+The repository CI validates the current API entrypoints (`api/v1.js`, `api/router.js`, and `api/assistant.js`) plus the Developer Console syntax check. This replaces the obsolete `api/v1/*.js` path assumption.
