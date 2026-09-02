@@ -1,0 +1,4 @@
+import crypto from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
+const db=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY);
+export default async function handler(req,res){if(req.method!=='POST')return res.status(405).json({error:'method_not_allowed'});if(String(req.headers['x-internal-webhook-key']||'')!==String(process.env.MERVEIL_INTERNAL_WEBHOOK_KEY||''))return res.status(401).json({error:'unauthorized'});const b=req.body||{};if(!b.event_type)return res.status(400).json({error:'event_type_required'});const eventId=String(b.event_id||`evt_${crypto.randomBytes(18).toString('base64url')}`);const {error}=await db.from('api_webhook_event_outbox').insert({event_id:eventId,event_type:String(b.event_type),payload:b.payload||{}});if(error&&error.code!=='23505')return res.status(500).json({error:'database_error'});return res.status(202).json({accepted:true,event_id:eventId});}
