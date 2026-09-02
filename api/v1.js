@@ -15,6 +15,7 @@ import oauth from '../server/merveil-v1/oauth.js';
 import webhooks from '../server/merveil-v1/webhooks.js';
 import apps from '../server/merveil-v1/apps.js';
 import usage from '../server/merveil-v1/usage.js';
+import commercial from '../server/merveil-v1/commercial.js';
 import developerConfig from '../server/merveil-v1/developer/config.js';
 import { json, requestId } from '../server/merveil-v1/_lib.js';
 
@@ -24,6 +25,7 @@ const routes = new Map([
   ['companies', companies], ['properties', properties], ['world', world],
   ['investors', investors], ['credits', credits], ['verification', verification],
   ['oauth', oauth], ['webhooks', webhooks], ['apps', apps], ['usage', usage],
+  ['organization', commercial], ['organizations', commercial],
   ['developer/config', developerConfig]
 ]);
 
@@ -41,20 +43,7 @@ export default async function handler(req, res) {
   requestId(req, res);
   const route = routeFromRequest(req);
   const target = routes.get(route);
-  if (!target) {
-    return json(res, 404, {
-      error: 'not_found',
-      message: 'Unknown Merveil API v1 endpoint',
-      request_id: req._merveilRequestId
-    });
-  }
-  try {
-    return await target(req, res);
-  } catch (error) {
-    console.error('[merveil-api-v1]', route, error);
-    return json(res, 500, {
-      error: 'internal_server_error',
-      request_id: req._merveilRequestId
-    });
-  }
+  if (!target) return json(res, 404, { error: 'not_found', message: 'Unknown Merveil API v1 endpoint', request_id: req._merveilRequestId });
+  try { return await target(req, res); }
+  catch (error) { console.error('[merveil-api-v1]', route, error); return json(res, 500, { error: 'internal_server_error', request_id: req._merveilRequestId }); }
 }
