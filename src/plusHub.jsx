@@ -58,8 +58,7 @@ function activateOriginalFeature(label) {
 }
 
 function openArenaHub() {
-  const hub = "/arena/index.html";
-  window.location.assign(hub);
+  window.location.assign("/arena/index.html");
 }
 
 function PlusHub() {
@@ -85,7 +84,7 @@ function PlusHub() {
     }
     activateOriginalFeature(label);
   };
-  return <div data-merveil-plus-root="true" className="merveil-plus-root">
+  return <div data-merveil-plus-root="true" className="merveil-plus-root" data-arena-hub="game-spot-v1">
     <button type="button" className="merveil-plus-trigger" aria-label="Plus" aria-expanded={open} onClick={() => setOpen((value) => !value)}><Plus size={18} strokeWidth={2.4}/><span>Plus</span></button>
     {open && <div className="merveil-plus-overlay" role="dialog" aria-modal="true" aria-label="Plus">
       <button className="merveil-plus-backdrop" aria-label="Close Plus" onClick={() => setOpen(false)}/>
