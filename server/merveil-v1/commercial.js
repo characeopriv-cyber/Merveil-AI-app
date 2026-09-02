@@ -7,6 +7,57 @@ async function member(userId,organizationId){const {data,error}=await supabaseAd
 async function currentSubscription(organizationId){const {data,error}=await supabaseAdmin.from('api_subscriptions').select('id,status,environment,current_period_start,current_period_end,cancel_at_period_end,provider,provider_subscription_id,plan:api_plans(id,code,name,description,monthly_price,currency,requests_per_month,requests_per_minute,included_ai_units,included_call_minutes,included_verifications,features)').eq('organization_id',organizationId).in('status',['active','trialing']).order('created_at',{ascending:false}).limit(1).maybeSingle();if(error)throw error;return data;}
 async function usage(organizationId){const start=new Date();start.setUTCDate(1);start.setUTCHours(0,0,0,0);const {data,error}=await supabaseAdmin.from('api_usage_meter').select('metric,quantity,unit').eq('organization_id',organizationId).gte('period_start',start.toISOString());if(error)throw error;const out={};for(const row of data||[]){out[row.metric]=(out[row.metric]||0)+Number(row.quantity||0);}return out;}
 
+function stripeBase(){return String(process.env.STRIPE_SECRET_KEY||'').trim();}
+function appBase(){return String(process.env.MERVEIL_DEVELOPER_URL||process.env.MERVEIL_APP_URL||'https://developers.merveil.ai').replace(/\/$/,'');}
+function stripeAmount(amount,currency){
+  const c=String(currency||'USD').toLowerCase();
+  const zero=new Set(['bif','clp','djf','gnf','jpy','kmf','krw','mga','pyg','rwf','ugx','vnd','vuv','xaf','xof','xpf']);
+  const three=new Set(['bhd','jod','kwd','omr','tnd']);
+  const exponent=zero.has(c)?0:three.has(c)?3:2;
+  return Math.round(Number(amount)*10**exponent);
+}
+async function stripeCheckout({intent,plan,user,organizationId}){
+  const secret=stripeBase();
+  if(!secret) return {error:'stripe_not_configured',message:'Stripe is not configured on the Merveil server yet.'};
+  const currency=String(plan.currency||'USD').toLowerCase();
+  const unitAmount=stripeAmount(plan.monthly_price,currency);
+  if(!Number.isInteger(unitAmount)||unitAmount<=0)return {error:'invalid_stripe_amount',message:'Plan amount cannot be represented for the selected currency.'};
+  const recurring=String(intent.purpose)==='subscription';
+  const params=new URLSearchParams();
+  params.set('mode',recurring?'subscription':'payment');
+  params.set('success_url',`${appBase()}/?billing=success&session_id={CHECKOUT_SESSION_ID}`);
+  params.set('cancel_url',`${appBase()}/?billing=cancelled`);
+  params.set('client_reference_id',intent.id);
+  params.set('customer_email',user.email||'');
+  params.set('line_items[0][quantity]','1');
+  params.set('line_items[0][price_data][currency]',currency);
+  params.set('line_items[0][price_data][unit_amount]',String(unitAmount));
+  params.set('line_items[0][price_data][product_data][name]',`${plan.name} — Merveil Developer API`);
+  params.set('line_items[0][price_data][product_data][description]',String(plan.description||'Merveil API developer plan'));
+  params.set('metadata[merveil_payment_intent_id]',intent.id);
+  params.set('metadata[organization_id]',organizationId);
+  params.set('metadata[plan_id]',plan.id);
+  params.set('metadata[plan_code]',plan.code);
+  params.set('metadata[purpose]',intent.purpose);
+  if(recurring){
+    params.set('line_items[0][price_data][recurring][interval]','month');
+    params.set('subscription_data[metadata][merveil_payment_intent_id]',intent.id);
+    params.set('subscription_data[metadata][organization_id]',organizationId);
+    params.set('subscription_data[metadata][plan_id]',plan.id);
+    params.set('subscription_data[metadata][plan_code]',plan.code);
+    params.set('subscription_data[metadata][purpose]',intent.purpose);
+  }else{
+    params.set('payment_intent_data[metadata][merveil_payment_intent_id]',intent.id);
+    params.set('payment_intent_data[metadata][organization_id]',organizationId);
+    params.set('payment_intent_data[metadata][purpose]',intent.purpose);
+  }
+  params.set('automatic_tax[enabled]','false');
+  const response=await fetch('https://api.stripe.com/v1/checkout/sessions',{method:'POST',headers:{Authorization:`Bearer ${secret}`,'Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':intent.idempotency_key},body:params});
+  const stripe=await response.json();
+  if(!response.ok||!stripe?.id||!stripe?.url)return {error:'stripe_checkout_failed',message:stripe?.error?.message||'Stripe could not create Checkout.'};
+  return {sessionId:stripe.id,checkoutUrl:stripe.url};
+}
+
 export default async function handler(req,res){
   if(req.method==='OPTIONS')return json(res,204,null);
   const auth=await requireUser(req);if(auth.error)return json(res,401,{error:'unauthorized',message:auth.error});
@@ -22,7 +73,7 @@ export default async function handler(req,res){
       ]);
       if(oe||me||pe||!org)return json(res,404,{error:'organization_not_found'});
       const {data:apps,error:ae}=await supabaseAdmin.from('api_applications').select('id,name,environment,status,organization_id').eq('user_id',auth.user.id).eq('organization_id',orgId).order('created_at',{ascending:false});if(ae)return json(res,500,{error:'database_error'});
-      return json(res,200,{data:{organization:org,role:m.role,members:members||[],subscription:sub,plans:plans||[],usage:meters,applications:apps||[]}});
+      return json(res,200,{data:{organization:org,role:m.role,members:members||[],subscription:sub,plans:plans||[],usage:meters,applications:apps||[],payment_provider:'stripe',payment_scope:'worldwide'}});
     }
     if(req.method==='POST'){
       const b=body(req);const action=String(b.action||'').trim();const orgId=String(b.organization_id||requestedOrg||'').trim()||await ensureOrg(auth.user.id);const m=await member(auth.user.id,orgId);if(!m||!['owner','admin'].includes(m.role))return json(res,403,{error:'organization_admin_required'});
@@ -36,14 +87,18 @@ export default async function handler(req,res){
       }
       if(action==='upgrade'){
         const code=String(b.plan_code||'').trim().toLowerCase();if(!code)return json(res,400,{error:'plan_code_required'});
-        const {data:plan,error:pe}=await supabaseAdmin.from('api_plans').select('id,code,name,monthly_price,currency').eq('code',code).eq('active',true).maybeSingle();if(pe||!plan)return json(res,404,{error:'plan_not_found'});
+        const {data:plan,error:pe}=await supabaseAdmin.from('api_plans').select('id,code,name,description,monthly_price,currency').eq('code',code).eq('active',true).maybeSingle();if(pe||!plan)return json(res,404,{error:'plan_not_found'});
         const sub=await currentSubscription(orgId);if(sub?.plan?.code===plan.code)return json(res,409,{error:'plan_already_active'});
-        if(Number(plan.monthly_price)<=0){return json(res,400,{error:'plan_requires_no_checkout',message:'This plan does not require payment.'});}
+        if(Number(plan.monthly_price)<=0)return json(res,400,{error:'plan_requires_no_checkout',message:'This plan does not require paid checkout.'});
         const idempotency=crypto.randomUUID();
-        const {data:intent,error:ie}=await supabaseAdmin.from('payment_intents_v2').insert({user_id:auth.user.id,amount:Number(plan.monthly_price),currency:plan.currency||'USD',purpose:'subscription',status:'requires_payment',risk_status:'pending',idempotency_key:idempotency,metadata:{organization_id:orgId,plan_id:plan.id,plan_code:plan.code}}).select('id,amount,currency,purpose,status,checkout_url,created_at').single();
+        const {data:intent,error:ie}=await supabaseAdmin.from('payment_intents_v2').insert({user_id:auth.user.id,amount:Number(plan.monthly_price),currency:plan.currency||'USD',purpose:'subscription',status:'requires_payment',risk_status:'pending',idempotency_key:idempotency,metadata:{organization_id:orgId,plan_id:plan.id,plan_code:plan.code}}).select('id,amount,currency,purpose,status,checkout_url,idempotency_key,created_at').single();
         if(ie)return json(res,500,{error:'payment_intent_creation_failed'});
-        await supabaseAdmin.from('api_billing_events').insert({organization_id:orgId,subscription_id:sub?.id||null,event_type:'subscription_upgrade_requested',amount:Number(plan.monthly_price),currency:plan.currency||'USD',status:'pending',idempotency_key:idempotency,metadata:{plan_id:plan.id,plan_code:plan.code,payment_intent_id:intent.id}});
-        return json(res,202,{data:{payment_intent:intent,organization_id:orgId,target_plan:plan,next:'provider_checkout',message:'Payment intent created. Subscription activates only after a verified payment webhook.'}});
+        const checkout=await stripeCheckout({intent,plan,user:auth.user,organizationId:orgId});
+        if(checkout.error){await supabaseAdmin.from('payment_intents_v2').update({status:'failed',risk_status:'failed',metadata:{organization_id:orgId,plan_id:plan.id,plan_code:plan.code,error:checkout.error}}).eq('id',intent.id);return json(res,503,checkout);}
+        const {data:updatedIntent,error:ue}=await supabaseAdmin.from('payment_intents_v2').update({checkout_url:checkout.checkoutUrl,provider_reference:checkout.sessionId,metadata:{organization_id:orgId,plan_id:plan.id,plan_code:plan.code,stripe_checkout_session_id:checkout.sessionId}}).eq('id',intent.id).select('id,amount,currency,purpose,status,checkout_url,provider_reference,idempotency_key,created_at,updated_at').single();
+        if(ue)return json(res,500,{error:'payment_intent_update_failed'});
+        await supabaseAdmin.from('api_billing_events').insert({organization_id:orgId,subscription_id:sub?.id||null,event_type:'subscription_upgrade_requested',amount:Number(plan.monthly_price),currency:plan.currency||'USD',status:'pending',idempotency_key:idempotency,metadata:{plan_id:plan.id,plan_code:plan.code,payment_intent_id:intent.id,stripe_checkout_session_id:checkout.sessionId}});
+        return json(res,202,{data:{payment_intent:updatedIntent,organization_id:orgId,target_plan:plan,next:'stripe_checkout',payment_provider:'stripe',payment_scope:'worldwide',message:'Stripe Checkout created. Subscription activates only after a verified Stripe webhook.'}});
       }
       return json(res,400,{error:'unsupported_action'});
     }
