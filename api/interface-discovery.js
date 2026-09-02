@@ -12,15 +12,14 @@ function adminClient() {
 
 export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
-
   try {
     const session = await getSession(req, res);
-    if (!session.user) return sendJson(res, 401, { error: "Authentication required" });
-
+    if (!session?.user?.id || !session.token) return sendJson(res, 401, { error: "Authentication required" });
     const svc = adminClient();
+
     if (req.method === "GET") {
       const limit = Math.min(50, Math.max(1, Number(req.query?.limit || 12)));
-      const { data, error } = await svc.rpc("merveil_interface_discovery", { p_limit: limit });
+      const { data, error } = await svc.rpc("merveil_interface_discovery", { p_limit: limit, p_user_id: session.user.id });
       if (error) throw error;
       return sendJson(res, 200, { interfaces: data || [], algorithm: "merveil-discovery-v1" });
     }
