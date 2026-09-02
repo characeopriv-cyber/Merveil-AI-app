@@ -8,6 +8,7 @@ import MerveilInterfacePlatform from "./MerveilInterfacePlatform.jsx";
 import MerveilInterfaceExplore from "./MerveilInterfaceExplore.jsx";
 import MerveilPassport from "./MerveilPassport.jsx";
 import MerveilConnect from "./MerveilConnect.jsx";
+import MerveilAuthSession from "./MerveilAuthSession.jsx";
 import "./index.css";
 
 const path = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") || "/" : "/";
@@ -27,11 +28,13 @@ const isConnectPath = path === "/connect";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    {isAdminPath ? <MerveilAdminControlCenter />
-      : isInterfaceExplore ? <MerveilInterfaceExplore />
-      : isInterfacePath ? <MerveilInterfacePlatform />
-      : isPassportPath ? <MerveilPassport />
-      : isConnectPath ? <MerveilConnect />
-      : <><App /><PlusHub /><MerveilSoundsPlayer /></>}
+    <MerveilAuthSession>
+      {isAdminPath ? <MerveilAdminControlCenter />
+        : isInterfaceExplore ? <MerveilInterfaceExplore />
+        : isInterfacePath ? <MerveilInterfacePlatform />
+        : isPassportPath ? <MerveilPassport />
+        : isConnectPath ? <MerveilConnect />
+        : <><App /><PlusHub /><MerveilSoundsPlayer /></>}
+    </MerveilAuthSession>
   </React.StrictMode>
 );
