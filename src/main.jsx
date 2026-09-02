@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import PlusHub from "./plusHub.jsx";
+import MerveilSoundsPlayer from "./MerveilSoundsPlayer.jsx";
 import MerveilAdminControlCenter from "./MerveilAdminControlCenter.jsx";
 import "./index.css";
 
@@ -9,6 +10,6 @@ const isAdminPath = typeof window !== "undefined" && window.location.pathname ==
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    {isAdminPath ? <MerveilAdminControlCenter /> : <><App /><PlusHub /></>}
+    {isAdminPath ? <MerveilAdminControlCenter /> : <><App /><PlusHub /><MerveilSoundsPlayer /></>}
   </React.StrictMode>
 );
