@@ -17,3 +17,5 @@ jobs:
         run: |
           set -e
           for f in api/v1/*.js; do node --check "$f"; done
+      - name: Check developer console JavaScript syntax
+        run: node --check developer-portal/console.js
