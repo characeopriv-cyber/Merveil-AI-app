@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Bell, ChevronRight, Community, Globe2, Volume2, Gamepad2, Phone, ReceiptText, X, Plus } from "lucide-react";
+import { Users, ChevronRight, Globe2, Volume2, Gamepad2, Phone, ReceiptText, X, Plus } from "lucide-react";
 
 const FEATURES = [
-  { label: "Community", icon: Community },
+  { label: "Community", icon: Users },
   { label: "New to UAE", icon: Globe2 },
   { label: "Sounds", icon: Volume2 },
   { label: "Arena", icon: Gamepad2 },
@@ -11,17 +11,12 @@ const FEATURES = [
 ];
 
 const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
-const wanted = new Set(FEATURES.map((item) => normalize(item.label)));
 
 function isVisible(element) {
   if (!element || element.closest("[data-merveil-plus-root]") || element.dataset?.merveilPlusHidden === "true") return false;
   const style = window.getComputedStyle(element);
   const rect = element.getBoundingClientRect();
   return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-}
-
-function getClickTarget(node) {
-  return node.closest("button, a, [role='button'], [onclick]") || node;
 }
 
 function findOriginalFeature(label) {
@@ -38,8 +33,6 @@ function hideSecondaryFeatureStrip() {
     const target = findOriginalFeature(label);
     if (!target) return;
     const rect = target.getBoundingClientRect();
-    // These are the secondary home features. Only hide the compact top-area
-    // navigation item, never a feature card deeper in the application.
     if (rect.top <= Math.max(520, window.innerHeight * 0.42)) {
       target.dataset.merveilPlusHidden = "true";
       target.style.setProperty("display", "none", "important");
@@ -79,7 +72,6 @@ function PlusHub() {
       target.click();
       return;
     }
-    // React may re-render the secondary strip after the menu closes; retry once.
     window.setTimeout(() => findOriginalFeature(label)?.click(), 80);
   };
 
@@ -104,7 +96,7 @@ function PlusHub() {
               <div>
                 <div className="merveil-plus-eyebrow">MERVEIL</div>
                 <h2>Plus</h2>
-                <p>Your Merveil features, together.</p>
+                <p>Community, New to UAE, Sounds, Arena, AI Call and Transaction.</p>
               </div>
               <button type="button" className="merveil-plus-close" aria-label="Close Plus" onClick={() => setOpen(false)}>
                 <X size={20} />
