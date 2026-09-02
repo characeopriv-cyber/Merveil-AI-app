@@ -8,6 +8,16 @@
       "destination": "/developer-portal/console.html"
     },
     {
+      "source": "/onboarding",
+      "has": [{ "type": "host", "value": "developers.merveil.ai" }],
+      "destination": "/developer-portal/onboarding.html"
+    },
+    {
+      "source": "/onboarding/",
+      "has": [{ "type": "host", "value": "developers.merveil.ai" }],
+      "destination": "/developer-portal/onboarding.html"
+    },
+    {
       "source": "/(.*)",
       "has": [{ "type": "host", "value": "developers.merveil.ai" }],
       "destination": "/developer-portal/$1"
