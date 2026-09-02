@@ -11,9 +11,10 @@ const FEATURES = [
 ];
 
 const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+const originalTargets = new Map();
 
 function isVisible(element) {
-  if (!element || element.closest("[data-merveil-plus-root]") || element.dataset?.merveilPlusHidden === "true") return false;
+  if (!element || element.closest("[data-merveil-plus-root]")) return false;
   const style = window.getComputedStyle(element);
   const rect = element.getBoundingClientRect();
   return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
@@ -34,6 +35,7 @@ function hideSecondaryFeatureStrip() {
     if (!target) return;
     const rect = target.getBoundingClientRect();
     if (rect.top <= Math.max(520, window.innerHeight * 0.42)) {
+      originalTargets.set(normalize(label), target);
       target.dataset.merveilPlusHidden = "true";
       target.style.setProperty("display", "none", "important");
       const parent = target.parentElement;
@@ -43,6 +45,17 @@ function hideSecondaryFeatureStrip() {
       }
     }
   });
+}
+
+function activateOriginalFeature(label) {
+  const key = normalize(label);
+  let target = originalTargets.get(key);
+  if (!target || !target.isConnected) {
+    target = findOriginalFeature(label);
+    if (target) originalTargets.set(key, target);
+  }
+  if (!target) return;
+  target.click();
 }
 
 function PlusHub() {
@@ -57,6 +70,7 @@ function PlusHub() {
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", onResize);
+      originalTargets.clear();
     };
   }, []);
 
@@ -66,13 +80,8 @@ function PlusHub() {
   }, [open]);
 
   const activate = (label) => {
-    const target = findOriginalFeature(label);
     setOpen(false);
-    if (target) {
-      target.click();
-      return;
-    }
-    window.setTimeout(() => findOriginalFeature(label)?.click(), 80);
+    activateOriginalFeature(label);
   };
 
   return (
