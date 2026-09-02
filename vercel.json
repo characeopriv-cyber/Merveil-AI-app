@@ -3,6 +3,11 @@
     { "source": "/api/v1/(.*)", "destination": "/api/v1?route=$1" },
     { "source": "/api/v1", "destination": "/api/v1?route=health" },
     {
+      "source": "/",
+      "has": [{ "type": "host", "value": "developers.merveil.ai" }],
+      "destination": "/developer-portal/console.html"
+    },
+    {
       "source": "/(.*)",
       "has": [{ "type": "host", "value": "developers.merveil.ai" }],
       "destination": "/developer-portal/$1"
