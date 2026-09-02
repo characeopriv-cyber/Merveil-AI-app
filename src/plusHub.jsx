@@ -57,6 +57,11 @@ function activateOriginalFeature(label) {
   target.click();
 }
 
+function openArenaHub() {
+  const hub = "/arena/index.html";
+  window.location.assign(hub);
+}
+
 function PlusHub() {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -72,6 +77,10 @@ function PlusHub() {
     setOpen(false);
     if (label === "Sounds") {
       window.dispatchEvent(new CustomEvent("merveil:open-sounds"));
+      return;
+    }
+    if (label === "Arena") {
+      openArenaHub();
       return;
     }
     activateOriginalFeature(label);
