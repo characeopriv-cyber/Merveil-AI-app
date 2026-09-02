@@ -1,78 +1,88 @@
 openapi: 3.0.3
 info:
-  title: Merveil API
+  title: Merveil AI Developer API
   version: 1.0.0
-  description: Secure APIs for integrating authorized Merveil identity, Passport and intelligence capabilities.
+  description: Production API for authorized third-party applications integrating Merveil identity, Passport, trusted connections, AI, property, company, World, investor intelligence, credits and verification status.
 servers:
   - url: https://api.merveil.ai
 security:
   - ApiKeyAuth: []
+tags:
+  - name: System
+  - name: Developer
+  - name: Identity
+  - name: Connect
+  - name: AI
+  - name: Ecosystem
 paths:
   /api/v1/health:
     get:
+      tags: [System]
       security: []
       summary: API health
-      responses:
-        '200':
-          description: Operational
-  /api/v1/profile:
-    get:
-      summary: Read the profile belonging to the API application owner
-      responses:
-        '200': {description: Profile returned}
-        '401': {description: Invalid API key}
-        '403': {description: Missing profile:read scope}
-  /api/v1/passport:
-    get:
-      summary: Read the authorized Merveil Passport summary
-      responses:
-        '200': {description: Passport returned}
-        '401': {description: Invalid API key}
-        '403': {description: Missing passport:read scope}
+      responses: {'200': {description: Operational}}
   /api/v1/apps:
-    get:
-      security:
-        - UserBearerAuth: []
-      summary: List the signed-in user's developer applications
-      responses:
-        '200': {description: Applications returned}
+    get: {tags: [Developer], security: [{UserBearerAuth: []}], summary: List developer applications, responses: {'200': {description: Applications returned}, '401': {description: Unauthorized}}}
     post:
-      security:
-        - UserBearerAuth: []
-      summary: Create a developer application and issue an API key
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateApplication'
-      responses:
-        '201': {description: Application and one-time API key returned}
-        '401': {description: Invalid Merveil session}
+      tags: [Developer]
+      security: [{UserBearerAuth: []}]
+      summary: Create application and issue one-time API key
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateApplication'}}}}
+      responses: {'201': {description: Application and secret returned once}}
+    patch: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Update application, parameters: [{name: id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'200': {description: Updated}, '404': {description: Not found}}}
+    delete: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Revoke application, parameters: [{name: id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'200': {description: Revoked}}}
+  /api/v1/profile:
+    get: {tags: [Identity], summary: Read safe profile fields for the application owner, responses: {'200': {description: Profile returned}, '401': {description: Unauthorized}, '403': {description: Missing scope}}}
+  /api/v1/passport:
+    get: {tags: [Identity], summary: Read safe Passport/KYC summary, responses: {'200': {description: Passport returned}, '403': {description: Missing scope}}}
+  /api/v1/companies:
+    get: {tags: [Ecosystem], summary: List verified Merveil companies, parameters: [{name: search, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer, maximum: 100}}], responses: {'200': {description: Companies returned}}}
+  /api/v1/properties:
+    get: {tags: [Ecosystem], summary: List Merveil property listings, parameters: [{name: country, in: query, schema: {type: string}}, {name: emirate, in: query, schema: {type: string}}, {name: category, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer, maximum: 100}}], responses: {'200': {description: Properties returned}}}
+  /api/v1/connect:
+    get: {tags: [Connect], summary: Read connections belonging to the authorized user, responses: {'200': {description: Connections returned}}}
+  /api/v1/messages:
+    get: {tags: [Connect], summary: Read messages from a conversation where the authorized user is a participant, parameters: [{name: conversation_id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'200': {description: Messages returned}, '403': {description: Not a participant}}}
+  /api/v1/ai:
+    post:
+      tags: [AI]
+      summary: Generate a Merveil AI response
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AiRequest'}}}}
+      responses: {'200': {description: AI response}, '429': {description: Daily limit or rate limit}, '503': {description: Provider not configured}}
+  /api/v1/world:
+    get: {tags: [Ecosystem], summary: Read World content, parameters: [{name: topic, in: query, schema: {type: string}}, {name: country, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer, maximum: 100}}], responses: {'200': {description: World content returned}}}
+  /api/v1/investors:
+    get: {tags: [Ecosystem], summary: Read investor intelligence posts, parameters: [{name: sector, in: query, schema: {type: string}}, {name: stage, in: query, schema: {type: string}}, {name: limit, in: query, schema: {type: integer, maximum: 100}}], responses: {'200': {description: Investor posts returned}}}
+  /api/v1/credits:
+    get: {tags: [Ecosystem], summary: Read authorized user's Merveil credit balance, responses: {'200': {description: Balance returned}}}
+  /api/v1/verification:
+    get: {tags: [Identity], summary: Read privacy-safe verification status, responses: {'200': {description: Verification status returned}}}
+  /api/v1/usage:
+    get: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Read developer API usage analytics, parameters: [{name: days, in: query, schema: {type: integer, maximum: 30}}], responses: {'200': {description: Usage returned}}}
+  /api/v1/webhooks:
+    get: {tags: [Developer], security: [{UserBearerAuth: []}], summary: List webhook endpoints, parameters: [{name: app_id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'200': {description: Webhooks returned}}}
+    post: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Register a webhook endpoint, parameters: [{name: app_id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'201': {description: Webhook and one-time signing secret returned}}}
+    delete: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Delete a webhook, parameters: [{name: app_id, in: query, required: true, schema: {type: string, format: uuid}}, {name: id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'200': {description: Deleted}}}
+  /api/v1/oauth:
+    get: {tags: [Developer], security: [{UserBearerAuth: []}], summary: List OAuth clients, parameters: [{name: app_id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'200': {description: OAuth clients returned}}}
+    post: {tags: [Developer], security: [{UserBearerAuth: []}], summary: Register an OAuth client, parameters: [{name: app_id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'201': {description: Client credentials returned once}}}
 components:
   securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
-    UserBearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    ApiKeyAuth: {type: apiKey, in: header, name: X-API-Key}
+    UserBearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
   schemas:
     CreateApplication:
       type: object
       required: [name]
       properties:
-        name:
-          type: string
-          maxLength: 80
-        environment:
-          type: string
-          enum: [sandbox, production]
-          default: sandbox
-        scopes:
-          type: array
-          items:
-            type: string
-            enum: [profile:read, passport:read, connect:read, connect:write, ai:use]
+        name: {type: string, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        environment: {type: string, enum: [sandbox, production], default: sandbox}
+        redirect_uris: {type: array, items: {type: string, format: uri}}
+        scopes: {type: array, items: {type: string}}
+    AiRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages: {type: array, minItems: 1, items: {type: object, required: [role, content], properties: {role: {type: string, enum: [user, assistant]}, content: {type: string, maxLength: 8000}}}}
+        max_tokens: {type: integer, maximum: 2048}
