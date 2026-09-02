@@ -17,3 +17,7 @@ The API health endpoint and catalog must return HTTP 200 on the active productio
 ## Investor truth
 
 Merveil currently owns the intelligence orchestration, governed API/developer layer, capability routing, domain context and product infrastructure. It integrates configured external model providers underneath that layer today; a proprietary foundation model is not claimed until one is actually trained and deployed.
+
+## Deployment sync
+
+Main-branch source changes should be promoted through the connected Vercel production deployment before the release is treated as current.
