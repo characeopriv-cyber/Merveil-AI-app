@@ -3,7 +3,7 @@ import { intelligenceCatalog } from './intelligence-router.js';
 
 const core = [
   ['GET','/health',null,'Platform','Service health and API version.'],
-  ['POST','/ai','ai:use','Merveil Intelligence','One AI interface with automatic intelligence routing.'],
+  ['POST','/ai','ai:use','Merveil Intelligence','One AI interface for intelligence, trading, games, apps, media and domain reasoning.'],
   ['GET','/profile','profile:read','Identity','Privacy-safe Merveil profile.'],
   ['GET','/passport','passport:read','Trust','Authorized Passport summary.'],
   ['GET','/verification','verification:read','Trust','Privacy-safe verification status.'],
@@ -33,5 +33,5 @@ const developer = [
 export default async function handler(req,res){
   if(req.method==='OPTIONS') return json(res,204,null);
   if(req.method!=='GET') return json(res,405,{error:'method_not_allowed'});
-  return json(res,200,{data:{version:'v1',base_path:'/api/v1',authentication:['X-API-Key','Bearer OAuth access token'],intelligence:intelligenceCatalog(),capabilities:['intelligence','voice','connection','trust','world','real_estate','business','capital'],endpoints:[...core,...developer],internal_services:['credits','billing','organization'],note:'Merveil exposes a small set of core capabilities; internal commercial services are intentionally not presented as primary product APIs.',headers:{request_id:'X-Request-Id',rate_limit:'X-RateLimit-*',quota:'X-Quota-*'},environments:{sandbox:'mv_test_*',production:'mv_live_*'}}});
+  return json(res,200,{data:{version:'v1',base_path:'/api/v1',authentication:['X-API-Key','Bearer OAuth access token'],intelligence:intelligenceCatalog(),capabilities:['intelligence','voice','connection','trust','world','real_estate','business','capital','trading'],endpoints:[...core,...developer],internal_services:['credits','billing','organization'],note:'Merveil exposes a small set of core capabilities; trading is available through Merveil Intelligence rather than a separate fragmented API.',headers:{request_id:'X-Request-Id',rate_limit:'X-RateLimit-*',quota:'X-Quota-*'},environments:{sandbox:'mv_test_*',production:'mv_live_*'}}});
 }
