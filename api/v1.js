@@ -1,4 +1,5 @@
 import health from '../server/merveil-v1/health.js';
+import catalog from '../server/merveil-v1/catalog.js';
 import profile from '../server/merveil-v1/profile.js';
 import passport from '../server/merveil-v1/passport.js';
 import connect from '../server/merveil-v1/connect.js';
@@ -20,7 +21,7 @@ import developerConfig from '../server/merveil-v1/developer/config.js';
 import { json, requestId } from '../server/merveil-v1/_lib.js';
 
 const routes = new Map([
-  ['health', health], ['profile', profile], ['passport', passport],
+  ['health', health], ['catalog', catalog], ['profile', profile], ['passport', passport],
   ['connect', connect], ['messages', messages], ['ai', ai], ['call', call],
   ['companies', companies], ['properties', properties], ['world', world],
   ['investors', investors], ['credits', credits], ['verification', verification],
