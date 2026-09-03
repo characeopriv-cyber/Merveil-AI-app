@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "merveil-ai",
+  "name": "merveil-ai-app-new",
   "compatibility_date": "2026-08-31",
   "assets": {
     "directory": "./dist",
