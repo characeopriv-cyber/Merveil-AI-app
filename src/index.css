@@ -28,11 +28,14 @@ body {
   background: #0a0a0b;
   color: #f4f4f5;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 #root {
   min-height: 100dvh;
-  overflow-x: clip;
+  height: auto !important;
+  overflow: visible !important;
+  touch-action: pan-y;
 }
 
 button, a, input, textarea, select {
@@ -245,9 +248,27 @@ body[data-merveil-phase="intro"] .merveil-plus-root {
   background: rgba(14, 165, 233, 0.1) !important;
 }
 
-/* Passport, Pulse and Connect are normal document-scrolling product surfaces. */
-body[data-merveil-tab="passport"],
+/* Do not let layout containment trap the primary product scroll. */
+.contain-layout {
+  contain: none !important;
+}
+
+/* Primary tab content must participate in normal document scrolling. */
+#main-content {
+  min-height: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  touch-action: pan-y;
+}
+
+/* All normal product tabs are document-scrolling surfaces. */
 body[data-merveil-tab="pulse"],
+body[data-merveil-tab="market"],
+body[data-merveil-tab="investor"],
+body[data-merveil-tab="messages"],
+body[data-merveil-tab="world"],
+body[data-merveil-tab="passport"],
 body[data-merveil-tab="connect"] {
   overflow-y: auto !important;
   height: auto !important;
@@ -255,8 +276,12 @@ body[data-merveil-tab="connect"] {
   position: static !important;
 }
 
-body[data-merveil-tab="passport"] #root,
 body[data-merveil-tab="pulse"] #root,
+body[data-merveil-tab="market"] #root,
+body[data-merveil-tab="investor"] #root,
+body[data-merveil-tab="messages"] #root,
+body[data-merveil-tab="world"] #root,
+body[data-merveil-tab="passport"] #root,
 body[data-merveil-tab="connect"] #root {
   min-height: 100dvh !important;
   height: auto !important;
@@ -264,9 +289,13 @@ body[data-merveil-tab="connect"] #root {
 }
 
 /* If a previous tab transition left the page-level lock class behind, release it
-   for these three document-scrolling surfaces. Full-screen overlays remain fixed. */
-body[data-merveil-tab="passport"] > .merveil-no-scroll,
+   for normal product surfaces. Full-screen overlays remain fixed. */
 body[data-merveil-tab="pulse"] > .merveil-no-scroll,
+body[data-merveil-tab="market"] > .merveil-no-scroll,
+body[data-merveil-tab="investor"] > .merveil-no-scroll,
+body[data-merveil-tab="messages"] > .merveil-no-scroll,
+body[data-merveil-tab="world"] > .merveil-no-scroll,
+body[data-merveil-tab="passport"] > .merveil-no-scroll,
 body[data-merveil-tab="connect"] > .merveil-no-scroll {
   overflow: visible !important;
   position: static !important;
@@ -276,6 +305,10 @@ body[data-merveil-tab="connect"] > .merveil-no-scroll {
 }
 
 [data-merveil-tab="pulse"],
+[data-merveil-tab="market"],
+[data-merveil-tab="investor"],
+[data-merveil-tab="messages"],
+[data-merveil-tab="world"],
 [data-merveil-tab="passport"],
 [data-merveil-tab="connect"] {
   min-height: 0;
