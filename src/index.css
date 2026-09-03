@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== GLOBAL — never trap the page ===== */
+html {
+  min-height: 100%;
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: contain;
+  touch-action: manipulation;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  min-height: 100dvh;
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  position: static !important;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  background: var(--t-paper, #FFFFFF);
+  color: var(--t-ink, #1C1E21);
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  min-height: 100dvh;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  position: relative;
+  width: 100%;
+}
+
+button, a, input, textarea, select {
+  touch-action: manipulation;
+}
+
+/* Body lock ONLY while a modal explicitly opts in — and always clearable */
+body.merveil-no-scroll,
+body.modal-open {
+  overflow: hidden !important;
+}
+
+/* Tab-aware: document scroll for almost everything */
+body[data-merveil-tab="passport"],
+body[data-merveil-tab="pulse"],
+body[data-merveil-tab="market"],
+body[data-merveil-tab="sound"],
+body[data-merveil-tab="arena"],
+body[data-merveil-tab="community"],
+body[data-merveil-tab="transactions"],
+body[data-merveil-tab="ai-call"],
+body[data-merveil-tab="investor"],
+body[data-merveil-tab="newcomer"] {
+  overflow-y: auto !important;
+  height: auto !important;
+  position: static !important;
+}
+
+/* Connect owns its own internal scroll */
+body[data-merveil-tab="messages"] #main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.connect-desktop-shell,
+.connect-list-pane,
+.connect-chat-pane {
+  min-height: 0 !important;
+}
+
+.connect-list-pane,
+.connect-chat-pane {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.connect-list-pane .overflow-y-auto,
+.connect-chat-pane .overflow-y-auto,
+.connect-chat-pane [class*="overflow-y-auto"] {
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Hide Plus forever — it blocked notifications */
+.merveil-plus-root,
+[data-merveil-plus-root],
+.merveil-plus-overlay,
+.merveil-plus-trigger {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  z-index: -1 !important;
+}
+
+/* Notification panel above content */
+[data-merveil-notif-panel],
+.merveil-notif-panel {
+  z-index: 80 !important;
+}
+
+/* Visual polish */
+:root {
+  --merveil-radius: 18px;
+  --merveil-shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
+  --merveil-glow: 0 0 0 1px rgba(6,182,212,0.12), 0 12px 32px rgba(6,182,212,0.12);
+}
+
+.merveil-card {
+  background: var(--t-paper, #fff);
+  border: 1px solid var(--t-line, #E4E6EB);
+  border-radius: var(--merveil-radius);
+  box-shadow: var(--merveil-shadow);
+}
+
+.merveil-cta {
+  background: linear-gradient(135deg, #06B6D4 0%, #0891B2 100%);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 22px rgba(6,182,212,0.28);
+}
+
+/* Desktop Connect panes */
+@media (min-width: 1024px) {
+  .connect-desktop-shell {
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+  }
+  .connect-list-pane {
+    width: 20rem !important;
+    min-width: 20rem;
+    max-width: 22rem;
+  }
+  .connect-chat-pane {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .connect-profile-pane {
+    display: flex !important;
+    width: 17rem;
+    min-width: 16rem;
+    max-width: 18rem;
+    flex-direction: column;
+    border-left: 1px solid rgba(15, 23, 42, 0.08);
+    background: #FAFBFC;
+  }
+}
+@media (max-width: 1023px) {
+  .connect-profile-pane { display: none !important; }
+}
