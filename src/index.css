@@ -58,7 +58,6 @@ button, a, input, textarea, select {
   scrollbar-width: thin;
 }
 
-/* Hide Plus on intro / entry stages (App sets data-merveil-phase). */
 html[data-merveil-phase="intro"] .merveil-plus-root,
 body[data-merveil-phase="intro"] .merveil-plus-root {
   display: none !important;
@@ -202,7 +201,6 @@ body[data-merveil-phase="intro"] .merveil-plus-root {
   .merveil-plus-header { padding: 20px 18px 14px; }
 }
 
-/* Ecosystem rooms inside Plus */
 .merveil-plus-ecosystem {
   margin: 4px 10px 14px;
   padding: 12px 8px 8px;
@@ -247,20 +245,36 @@ body[data-merveil-phase="intro"] .merveil-plus-root {
   background: rgba(14, 165, 233, 0.1) !important;
 }
 
-/* Passport uses document scroll. */
-body[data-merveil-tab="passport"] {
-  overflow-y: auto !important;
-  height: auto !important;
-}
-
-/* Pulse and Connect should also remain document-scrollable when their tab marker is present. */
+/* Passport, Pulse and Connect are normal document-scrolling product surfaces. */
+body[data-merveil-tab="passport"],
 body[data-merveil-tab="pulse"],
 body[data-merveil-tab="connect"] {
   overflow-y: auto !important;
   height: auto !important;
+  min-height: 100dvh !important;
+  position: static !important;
 }
 
-/* Safety net for tab-level full-height surfaces: let content determine page height. */
+body[data-merveil-tab="passport"] #root,
+body[data-merveil-tab="pulse"] #root,
+body[data-merveil-tab="connect"] #root {
+  min-height: 100dvh !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+/* If a previous tab transition left the page-level lock class behind, release it
+   for these three document-scrolling surfaces. Full-screen overlays remain fixed. */
+body[data-merveil-tab="passport"] > .merveil-no-scroll,
+body[data-merveil-tab="pulse"] > .merveil-no-scroll,
+body[data-merveil-tab="connect"] > .merveil-no-scroll {
+  overflow: visible !important;
+  position: static !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: auto !important;
+}
+
 [data-merveil-tab="pulse"],
 [data-merveil-tab="passport"],
 [data-merveil-tab="connect"] {
