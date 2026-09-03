@@ -1,0 +1,255 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: none;
+}
+
+body {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  background: #0a0a0b;
+  color: #f4f4f5;
+  -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  min-height: 100dvh;
+  overflow-x: clip;
+}
+
+button, a, input, textarea, select {
+  touch-action: manipulation;
+}
+
+/* Lock only when Plus (or full-screen surfaces) request it */
+.merveil-no-scroll {
+  overflow: hidden !important;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Independently scrollable surfaces — use inside tab panels */
+.merveil-scroll-surface {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/* Hide Plus on intro / entry stages (App sets data-merveil-phase) */
+html[data-merveil-phase="intro"] .merveil-plus-root,
+body[data-merveil-phase="intro"] .merveil-plus-root {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.merveil-plus-root {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 2147483000;
+  font-family: inherit;
+}
+
+.merveil-plus-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 999px;
+  background: rgba(10,10,11,.82);
+  color: #f4f4f5;
+  box-shadow: 0 10px 32px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+
+.merveil-plus-trigger:hover { transform: translateY(-1px); }
+.merveil-plus-trigger:active { transform: translateY(0); }
+
+.merveil-plus-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: max(72px, calc(env(safe-area-inset-top) + 64px)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom));
+  z-index: 2147483001;
+  overflow: hidden;
+}
+
+.merveil-plus-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0,0,0,.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.merveil-plus-panel {
+  position: relative;
+  width: min(430px, 100%);
+  max-height: min(calc(100dvh - 88px), 760px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(22,24,29,.98), rgba(10,11,14,.98));
+  box-shadow: 0 28px 90px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);
+  color: #f4f4f5;
+  animation: merveilPlusIn .18s ease-out;
+}
+
+.merveil-plus-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 22px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.merveil-plus-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .22em; opacity: .55; }
+.merveil-plus-header h2 { margin: 5px 0 3px; font-size: 28px; line-height: 1.05; }
+.merveil-plus-header p { margin: 0; max-width: 300px; color: rgba(244,244,245,.58); font-size: 12px; line-height: 1.45; }
+.merveil-plus-close {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 50%;
+  background: rgba(255,255,255,.045);
+  color: #f4f4f5;
+  cursor: pointer;
+}
+.merveil-plus-list { padding: 10px; }
+.merveil-plus-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 44px 1fr 22px;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: #f4f4f5;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.merveil-plus-item:hover { background: rgba(255,255,255,.065); }
+.merveil-plus-item:active { background: rgba(255,255,255,.09); }
+.merveil-plus-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(6,182,212,.20);
+  border-radius: 15px;
+  background: rgba(6,182,212,.09);
+  color: #22d3ee;
+}
+.merveil-plus-label { font-size: 15px; font-weight: 650; }
+.merveil-plus-chevron { opacity: .42; }
+
+@keyframes merveilPlusIn {
+  from { opacity: 0; transform: translateY(-8px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 640px) {
+  .merveil-plus-root { right: 8px; }
+  .merveil-plus-trigger { min-height: 40px; padding: 0 12px; }
+  .merveil-plus-overlay {
+    padding: max(60px, calc(env(safe-area-inset-top) + 52px)) 8px max(8px, env(safe-area-inset-bottom));
+  }
+  .merveil-plus-panel { width: 100%; max-height: calc(100dvh - 68px); border-radius: 24px; }
+  .merveil-plus-header { padding: 20px 18px 14px; }
+}
+
+/* Ecosystem rooms inside Plus */
+.merveil-plus-ecosystem {
+  margin: 4px 10px 14px;
+  padding: 12px 8px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  background: linear-gradient(165deg, rgba(14, 165, 233, 0.08), rgba(124, 58, 237, 0.06));
+}
+.merveil-plus-ecosystem-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(125, 211, 252, 0.85);
+  padding: 0 8px 2px;
+}
+.merveil-plus-ecosystem-hint {
+  margin: 0 8px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(244, 244, 245, 0.5);
+}
+.merveil-plus-icon-room {
+  border-color: rgba(14, 165, 233, 0.35) !important;
+  background: rgba(14, 165, 233, 0.12) !important;
+  color: #38bdf8 !important;
+}
+.merveil-plus-label-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.merveil-plus-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(244, 244, 245, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.merveil-plus-room:hover {
+  background: rgba(14, 165, 233, 0.1) !important;
+}
+
+
+/* Passport uses document scroll — never lock body when on passport */
+body[data-merveil-tab="passport"] {
+  overflow-y: auto !important;
+  height: auto !important;
+}
