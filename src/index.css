@@ -3,12 +3,41 @@
 @tailwind utilities;
 
 html, body, #root {
-  min-height: 100%; width: 100%; margin: 0; padding: 0;
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
   -webkit-tap-highlight-color: transparent;
 }
-html { min-height: 100%; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: none; overscroll-behavior-y: none; }
-body { min-height: 100%; overflow-x: hidden; overflow-y: auto; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #0a0a0b; color: #f4f4f5; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
-#root { min-height: 100dvh; height: auto !important; overflow: visible !important; touch-action: pan-y; }
+
+html {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: auto;
+}
+
+body {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #0a0a0b;
+  color: #f4f4f5;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: auto;
+}
+
+#root {
+  min-height: 100dvh;
+  height: auto !important;
+  overflow: visible !important;
+  touch-action: pan-y;
+}
+
 button, a, input, textarea, select { touch-action: manipulation; }
 .merveil-no-scroll { overflow: hidden !important; position: fixed; inset: 0; width: 100%; height: 100%; }
 .merveil-scroll-surface { min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: thin; }
@@ -37,31 +66,6 @@ button, a, input, textarea, select { touch-action: manipulation; }
 .merveil-plus-sub { font-size: 11px; font-weight: 500; color: rgba(244,244,245,.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .merveil-plus-room:hover { background: rgba(14,165,233,.1) !important; }
 @keyframes merveilPlusIn { from { opacity: 0; transform: translateY(-8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
-
-/* Viral one-click invite */
-.merveil-invite-fab { position: fixed; right: max(14px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); z-index: 2147482990; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 17px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(18,20,25,.9); color: #fff; box-shadow: 0 14px 45px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.08); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); cursor: pointer; font: inherit; font-weight: 750; }
-.merveil-invite-fab:active { transform: scale(.98); }
-.merveil-invite-overlay { position: fixed; inset: 0; z-index: 2147482991; display: grid; place-items: center; padding: 18px; }
-.merveil-invite-backdrop { position: absolute; inset: 0; border: 0; background: rgba(0,0,0,.68); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-.merveil-invite-panel, .merveil-invite-card { position: relative; width: min(480px, 100%); border: 1px solid rgba(255,255,255,.13); border-radius: 30px; background: radial-gradient(circle at top, rgba(34,211,238,.11), transparent 45%), linear-gradient(180deg, #171a20, #0b0d11); box-shadow: 0 32px 100px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06); color: #f4f4f5; }
-.merveil-invite-panel { padding: 30px; }
-.merveil-invite-card { padding: 42px 30px; text-align: center; }
-.merveil-invite-mark { width: 62px; height: 62px; margin: 0 auto 18px; display: grid; place-items: center; border: 1px solid rgba(34,211,238,.3); border-radius: 21px; background: rgba(34,211,238,.09); color: #67e8f9; font-size: 30px; font-weight: 850; }
-.merveil-invite-eyebrow { margin-bottom: 8px; font-size: 10px; font-weight: 850; letter-spacing: .24em; color: rgba(244,244,245,.48); }
-.merveil-invite-panel h2, .merveil-invite-card h1 { margin: 0 0 10px; font-size: clamp(27px, 6vw, 38px); line-height: 1.03; letter-spacing: -.025em; }
-.merveil-invite-panel p, .merveil-invite-card p { margin: 0 auto 22px; max-width: 390px; color: rgba(244,244,245,.62); font-size: 14px; line-height: 1.55; }
-.merveil-invite-close { position: absolute; top: 15px; right: 15px; width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; background: rgba(255,255,255,.05); color: #fff; cursor: pointer; }
-.merveil-invite-icon { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 14px; border: 1px solid rgba(34,211,238,.24); border-radius: 16px; background: rgba(34,211,238,.08); color: #67e8f9; }
-.merveil-invite-linkbox { margin: 0 0 14px; padding: 13px 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 14px; background: rgba(0,0,0,.22); color: rgba(244,244,245,.62); font-size: 12px; line-height: 1.4; word-break: break-all; text-align: left; }
-.merveil-invite-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.merveil-invite-primary, .merveil-invite-copy, .merveil-invite-secondary { min-height: 48px; border-radius: 14px; font: inherit; font-weight: 750; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-.merveil-invite-primary { border: 0; background: #f4f4f5; color: #090a0c; }
-.merveil-invite-copy, .merveil-invite-secondary { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.055); color: #f4f4f5; }
-.merveil-invite-secondary { width: 100%; margin-top: 10px; }
-.merveil-invite-note, .merveil-invite-trust { display: block; margin-top: 16px; color: rgba(244,244,245,.4); font-size: 11px; line-height: 1.45; }
-.merveil-invite-trust { margin-top: 18px; }
-.merveil-invite-landing { min-height: 100dvh; display: grid; place-items: center; padding: 20px; box-sizing: border-box; background: #0a0a0b; }
-@media (max-width: 640px) { .merveil-invite-fab { right: 10px; bottom: max(12px, env(safe-area-inset-bottom)); } .merveil-invite-panel { padding: 26px 20px; border-radius: 25px; } .merveil-invite-card { padding: 36px 22px; border-radius: 25px; } .merveil-invite-actions { grid-template-columns: 1fr; } }
 
 /* Keep normal Merveil tabs document-scrollable. */
 .contain-layout { contain: none !important; }
