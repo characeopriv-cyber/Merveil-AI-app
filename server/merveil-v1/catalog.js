@@ -3,6 +3,7 @@ import { intelligenceCatalog } from './intelligence-router.js';
 
 const core = [
   ['GET','/health',null,'Platform','Service health and API version.'],
+  ['GET','/catalog',null,'Platform','Discoverable API capabilities and public routes.'],
   ['POST','/ai','ai:use','Merveil Intelligence','One AI interface for intelligence, trading, games, apps, media and domain reasoning.'],
   ['GET','/profile','profile:read','Identity','Privacy-safe Merveil profile.'],
   ['GET','/passport','passport:read','Trust','Authorized Passport summary.'],
