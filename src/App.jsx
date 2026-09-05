@@ -3,9 +3,8 @@ import { createPortal } from "react-dom";
 import { createClient as createSupabaseBrowserClient } from "@supabase/supabase-js";
 
 // Browser-side Supabase client, used ONLY for the OAuth redirect handshake.
-// V1 wires up Google only (see signInWithProvider below); the mechanism
-// itself is provider-agnostic, so Apple can be added later without
-// touching this bridge. Everything else in the app talks to our own /api/*
+// OAuth supports Google and Apple; email and phone use in-page OTP.
+// Every successful provider/session is bridged into the same Merveil cookie. Everything else in the app talks to our own /api/*
 // backend, which manages its own session cookie — this client's session
 // gets bridged into that cookie and then discarded (see the useEffect in
 // AppInner that calls /api/auth/oauth-bridge), so there's only ever one
@@ -23490,65 +23489,69 @@ const COUNTRIES = [
 ].sort((a, b) => a === "United Arab Emirates" ? -1 : b === "United Arab Emirates" ? 1 : a.localeCompare(b));
 
 function AuthModal({ onClose, onAuthed }) {
+  const [mode, setMode] = useState("choose");
+  const [identifier, setIdentifier] = useState("");
+  const [otp, setOtp] = useState("");
+  const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
-  const continueWithGoogle = async () => {
-    setError("");
-    setBusy(true);
-    try {
-      await signInWithProvider("google");
-      // signInWithProvider redirects the browser to Google — onAuthed fires
-      // on return via the existing auth-state listener elsewhere in the app.
-    } catch (e) {
-      setError(`Couldn't start Google sign-in — ${e.message}`);
-      setBusy(false);
-    }
+  const bridgeSession = async (nextSession) => {
+    if (!nextSession?.access_token || !nextSession?.refresh_token) throw new Error("Merveil could not complete the secure sign-in session.");
+    const response = await fetch("/api/auth/oauth-bridge", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ access_token: nextSession.access_token, refresh_token: nextSession.refresh_token }) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Merveil could not finish signing you in.");
+    onAuthed?.(payload.user); onClose?.();
   };
+
+  const continueWithProvider = async (provider) => {
+    setError(""); setBusy(true);
+    try { const { error: providerError } = await signInWithProvider(provider); if (providerError) throw providerError; }
+    catch (e) { setError(e.message || ("Couldn't start " + provider + " sign-in.")); setBusy(false); }
+  };
+
+  const sendCode = async () => {
+    const value = identifier.trim(); const normalizedPhone = value.replace(/[()\\s-]/g, "");
+    if (mode === "phone" && !/^\\+?[1-9]\\d{7,14}$/.test(normalizedPhone)) { setError("Enter your phone number with country code, for example +971501234567."); return; }
+    if (mode === "email" && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)) { setError("Enter a valid email address."); return; }
+    setError(""); setNotice(""); setBusy(true);
+    try {
+      const result = mode === "phone" ? await supabaseBrowser.auth.signInWithOtp({ phone: normalizedPhone, options: { shouldCreateUser: true } }) : await supabaseBrowser.auth.signInWithOtp({ email: value.toLowerCase(), options: { shouldCreateUser: true, emailRedirectTo: window.location.origin } });
+      if (result.error) throw result.error;
+      setSent(true); setNotice(mode === "phone" ? "We sent a one-time SMS code. Stay here and enter it below." : "We sent a one-time email code. Stay here and enter it below.");
+    } catch (e) { setError(e.message || "We could not send a verification code."); }
+    finally { setBusy(false); }
+  };
+
+  const verifyCode = async () => {
+    if (!/^\\d{4,8}$/.test(otp.trim())) { setError("Enter the verification code you received."); return; }
+    setError(""); setBusy(true);
+    try {
+      const value = identifier.trim();
+      const result = mode === "phone" ? await supabaseBrowser.auth.verifyOtp({ phone: value.replace(/[()\\s-]/g, ""), token: otp.trim(), type: "sms" }) : await supabaseBrowser.auth.verifyOtp({ email: value.toLowerCase(), token: otp.trim(), type: "email" });
+      if (result.error) throw result.error;
+      await bridgeSession(result.data?.session);
+    } catch (e) { setError(e.message || "That code could not be verified."); }
+    finally { setBusy(false); }
+  };
+
+  const reset = () => { setMode("choose"); setIdentifier(""); setOtp(""); setSent(false); setError(""); setNotice(""); };
+  const label = mode === "phone" ? "Phone number" : "Email address";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(18,22,28,0.28)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
-      <div className="w-full max-w-sm rounded-[22px] p-6 relative overflow-hidden" style={{
-        background: "linear-gradient(165deg, #FFFFFF 0%, #F7F5F1 100%)",
-        border: "1px solid rgba(18,22,28,0.08)",
-        boxShadow: "0 24px 64px rgba(15,20,25,0.12), 0 1px 0 rgba(255,255,255,0.9) inset",
-      }}>
+      <div className="w-full max-w-sm rounded-[22px] p-6 relative overflow-hidden" style={{ background: "linear-gradient(165deg, #FFFFFF 0%, #F7F5F1 100%)", border: "1px solid rgba(18,22,28,0.08)", boxShadow: "0 24px 64px rgba(15,20,25,0.12), 0 1px 0 rgba(255,255,255,0.9) inset" }}>
         <div className="pointer-events-none absolute -top-16 -right-10 w-40 h-40 rounded-full" style={{ background: "radial-gradient(circle, rgba(14,154,167,0.12), transparent 70%)" }} />
-        <div className="flex items-center justify-between mb-5 relative">
-          <div>
-            <div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: T.signal, fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div>
-            <h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: T.ink, letterSpacing: "-0.02em" }}>Enter as a citizen</h2>
-          </div>
-          <button type="button" onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.04)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Close">
-            <X size={16} color={T.sub} />
-          </button>
-        </div>
-
-        <p className="text-sm mb-5 leading-relaxed relative" style={{ color: T.sub }}>
-          One foundation for identity, connection, and opportunity. Sign in to keep your Passport, messages, and LifeLink across devices.
-        </p>
-
-        <button type="button" onClick={continueWithGoogle} disabled={busy}
-          className="w-full py-3.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 relative"
-          style={{
-            background: busy ? "rgba(14,154,167,0.55)" : "linear-gradient(135deg, #0E9AA7 0%, #0A7A85 100%)",
-            color: "#FFFFFF",
-            boxShadow: "0 8px 24px rgba(14,154,167,0.28)",
-            opacity: busy ? 0.85 : 1,
-          }}>
-          {busy ? "Opening Google…" : "Continue with Google"}
-        </button>
-
-        {error && <div className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ color: "#991B1B", background: "#FEF2F2", border: "1px solid #FECACA" }}>{error}</div>}
-
-        <button type="button" onClick={onClose} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: T.sub }}>
-          Continue as visitor
-        </button>
+        <div className="flex items-center justify-between mb-5 relative"><div><div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: T.signal, fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div><h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: T.ink, letterSpacing: "-0.02em" }}>Enter as a citizen</h2></div><button type="button" onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.04)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Close"><X size={16} color={T.sub} /></button></div>
+        <p className="text-sm mb-5 leading-relaxed relative" style={{ color: T.sub }}>One foundation for identity, connection, and opportunity. Sign in once and keep your Passport across devices.</p>
+        {mode === "choose" && <div className="space-y-2 relative"><button type="button" onClick={() => continueWithProvider("google")} disabled={busy} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ background: "linear-gradient(135deg, #0E9AA7 0%, #0A7A85 100%)", color: "#FFFFFF", opacity: busy ? .7 : 1 }}>{busy ? "Opening secure sign-in…" : "Continue with Google"}</button><button type="button" onClick={() => continueWithProvider("apple")} disabled={busy} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ background: "#111827", color: "#FFFFFF", opacity: busy ? .7 : 1 }}>Continue with Apple</button><div className="flex items-center gap-3 py-2"><div className="h-px flex-1" style={{ background: "rgba(18,22,28,.12)" }} /><span className="text-[10px] uppercase tracking-widest" style={{ color: T.sub }}>or use a code</span><div className="h-px flex-1" style={{ background: "rgba(18,22,28,.12)" }} /></div><button type="button" onClick={() => { setMode("phone"); setError(""); }} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ background: "rgba(14,154,167,.08)", color: T.signal, border: "1px solid rgba(14,154,167,.2)" }}>Continue with phone · SMS</button><button type="button" onClick={() => { setMode("email"); setError(""); }} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ background: "transparent", color: T.ink, border: "1px solid rgba(18,22,28,.12)" }}>Continue with email</button></div>}
+        {mode !== "choose" && <div className="relative"><button type="button" onClick={reset} className="text-xs font-semibold mb-3" style={{ color: T.signal }}>← Other sign-in options</button><label className="block text-xs font-semibold mb-1" style={{ color: T.ink }}>{label}</label><input autoFocus value={identifier} onChange={(e) => setIdentifier(e.target.value)} disabled={sent || busy} type={mode === "phone" ? "tel" : "email"} inputMode={mode === "phone" ? "tel" : "email"} autoComplete={mode === "phone" ? "tel" : "email"} placeholder={mode === "phone" ? "+971 50 123 4567" : "you@example.com"} className="w-full rounded-xl px-3 py-3 text-sm outline-none" style={{ color: T.ink, background: "#fff", border: "1px solid rgba(18,22,28,.14)" }} />{!sent && <button type="button" onClick={sendCode} disabled={busy} className="w-full mt-3 py-3 rounded-xl text-sm font-semibold" style={{ background: T.signal, color: "#fff", opacity: busy ? .7 : 1 }}>{busy ? "Sending code…" : "Send verification code"}</button>}{sent && <><label className="block text-xs font-semibold mt-4 mb-1" style={{ color: T.ink }}>Verification code</label><input autoFocus value={otp} onChange={(e) => setOtp(e.target.value.replace(/\\D/g, "").slice(0, 8))} type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="Enter the code" className="w-full rounded-xl px-3 py-3 text-sm outline-none" style={{ color: T.ink, background: "#fff", border: "1px solid rgba(18,22,28,.14)" }} /><button type="button" onClick={verifyCode} disabled={busy} className="w-full mt-3 py-3 rounded-xl text-sm font-semibold" style={{ background: T.signal, color: "#fff", opacity: busy ? .7 : 1 }}>{busy ? "Verifying…" : "Verify and enter Merveil"}</button><button type="button" onClick={() => { setSent(false); setOtp(""); setNotice(""); }} className="w-full mt-2 py-2 text-xs font-semibold" style={{ color: T.sub }}>Use a different {mode === "phone" ? "number" : "email"}</button></>}</div>}
+        {notice && <div className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ color: "#075985", background: "#F0F9FF", border: "1px solid #BAE6FD" }}>{notice}</div>}{error && <div className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ color: "#991B1B", background: "#FEF2F2", border: "1px solid #FECACA" }}>{error}</div>}<button type="button" onClick={onClose} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: T.sub }}>Continue as visitor</button>
       </div>
     </div>
   );
 }
-
 function ProfileView({ currentUser, properties, services, onSignOut, onSignIn, onGoSettings }) {
   const [joinedCircles, setJoinedCircles] = useState([]);
   useEffect(() => {
