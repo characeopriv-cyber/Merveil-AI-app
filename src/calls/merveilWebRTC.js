@@ -21,8 +21,9 @@ export function createMerveilWebRTC({ call, userId, onRemoteStream, onStateChang
   let channel = null;
   let closed = false;
   let subscribed = false;
-  const pendingIce = [];
-  const remoteReady = false;
+  const pendingLocalIce = [];
+  const pendingRemoteIce = [];
+  let remoteReady = false;
 
   const emit = (state) => onStateChange?.(state);
   const emitE2EE = () => emit({ type: 'e2ee', ...callEncryptionState({ localReady: false, remoteReady }) });
@@ -37,8 +38,9 @@ export function createMerveilWebRTC({ call, userId, onRemoteStream, onStateChang
 
   pc.onicecandidate = async ({ candidate }) => {
     if (!candidate || closed) return;
-    if (!subscribed) { pendingIce.push(candidate.toJSON ? candidate.toJSON() : candidate); return; }
-    try { await signal('ice-candidate', candidate.toJSON ? candidate.toJSON() : candidate); }
+    const value = candidate.toJSON ? candidate.toJSON() : candidate;
+    if (!subscribed) { pendingLocalIce.push(value); return; }
+    try { await signal('ice-candidate', value); }
     catch (error) { emit({ type: 'signaling-error', error }); }
   };
 
@@ -55,6 +57,7 @@ export function createMerveilWebRTC({ call, userId, onRemoteStream, onStateChang
     try {
       if (event.kind === 'offer' || event.kind === 'answer') {
         await pc.setRemoteDescription(event.payload);
+        while (pendingRemoteIce.length) await pc.addIceCandidate(pendingRemoteIce.shift());
         if (event.kind === 'offer') {
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
@@ -62,7 +65,7 @@ export function createMerveilWebRTC({ call, userId, onRemoteStream, onStateChang
         }
       } else if (event.kind === 'ice-candidate') {
         if (pc.remoteDescription) await pc.addIceCandidate(event.payload);
-        else pendingIce.push(event.payload);
+        else pendingRemoteIce.push(event.payload);
       } else if (event.kind === 'hangup') {
         emit({ type: 'remote-hangup' });
         close();
@@ -78,9 +81,9 @@ export function createMerveilWebRTC({ call, userId, onRemoteStream, onStateChang
     if (status === 'SUBSCRIBED') {
       subscribed = true;
       resolveReady(true);
-      while (pendingIce.length) {
-        const candidate = pendingIce.shift();
-        try { if (pc.remoteDescription) await pc.addIceCandidate(candidate); else pendingIce.unshift(candidate); }
+      while (pendingLocalIce.length) {
+        const candidate = pendingLocalIce.shift();
+        try { await signal('ice-candidate', candidate); }
         catch (error) { emit({ type: 'signaling-error', error }); break; }
       }
     } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
