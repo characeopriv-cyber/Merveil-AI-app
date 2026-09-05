@@ -890,7 +890,8 @@ a:focus:not(:focus-visible) {
 
 
 /* —— Desktop app shell (laptop+) — not mobile stretch —— */
-@media (min-width: 768px) {
+/* True desktop only — avoids phone "Request desktop site" half-blank layout */
+@media (min-width: 1024px) {
   .merveil-app-frame { max-width: 100%; }
   .merveil-desktop-only { display: flex !important; }
   .merveil-mobile-only { display: none !important; }
@@ -898,7 +899,7 @@ a:focus:not(:focus-visible) {
   .m-shell-nav.merveil-bottom-nav { display: none !important; }
   .pulse-desktop-stage {
     display: grid !important;
-    grid-template-columns: minmax(160px, 1fr) minmax(360px, 440px) minmax(160px, 1fr);
+    grid-template-columns: minmax(160px, 1fr) minmax(380px, 480px) minmax(160px, 1fr);
     align-items: stretch;
     justify-items: center;
     height: 100%;
@@ -909,23 +910,34 @@ a:focus:not(:focus-visible) {
   }
   .pulse-desktop-stage .pulse-reel-column {
     width: 100%;
-    max-width: 440px;
+    max-width: 480px;
     height: 100%;
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 24px 64px rgba(0,0,0,0.45);
   }
 }
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .merveil-desktop-only { display: none !important; }
   .merveil-mobile-only { display: flex !important; }
+  .pulse-desktop-stage {
+    display: block !important;
+    background: #0B0F14;
+  }
+  .pulse-desktop-stage .pulse-reel-column {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100%;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
 }
 
 /* —— Desktop World: cinema frame (not stretched phone) —— */
-@media (min-width: 900px) {
+@media (min-width: 1024px) {
   .world-desktop-stage {
     display: grid !important;
-    grid-template-columns: minmax(200px, 1fr) minmax(360px, 480px) minmax(200px, 1fr);
+    grid-template-columns: minmax(200px, 1fr) minmax(380px, 480px) minmax(200px, 1fr);
     align-items: stretch;
     justify-items: center;
     gap: 0;
@@ -955,8 +967,18 @@ a:focus:not(:focus-visible) {
     box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 24px 64px rgba(0,0,0,0.55);
   }
 }
-@media (max-width: 899px) {
+@media (max-width: 1023px) {
   .world-desktop-rail { display: none !important; }
+  .world-desktop-stage {
+    display: block !important;
+  }
+  .world-desktop-stage .world-reel-column {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100%;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
 }
 `;
 
@@ -9862,7 +9884,7 @@ async function initiateCitizenCall(user, mode) {
     if (!res.ok) {
       const raw = data?.error || "Couldn't start the call.";
       const msg = /sign in|auth/i.test(String(raw))
-        ? "Session expired — open Passport and sign in again, then retry the call."
+        ? "Couldn\'t start the call (session). Wait 2s and try once more — if it fails, open Passport once."
         : raw;
       alert(msg);
       return;
@@ -10376,7 +10398,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       if (!res.ok) {
         const raw = data?.error || "Couldn't start the call.";
         const msg = /sign in|auth/i.test(String(raw))
-          ? "Session expired — open Passport and sign in again, then retry the call."
+          ? "Couldn\'t start the call (session). Wait 2s and try once more — if it fails, open Passport once."
           : raw;
         setCallError(msg);
         setTimeout(() => setCallError(null), 6000);
@@ -10423,8 +10445,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     setThreadMessages([]); // clear while switching threads
     // Opening a thread always marks it read so the global badge clears
     if (currentUser?.id) {
-      fetch(`/api/conversations/${activeId}/messages`, {
-        method: "PATCH", credentials: "include",
+      merveilFetch(`/api/conversations/${activeId}/messages`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ readerId: currentUser.id }),
       }).then(() => onReadThread?.()).catch(() => {});
@@ -16174,7 +16196,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
       const t2 = setTimeout(tryPlay, 600);
       // Real World-reel views only (not property / passport). Skip seeds.
       if (!compact && post?.id && !post?._seed) {
-        fetch("/api/world?action=view", {
+        merveilFetch("/api/world?action=view", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -16212,7 +16234,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
       const isSeed = post?._seed || String(post?.id || "").startsWith("merveil-ai-seed");
       // Seeds are not in the DB — duplicate by creating a real citizen post with same media
       if (isSeed) {
-        const res = await fetch("/api/world", {
+        const res = await merveilFetch("/api/world", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -16236,7 +16258,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
         try { window.dispatchEvent(new CustomEvent("merveil:world-reposted", { detail: data?.post })); } catch {}
         return;
       }
-      const res = await fetch("/api/world?action=repost", {
+      const res = await merveilFetch("/api/world?action=repost", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -17538,7 +17560,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
 
   const loadPosts = (silent = false) => {
     if (!silent) setLoading(true);
-    fetch("/api/world?limit=40", { credentials: "include" })
+    merveilFetch("/api/world?limit=40")
       .then(r => r.ok ? r.json() : { posts: [] })
       .then(data => {
         const list = data.posts || [];
@@ -17681,7 +17703,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
 
   useEffect(() => {
     if (!currentUser?.id) { setLikedIds([]); return; }
-    fetch("/api/world?action=likes", { credentials:"include" })
+    merveilFetch("/api/world?action=likes")
       .then(r => r.ok ? r.json() : { likedIds: [] })
       .then(data => setLikedIds(data.likedIds || []))
       .catch(() => {});
@@ -17714,7 +17736,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
   const [savedIds, setSavedIds] = useState([]);
   useEffect(() => {
     if (!currentUser?.id) { setSavedIds([]); return; }
-    fetch("/api/world?action=saves", { credentials:"include" })
+    merveilFetch("/api/world?action=saves")
       .then(r => r.ok ? r.json() : { savedIds: [] })
       .then(data => setSavedIds(data.savedIds || []))
       .catch(() => {});
@@ -17738,7 +17760,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       setAffinityTick((t) => t + 1);
     }
     try {
-      const res = await fetch("/api/world?action=save", {
+      const res = await merveilFetch("/api/world?action=save", {
         method: "POST", credentials:"include", headers: { "Content-Type":"application/json" },
         body: JSON.stringify({ postId: post.id }),
       });
@@ -17911,7 +17933,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     if (!mine.length) { alert("You have no World posts to delete."); return; }
     if (!window.confirm(`Delete all ${mine.length} of your World posts/reels permanently? This cannot be undone.`)) return;
     try {
-      const res = await fetch("/api/world?action=delete-mine", {
+      const res = await merveilFetch("/api/world?action=delete-mine", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
@@ -17947,7 +17969,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       setAffinityTick((t) => t + 1);
     }
     try {
-      const res = await fetch("/api/world?action=like", {
+      const res = await merveilFetch("/api/world?action=like", {
         method: "POST", credentials:"include", headers: { "Content-Type":"application/json" },
         body: JSON.stringify({ postId: post.id }),
       });
@@ -18327,7 +18349,7 @@ function WorldReactionsBar({ postId, currentUser, onSignIn }) {
     setMine(prev => isActive ? prev.filter(t => t !== reactionType) : [...prev, reactionType]);
     setCounts(prev => ({ ...prev, [reactionType]: Math.max(0, (prev[reactionType] || 0) + (isActive ? -1 : 1)) }));
     try {
-      await fetch("/api/world?action=react", {
+      await merveilFetch("/api/world?action=react", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postId, reactionType }),
       });
@@ -18712,9 +18734,13 @@ function SettingsView({ settings, setSettings }) {
               update("language", code);
               try {
                 localStorage.setItem("merveil_language", code);
+                const prev = JSON.parse(localStorage.getItem("jx_settings") || "{}") || {};
+                localStorage.setItem("jx_settings", JSON.stringify({ ...prev, language: code }));
                 const langInfo = LANGUAGES.find((l) => l.code === code);
                 document.documentElement.setAttribute("lang", code || "en");
                 document.documentElement.setAttribute("dir", langInfo?.rtl ? "rtl" : "ltr");
+                // Force UI re-render path for t()
+                window.dispatchEvent(new CustomEvent("merveil:language", { detail: { code } }));
               } catch {}
             }}
             onClick={(e) => e.stopPropagation()}
@@ -23616,15 +23642,30 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
       ) : (
         <div ref={pageScrollRef} className="flex-1 overflow-y-auto overscroll-contain"
           style={{ WebkitOverflowScrolling: "touch", paddingBottom: "calc(24px + var(--safe-bottom))" }}>
-          {/* Cover */}
-          <div className="relative w-full overflow-hidden" style={{ height: coverUrl ? 240 : 180 }}>
+          {/* Cover — shorter on mobile so name/stats stay visible */}
+          <div className="relative w-full overflow-hidden" style={{ height: coverUrl ? "min(42vw, 200px)" : 140, maxHeight: 220, minHeight: coverUrl ? 140 : 120 }}>
             {coverUrl ? (
               <video ref={coverVideoRef} src={coverUrl} muted playsInline loop autoPlay
                 className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#0F172A 0%,#1E293B 50%,#0B0E14 100%)" }} />
             )}
-            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.4) 0%,transparent 40%,rgba(11,14,20,.95) 100%)" }} />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(247,245,241,0.92) 100%)" }} />
+            {coverUrl && (
+              <button type="button" aria-label="Toggle cover sound"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const el = coverVideoRef.current;
+                  if (!el) return;
+                  el.muted = !el.muted;
+                  e.currentTarget.dataset.muted = el.muted ? "1" : "0";
+                  e.currentTarget.textContent = el.muted ? "🔕" : "🔔";
+                }}
+                className="absolute z-20 w-9 h-9 rounded-full flex items-center justify-center text-base"
+                style={{ right: 12, bottom: 12, background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.25)" }}
+                data-muted="1"
+              >🔕</button>
+            )}
             {isSelf && (
               <div className="absolute bottom-3 right-3 z-20">
                 <input ref={coverInputRef} type="file" accept="video/*,.mp4,.mov,.webm,.m4v" className="hidden"
@@ -23640,23 +23681,23 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             )}
           </div>
 
-          {/* Identity */}
-          <div className="px-5 pb-3 flex flex-col items-center text-center -mt-14 relative z-10">
-            <div className="rounded-full p-1" style={{ background: "#0B0E14", boxShadow: "0 0 0 3px rgba(6,182,212,0.55)" }}>
+          {/* Identity — dark ink on light surface (readable) */}
+          <div className="px-5 pb-3 flex flex-col items-center text-center -mt-12 relative z-10">
+            <div className="rounded-full p-1" style={{ background: "#F7F5F1", boxShadow: "0 0 0 3px #0E9AA7" }}>
               <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={92} />
             </div>
-            <div className="text-xl font-bold text-white mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>{profile.name || "Merveil Citizen"}</div>
+            <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: "#12161C" }}>{profile.name || "Merveil Citizen"}</div>
             {(profile.profession || profile.city) && (
-              <div className="text-xs mt-1" style={{ color: "#9CA3AF" }}>
+              <div className="text-xs mt-1" style={{ color: "#625D56" }}>
                 {[profile.profession, profile.city || profile.country].filter(Boolean).join(" · ")}
               </div>
             )}
-            {profile.bio && <p className="text-xs mt-2 max-w-sm line-clamp-3" style={{ color: "#B8C2D0" }}>{profile.bio}</p>}
+            {profile.bio && <p className="text-xs mt-2 max-w-sm line-clamp-3" style={{ color: "#4B5563" }}>{profile.bio}</p>}
 
             {/* Feeling / thought */}
             {(feeling || thought || isSelf) && (
-              <div className="mt-3 w-full max-w-sm rounded-2xl px-3 py-2.5 text-left" style={{ background: "rgba(255,255,255,0.06)" }}>
-                <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "#9CA3AF" }}>What I'm feeling</div>
+              <div className="mt-3 w-full max-w-sm rounded-2xl px-3 py-2.5 text-left" style={{ background: "#EAE4DB", border: "1px solid #C4BAAC" }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "#625D56" }}>What I'm feeling</div>
                 {isSelf ? (
                   <>
                     <div className="flex flex-wrap gap-1.5 mb-2">
@@ -23712,9 +23753,9 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               ].map(([label, val, onTap]) => (
                 <button key={label} type="button" onClick={onTap || undefined}
                   className="rounded-xl py-2.5"
-                  style={{ background: onTap && showVisitors ? "rgba(6,182,212,0.2)" : "rgba(255,255,255,0.06)" }}>
-                  <div className="text-base font-bold text-white">{Number(val).toLocaleString()}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "#9CA3AF" }}>{label}{onTap ? " ▾" : ""}</div>
+                  style={{ background: onTap && showVisitors ? "rgba(14,154,167,0.15)" : "#EAE4DB", border: "1px solid #C4BAAC" }}>
+                  <div className="text-base font-bold" style={{ color: "#12161C" }}>{Number(val).toLocaleString()}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "#625D56" }}>{label}{onTap ? " ▾" : ""}</div>
                 </button>
               ))}
             </div>
@@ -23765,13 +23806,13 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                 )}
                 {!isSelf && (
                   <button type="button" onClick={() => onChat?.(userId)}
-                    className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "rgba(255,255,255,0.1)", color: "#fff" }}>
+                    className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "#EAE4DB", color: "#12161C", border: "1px solid #C4BAAC" }}>
                     Message
                   </button>
                 )}
                 <button type="button" onClick={openPassport}
                   className={`${isSelf ? "flex-1" : ""} text-sm font-bold py-2.5 px-3 rounded-xl`}
-                  style={{ background: "rgba(14,165,233,0.15)", color: "#7DD3FC" }}>
+                  style={{ background: "rgba(14,154,167,0.12)", color: "#0E9AA7", border: "1px solid rgba(14,154,167,0.35)" }}>
                   {isSelf ? "My Passport" : "View Passport"}
                 </button>
               </div>
@@ -23850,7 +23891,7 @@ function CitizenPassportSheet({ userId, currentUser, onClose, onChat, onOpenCrea
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/people?action=profile&userId=${userId}`)
+    merveilFetch(`/api/people?action=profile&userId=${userId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return;
@@ -23950,7 +23991,7 @@ function PublicProfileModal({ userId, currentUser, onClose, onChat, onCall }) {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/people?action=profile&userId=${userId}`)
+    merveilFetch(`/api/people?action=profile&userId=${userId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return;
@@ -25719,7 +25760,7 @@ function CitizenScorePanel({ currentUser }) {
     if (claiming || data?.daily?.claimedToday) return;
     setClaiming(true);
     try {
-      const res = await fetch("/api/rewards?action=daily-claim", {
+      const res = await merveilFetch("/api/rewards?action=daily-claim", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: "{}",
       });
       const body = await res.json().catch(() => ({}));
@@ -26150,7 +26191,7 @@ function PassportScoreStrip({ currentUser, onOpenScore }) {
     if (!currentUser?.id) { setSnap(null); return; }
     let cancelled = false;
     const load = () => {
-      fetch("/api/rewards", { credentials: "include" })
+      merveilFetch("/api/rewards")
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => { if (!cancelled && d) setSnap(d); })
         .catch(() => {});
@@ -28738,7 +28779,7 @@ function AppInner() {
       ownerId: s.owner_id || null,
     });
     const load = () => {
-      fetch("/api/properties")
+      merveilFetch("/api/properties")
         .then(async (r) => {
           if (!r.ok) {
             const body = await r.json().catch(() => ({}));
