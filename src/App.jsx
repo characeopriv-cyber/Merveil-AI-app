@@ -28434,6 +28434,10 @@ function AppInner() {
       }).catch(() => {});
     },
   });
+  // Declared before goToTab / effects that close over the setters (avoids TDZ)
+  const [pulseSubTab, setPulseSubTab] = useState("feed"); // "feed" | "reels" | "stats"
+  const [marketSubTab, setMarketSubTab] = useState("souk"); // "souk" | "work" — merged Marketplace tab
+
   // Souk and Work now live inside one merged "market" tab (see Marketplace
   // rebrand). This keeps every existing onGoTo("jobs")/onGoTo("souk") call
   // site working correctly instead of silently landing on a blank screen.
@@ -28528,7 +28532,7 @@ function AppInner() {
     backStack.pushLayer(`tab-${tab}`, () => setTab("pulse"));
     return () => backStack.popLayer(`tab-${tab}`);
   }, [tab, backStack]);
-  const [pulseSubTab, setPulseSubTab] = useState("feed"); // "feed" | "reels" | "stats"
+  // pulseSubTab + marketSubTab declared earlier (before goToTab)
   useEffect(() => {
     try {
       document.body.dataset.merveilTab = tab || "";
@@ -28543,11 +28547,18 @@ function AppInner() {
     backStack.pushLayer("pulse-reels", () => setPulseSubTab("feed"));
     return () => backStack.popLayer("pulse-reels");
   }, [pulseSubTab, backStack]);
-  const [marketSubTab, setMarketSubTab] = useState("souk"); // "souk" | "work" — merged Marketplace tab
   const [showPostModal, setShowPostModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // currentUser MUST be declared before any useEffect / dependency array
+  // that reads it — otherwise TDZ: "Cannot access 'b' before initialization"
+  // (minified name). Restored from localStorage on first paint.
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("junction_user") || "null"); }
+    catch { return null; }
+  });
 
   // Register this browser as an E2EE trusted device once signed in
   useEffect(() => {
@@ -28765,12 +28776,7 @@ function AppInner() {
   });
   const [aiAutoQuery, setAiAutoQuery] = useState(null);
 
-  // Demo user — in production this comes from auth (JWT / session)
-  // Change this to null to see the "new visitor" welcome message
-  const [currentUser, setCurrentUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("junction_user") || "null"); }
-    catch { return null; }
-  });
+  // currentUser is declared earlier (before E2EE effect) to avoid TDZ
   useEffect(() => { soundUserIdRef.current = currentUser?.id || null; }, [currentUser?.id]);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [sharedPassportId, setSharedPassportId] = useState(null);
