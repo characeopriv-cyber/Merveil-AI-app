@@ -1,11 +1,13 @@
 /* Call-media E2EE gate.
- * WebRTC DTLS-SRTP encrypts transport, but Merveil only reports
- * application-level call E2EE when encoded transforms are available and
- * both endpoints have installed the same authenticated session key.
+ * DTLS-SRTP encrypts transport, but Merveil only reports application-level
+ * call E2EE after an actual encoded-media transform is installed and the
+ * cryptographic identity/key binding has been verified by both endpoints.
  */
 export function supportsCallE2EE() {
-  return typeof RTCRtpScriptTransform !== 'undefined' ||
-    (typeof RTCRtpSender !== 'undefined' && typeof RTCRtpSender.prototype?.createEncodedStreams === 'function');
+  return typeof RTCRtpSender !== 'undefined' &&
+    typeof RTCRtpSender.prototype?.createEncodedStreams === 'function' &&
+    typeof RTCRtpReceiver !== 'undefined' &&
+    typeof RTCRtpReceiver.prototype?.createEncodedStreams === 'function';
 }
 
 export function requireCallE2EE() {
