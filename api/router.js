@@ -5536,7 +5536,10 @@ export default async function handler(req, res) {
     // and a real payment path before it can show real money (see notes
     // to the team).
     if (resource === "rewards" && method === "GET") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      // jwtSub fallback — refresh races must not blank Citizen Score for a signed-in citizen
+      const rewardsUserId = user?.id || citizen?.id || jwtSub;
+      if (!rewardsUserId) return sendJson(res, 401, { error: "Sign in required." });
+      const user = { id: rewardsUserId, ...(user || {}) };
 
       const ecosystems = [
         { key: "pulse", table: "properties" },
@@ -7634,7 +7637,17 @@ export default async function handler(req, res) {
       if (action === "profile" && method === "GET") {
         const userId = req.query.userId;
         if (!userId) return sendJson(res, 400, { error: "userId required" });
-        const { data, error } = await anonClient()
+        if (String(userId) === "merveil-ai" || String(userId).startsWith("merveil-ai-")) {
+          return sendJson(res, 200, {
+            profile: { id: "merveil-ai", name: "Merveil AI", bio: "Official Merveil AI", account_type: "system", passport_tier: "core" },
+            worldPosts: [],
+            listings: [],
+            stats: { worldPostCount: 0, totalViews: 0, totalLikes: 0 },
+          });
+        }
+        let peopleClient;
+        try { peopleClient = adminClient(); } catch { peopleClient = anonClient(); }
+        const { data, error } = await peopleClient
           .from("profiles")
           .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought")
           .eq("id", userId)
