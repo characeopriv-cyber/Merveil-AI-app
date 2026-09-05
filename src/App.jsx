@@ -8205,7 +8205,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
         </button>
       </div>
 
-      {/* Action rail — Super / Comments / Connect / Call + … */}
+      {/* Action rail — Super / Views / Comments / Connect / Call + … */}
       <div className="absolute right-3 z-20 flex flex-col items-center gap-3.5"
         style={{ bottom: "calc(100px + var(--safe-bottom, 0px))" }}>
         <button type="button" onClick={onSuper} className="flex flex-col items-center gap-0.5">
@@ -8215,6 +8215,13 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
           <span className="text-[10px] font-semibold text-white">{superCount || 0}</span>
           <span className="text-[8px] font-bold tracking-wide" style={{ color: supered ? "#67E8F9" : "rgba(255,255,255,0.7)" }}>SUPER</span>
         </button>
+        <div className="flex flex-col items-center gap-0.5" aria-label="Views">
+          <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
+            <Eye size={18} color="#fff" />
+          </div>
+          <span className="text-[10px] font-semibold text-white">{(Number(p?.views) || 0).toLocaleString()}</span>
+          <span className="text-[8px] font-bold tracking-wide text-white/70">VIEWS</span>
+        </div>
         <button type="button" onClick={() => setShowComments(true)} className="flex flex-col items-center gap-0.5">
           <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
             <MessageSquare size={18} color="#fff" />
@@ -8535,6 +8542,13 @@ function ReelCard({ p, views, liked, likesCount, supered, superCount, onLike, on
           <span className="text-[10px] font-semibold text-white">{superCount || 0}</span>
           <span className="text-[8px] font-bold text-white/70">SUPER</span>
         </button>
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
+            <Eye size={18} color="#fff" />
+          </div>
+          <span className="text-[10px] font-semibold text-white">{(Number(views) || Number(p?.views) || 0).toLocaleString()}</span>
+          <span className="text-[8px] font-bold text-white/70">VIEWS</span>
+        </div>
         <button onClick={onChat} className="flex flex-col items-center gap-0.5">
           <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(6px)" }}>
             <MessageSquare size={18} color="#fff" />
@@ -9836,20 +9850,36 @@ function useUnfilteredPresence(currentUser) {
 async function initiateCitizenCall(user, mode) {
   if (!user?.id) { alert("Can't call — missing user."); return; }
   try {
+    // Soft session restore before call so refresh races never 401 a signed-in citizen
+    try {
+      await fetch("/api/auth/session", { credentials: "include" });
+    } catch { /* ignore */ }
     const res = await merveilFetch("/api/calls?action=create", {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ receiverId: user.id, type: mode || "voice" }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      alert(data?.error || "Couldn't start the call.");
+      const raw = data?.error || "Couldn't start the call.";
+      const msg = /sign in|auth/i.test(String(raw))
+        ? "Session expired — open Passport and sign in again, then retry the call."
+        : raw;
+      alert(msg);
       return;
     }
     if (!data?.call?.id) {
       alert("Call created but no call id returned.");
       return;
     }
-    window.dispatchEvent(new CustomEvent("merveil:start-call", { detail: { callId: data.call.id, mode: mode || "voice", otherName: user.name } }));
+    window.dispatchEvent(new CustomEvent("merveil:start-call", {
+      detail: {
+        callId: data.call.id,
+        mode: mode || "voice",
+        otherName: user.name || user.full_name || "Merveil Citizen",
+        otherId: user.id,
+        otherAvatar: user.avatar_url || user.avatarUrl || null,
+      },
+    }));
   } catch (e) {
     alert(`Couldn't start the call — ${e.message || "check your connection."}`);
   }
@@ -10317,11 +10347,12 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             enabled: true,
             verified: hasKey,
             label: hasKey
-              ? "End-to-end encrypted — only trusted devices can read these messages."
-              : "Encryption not verified on this device — sending may be blocked until keys are available.",
+              ? "Only your trusted devices can read these messages."
+              : "Keys not ready on this device yet — messages still use secure transport.",
           });
         } else {
-          setE2eeUi({ enabled: false, verified: false, label: "Transport encrypted. Open a chat to establish device keys for E2EE." });
+          // Quiet status: transport is always HTTPS; full E2EE activates when both devices register keys.
+          setE2eeUi({ enabled: false, verified: false, label: "Messages use secure transport. Full lock activates when both of you are on a trusted device." });
         }
       } catch {
         if (!cancelled) setE2eeUi({ enabled: false, verified: false, label: "" });
@@ -10335,13 +10366,18 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     setCallError(null);
     try { CallRingtone.unlock(); } catch {}
     try {
+      // Soft session restore before call so refresh races never 401 a signed-in citizen
+      try { await fetch("/api/auth/session", { credentials: "include" }); } catch { /* ignore */ }
       const res = await merveilFetch("/api/calls?action=create", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ receiverId: otherUserId, type: mode }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const msg = data?.error || "Couldn't start the call.";
+        const raw = data?.error || "Couldn't start the call.";
+        const msg = /sign in|auth/i.test(String(raw))
+          ? "Session expired — open Passport and sign in again, then retry the call."
+          : raw;
         setCallError(msg);
         setTimeout(() => setCallError(null), 6000);
         return;
@@ -10556,44 +10592,38 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     let payload = { senderId: currentUser.id, type, body: text ?? undefined, mediaUrl, mediaMeta };
     let e2eeState = null;
 
-    // Text messages: prefer E2EE when both devices can establish keys (fail-closed — no silent plaintext if e2ee_enabled)
+    // E2EE V1: only encrypt when conversation is already e2ee_enabled AND this device has the key.
+    // Do not auto-upgrade chats mid-send — that made "Hello" vanish (E2EE_REQUIRED / missing keys).
     if (type === "text" && text && activeId && globalThis.crypto?.subtle) {
       try {
-        e2eeState = await mvEnsureConversationKey(activeId, otherUserId);
-        if (e2eeState?.e2ee_enabled && e2eeState.rawB64 && e2eeState.keyId) {
-          const enc = await mvEncryptText({
-            plaintext: text,
-            rawKeyB64: e2eeState.rawB64,
-            conversationId: activeId,
-            senderId: currentUser.id,
-            keyId: e2eeState.keyId,
-          });
-          payload = {
-            senderId: currentUser.id,
-            type: "text",
-            is_e2ee: true,
-            ciphertext: enc.ciphertext,
-            nonce: enc.nonce,
-            key_id: enc.key_id,
-            encryption_version: enc.encryption_version,
-            aad_hash: enc.aad_hash,
-            // body intentionally omitted
-          };
-        }
-      } catch (err) {
-        // If conversation is already E2EE, do not send plaintext
-        try {
-          const st = await merveilFetch(`/api/e2ee?action=status&conversationId=${encodeURIComponent(activeId)}`);
-          const sj = st.ok ? await st.json() : null;
-          if (sj?.e2ee_enabled) {
-            try {
-              window.dispatchEvent(new CustomEvent("merveil:toast", {
-                detail: { type: "error", message: "Encryption failed — message not sent." },
-              }));
-            } catch {}
-            return;
+        const st = await merveilFetch(`/api/e2ee?action=status&conversationId=${encodeURIComponent(activeId)}`);
+        const sj = st.ok ? await st.json() : null;
+        if (sj?.e2ee_enabled && sj.key_id) {
+          const raw = mvLoadKey(activeId, sj.key_id);
+          if (raw) {
+            const enc = await mvEncryptText({
+              plaintext: text,
+              rawKeyB64: raw,
+              conversationId: activeId,
+              senderId: currentUser.id,
+              keyId: sj.key_id,
+            });
+            payload = {
+              senderId: currentUser.id,
+              type: "text",
+              is_e2ee: true,
+              ciphertext: enc.ciphertext,
+              nonce: enc.nonce,
+              key_id: enc.key_id,
+              encryption_version: enc.encryption_version,
+              aad_hash: enc.aad_hash,
+            };
+            e2eeState = { e2ee_enabled: true, keyId: sj.key_id, rawB64: raw };
           }
-        } catch {}
+          // else: missing local key — send plaintext; server may reject if flag is on
+        }
+      } catch {
+        // Fall through to plaintext
       }
     }
 
@@ -10708,9 +10738,10 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       if (!conversationId) throw new Error(created?.error || "No conversation returned");
       // Only send the greeting on a brand-new thread — never on reused ones
       if (!created.reused) {
+        const greetName = (otherUser.name || otherUser.full_name || "").trim() || "there";
         await fetch(`/api/conversations/${conversationId}/messages`, {
           method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body: `Hi ${otherUser.name}! 👋` }),
+          body: JSON.stringify({ body: `Hi ${greetName}! 👋` }),
         });
       }
       // Always reload messages for this thread so history appears immediately
@@ -10726,7 +10757,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           id: conversationId,
           participant_ids: [currentUser.id, otherUser.id],
           context_label: null,
-          last_body: created.reused ? (msgsData?.messages?.slice(-1)?.[0]?.body || "") : `Hi ${otherUser.name}! 👋`,
+          last_body: created.reused ? (msgsData?.messages?.slice(-1)?.[0]?.body || "") : `Hi ${(otherUser.name || otherUser.full_name || "").trim() || "there"}! 👋`,
           last_message_at: new Date().toISOString(),
         }, ...p];
       });
@@ -11239,7 +11270,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           )}
         </div>
 
-        <div ref={scrollRef} className="flex-1 min-h-0 px-3 py-4 flex flex-col gap-1 overflow-y-auto overscroll-contain" style={{ background: "linear-gradient(180deg, #E8EEF0 0%, #E2E8EB 40%, #DCE6E9 100%)", WebkitOverflowScrolling: "touch" }}>
+        <div ref={scrollRef} className="flex-1 min-h-0 px-3 py-4 flex flex-col gap-1 overflow-y-auto overscroll-contain" style={{ background: "linear-gradient(180deg, #E8EEF0 0%, #E2E8EB 40%, #DCE6E9 100%)", WebkitOverflowScrolling: "touch", touchAction: "pan-y", minHeight: 120 }}>
           {activeMessages.length === 0 && !isAiThread && activeId && (
             <div className="text-center py-10 px-4">
               <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: "rgba(6,182,212,0.12)" }}>
@@ -11391,14 +11422,14 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         )}
 
         {!isAiThread && e2eeUi.label && (
-          <div className="mx-3 mt-2 px-3 py-2 rounded-xl text-[11px] leading-snug"
+          <div className="mx-3 mt-1 mb-0.5 px-2.5 py-1.5 rounded-lg text-[10px] leading-snug shrink-0"
             style={{
-              background: e2eeUi.verified ? "rgba(22,101,52,0.08)" : "rgba(146,64,14,0.08)",
-              color: e2eeUi.verified ? "#166534" : "#92400E",
-              border: `1px solid ${e2eeUi.verified ? "rgba(22,101,52,0.2)" : "rgba(146,64,14,0.2)"}`,
+              background: e2eeUi.verified ? "rgba(22,101,52,0.08)" : "rgba(14,154,167,0.08)",
+              color: e2eeUi.verified ? "#166534" : "#0A5F68",
+              border: `1px solid ${e2eeUi.verified ? "rgba(22,101,52,0.2)" : "rgba(14,154,167,0.2)"}`,
             }}>
-            <span className="font-bold">{e2eeUi.verified ? "🔒 End-to-end encrypted" : e2eeUi.enabled ? "⚠️ Encryption not verified" : "🔐 Secure transport"}</span>
-            <span className="block mt-0.5 opacity-90">{e2eeUi.label}</span>
+            <span className="font-bold">{e2eeUi.verified ? "🔒 End-to-end encrypted" : e2eeUi.enabled ? "🔐 Securing keys…" : "🔐 Secure chat"}</span>
+            <span className="opacity-90"> — {e2eeUi.label}</span>
           </div>
         )}
         {!isAiThread && (
@@ -16332,6 +16363,13 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
               <span className="text-[10px] font-semibold text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{post.super_count || 0}</span>
               <span className="text-[8px] font-bold tracking-wide" style={{ color: supered ? "#67E8F9" : "rgba(255,255,255,0.7)" }}>SUPER</span>
             </button>
+            <div className="flex flex-col items-center gap-0.5 pointer-events-none" aria-label="Views">
+              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)" }}>
+                <Eye size={18} color="#fff" />
+              </div>
+              <span className="text-[10px] font-semibold text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{(Number(post.views) || Number(post.views_count) || 0).toLocaleString()}</span>
+              <span className="text-[8px] font-bold tracking-wide text-white/70">VIEWS</span>
+            </div>
             <button type="button" onClick={(e) => { e.stopPropagation(); currentUser ? setShowComments(true) : onRequireSignIn?.(); }} className="flex flex-col items-center gap-0.5 pointer-events-auto">
               <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)" }}>
                 <MessageSquare size={18} color="#fff" />
@@ -16374,8 +16412,8 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
                 onClick={() => { setShowMoreTools(false); repost(); }}>
                 <Repeat2 size={14} color={reposted ? "#34D399" : "#fff"} /> Repost
               </button>
-              <div className="px-3 py-2 text-[10px] text-white/50 flex items-center gap-1.5 border-t border-white/10">
-                <Eye size={12} /> {(post.views || post.views_count || 0).toLocaleString()} views
+              <div className="px-3 py-2 text-[10px] text-white/80 flex items-center gap-1.5 border-t border-white/10">
+                <Eye size={12} /> {(Number(post.views) || Number(post.views_count) || 0).toLocaleString()} views
               </div>
               {isOwner ? (
                 <>
@@ -23342,14 +23380,27 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/people?action=profile&userId=${userId}`)
+    // Seed / system AI reels have no real profile row
+    if (!userId || String(userId) === "merveil-ai" || String(userId).startsWith("merveil-ai")) {
+      setProfile({
+        id: "merveil-ai",
+        name: "Merveil AI",
+        bio: "Official Merveil AI seed reels — discovery content for an empty World feed.",
+        passport_tier: "core",
+        account_type: "system",
+      });
+      setWorldPosts([]);
+      setStats({ worldPostCount: 0, totalViews: 0, totalLikes: 0 });
+      setLoading(false);
+      return;
+    }
+    merveilFetch(`/api/people?action=profile&userId=${encodeURIComponent(userId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return;
         setProfile(data.profile || null);
         setWorldPosts(data.worldPosts || []);
         setStats(data.stats || null);
-        // Feeling / thought — Passport expression (columns optional; also local cache)
         const p = data.profile || {};
         setFeeling(p.feeling || p.mood_emoji || "");
         setThought(p.thought || p.mood_text || "");
@@ -25643,11 +25694,21 @@ function CitizenScorePanel({ currentUser }) {
     if (!currentUser?.id) { setLoading(false); setData(null); setFailed(false); return; }
     setLoading(true);
     setFailed(false);
-    fetch("/api/rewards", { credentials: "include" })
-      .then((r) => { if (!r.ok) throw new Error(`rewards fetch failed (${r.status})`); return r.json(); })
-      .then((d) => setData(d))
-      .catch(() => setFailed(true))
-      .finally(() => setLoading(false));
+    // Soft session restore then load with merveilFetch (retry on 401)
+    (async () => {
+      try {
+        try { await fetch("/api/auth/session", { credentials: "include" }); } catch {}
+        const r = await merveilFetch("/api/rewards");
+        if (!r.ok) throw new Error(`rewards fetch failed (${r.status})`);
+        const d = await r.json();
+        setData(d);
+        setFailed(false);
+      } catch {
+        setFailed(true);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [currentUser?.id]);
 
   useEffect(() => {
@@ -27743,8 +27804,8 @@ function IntroScreen({ onEnter, userName, settings }) {
             <MerveilLogoMark size={52} />
             <h1 style={{
               fontFamily: "Space Grotesk,sans-serif",
-              color: "#252321",
-              textShadow: "none",
+              color: "#0E9AA7",
+              textShadow: "0 0 24px rgba(14,154,167,0.35)",
               letterSpacing: ".12em",
               fontSize: "34px",
               fontWeight: 800,
@@ -27825,8 +27886,8 @@ function IntroScreen({ onEnter, userName, settings }) {
             : "logoCompleteIn .6s ease-out both, logoCoreGlow 2.4s ease-in-out .6s infinite",
             opacity: assembling ? 0 : 1 }}>
           <MerveilLogoMark size={40} glow />
-          <h1 style={{ fontFamily: "Space Grotesk,sans-serif", color: "#252321",
-            textShadow: "none",
+          <h1 style={{ fontFamily: "Space Grotesk,sans-serif", color: "#0E9AA7",
+            textShadow: "0 0 24px rgba(14,154,167,0.35)",
             letterSpacing: ".12em", fontSize: "28px", fontWeight: 800 }}>
             MERVEIL AI
           </h1>
@@ -28629,10 +28690,10 @@ function AppInner() {
       title: p.title,
       area: p.area,
       emirate: p.emirate,
-      type: p.listing_type || "Sale",
+      type: p.listing_type || p.type || "Sale",
       category: p.category || "Apartment",
       price: Number(p.price) || 0,
-      priceFreq: p.price_frequency || (p.listing_type === "Rent" ? "yr" : undefined),
+      priceFreq: p.price_frequency || p.priceFreq || (p.listing_type === "Rent" || p.type === "Rent" ? "yr" : undefined),
       beds: p.beds,
       baths: p.baths,
       sqft: p.sqft,
@@ -28650,7 +28711,11 @@ function AppInner() {
       grad: ["#3A6FA0", "#1F2937"],
       listingChain: [],
       isLive: true,
-      ownerId: p.owner_id || null,
+      ownerId: p.owner_id || p.ownerId || null,
+      owner_id: p.owner_id || p.ownerId || null,
+      owner_name: p.owner_name || null,
+      owner_avatar: p.owner_avatar || null,
+      listedAs: p.listedAs || p.listed_as || null,
     });
     const mapService = (s) => ({
       id: `db-${s.id}`,
@@ -28732,7 +28797,14 @@ function AppInner() {
   const [settings, setSettings] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("jx_settings") || "null");
-      if (saved) return saved;
+      const langOverride = localStorage.getItem("merveil_language");
+      if (saved) {
+        return {
+          ...saved,
+          language: langOverride || saved.language || detectLanguage(),
+        };
+      }
+      return { theme: "light", notifications: true, textSize: "md", language: langOverride || detectLanguage() };
     } catch {}
     return { theme: "light", notifications: true, textSize: "md", language: detectLanguage() };
   });
@@ -29576,20 +29648,20 @@ function AppInner() {
           <div
             className="merveil-header-plus-menu absolute right-3 md:right-6 top-14 z-30 w-[19rem] rounded-2xl overflow-hidden max-h-[78vh] overflow-y-auto"
             style={{
-              background: "linear-gradient(165deg, #12161C 0%, #0B0F14 55%, #0E1318 100%)",
-              border: "1px solid rgba(196,165,116,0.18)",
-              color: "#F7F5F1",
-              boxShadow: "0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04) inset",
+              background: "#F1ECE5",
+              border: "1px solid #C4BAAC",
+              color: "#252321",
+              boxShadow: "0 20px 48px rgba(37,35,33,0.18)",
             }}
           >
-            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: "#C4BAAC" }}>
               <div>
-                <div className="text-[9px] font-bold tracking-[0.28em] uppercase" style={{ color: "rgba(196,165,116,0.85)", fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL</div>
-                <div className="text-[15px] font-semibold mt-0.5" style={{ fontFamily: "'Space Grotesk',sans-serif", letterSpacing: "-0.02em" }}>Plus</div>
-                <div className="text-[11px] mt-0.5" style={{ color: "rgba(247,245,241,0.4)" }}>Rooms beyond the main path</div>
+                <div className="text-[9px] font-bold tracking-[0.28em] uppercase" style={{ color: "#0E9AA7", fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL</div>
+                <div className="text-[15px] font-semibold mt-0.5" style={{ fontFamily: "'Space Grotesk',sans-serif", letterSpacing: "-0.02em", color: "#252321" }}>Plus</div>
+                <div className="text-[11px] mt-0.5" style={{ color: "#625D56" }}>Rooms beyond the main path</div>
               </div>
-              <button type="button" onClick={() => setShowPlusMenu(false)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }} aria-label="Close Plus">
-                <X size={15} color="rgba(247,245,241,0.7)" />
+              <button type="button" onClick={() => setShowPlusMenu(false)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "#EAE4DB", border: "1px solid #C4BAAC" }} aria-label="Close Plus">
+                <X size={15} color="#252321" />
               </button>
             </div>
             <div className="p-2.5">
@@ -29610,20 +29682,20 @@ function AppInner() {
                     goToTab(item.tab);
                   }}
                   className="w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2"
-                  style={{ border: "1px solid transparent" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(14,154,167,0.08)"; e.currentTarget.style.borderColor = "rgba(14,154,167,0.12)"; }}
+                  style={{ border: "1px solid transparent", background: "transparent" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(14,154,167,0.10)"; e.currentTarget.style.borderColor = "rgba(14,154,167,0.25)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; }}
                 >
                   <div className="min-w-0">
-                    <div className="text-[13px] font-semibold" style={{ color: "#F7F5F1" }}>{item.label}</div>
-                    <div className="text-[11px]" style={{ color: "rgba(247,245,241,0.42)" }}>{item.sub}</div>
+                    <div className="text-[13px] font-semibold" style={{ color: "#252321" }}>{item.label}</div>
+                    <div className="text-[11px]" style={{ color: "#625D56" }}>{item.sub}</div>
                   </div>
-                  <ChevronRight size={15} style={{ color: "rgba(196,165,116,0.45)" }} />
+                  <ChevronRight size={15} style={{ color: "#0E9AA7" }} />
                 </button>
               ))}
             </div>
-            <div className="px-3 pt-1 pb-3 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
-              <div className="text-[10px] font-bold tracking-[0.16em] uppercase mb-2 px-1" style={{ color: "rgba(125,211,252,0.85)" }}>Ecosystem</div>
+            <div className="px-3 pt-1 pb-3 border-t" style={{ borderColor: "#C4BAAC" }}>
+              <div className="text-[10px] font-bold tracking-[0.16em] uppercase mb-2 px-1" style={{ color: "#0E9AA7" }}>Ecosystem</div>
               {[
                 { label: "Developer Platform", path: "/developer", sub: "APIs · apps · build" },
                 { label: "Interface", path: "/interface", sub: "Org · family · community" },
@@ -29635,13 +29707,14 @@ function AppInner() {
                     setShowPlusMenu(false);
                     window.location.assign(room.path);
                   }}
-                  className="w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2 hover:bg-white/5"
+                  className="w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2"
+                  style={{ background: "transparent" }}
                 >
                   <div className="min-w-0">
-                    <div className="text-[13px] font-semibold text-white">{room.label}</div>
-                    <div className="text-[11px]" style={{ color: "rgba(226,232,240,0.55)" }}>{room.sub}</div>
+                    <div className="text-[13px] font-semibold" style={{ color: "#252321" }}>{room.label}</div>
+                    <div className="text-[11px]" style={{ color: "#625D56" }}>{room.sub}</div>
                   </div>
-                  <ChevronRight size={16} style={{ color: "rgba(226,232,240,0.35)" }} />
+                  <ChevronRight size={16} style={{ color: "#0E9AA7" }} />
                 </button>
               ))}
             </div>
