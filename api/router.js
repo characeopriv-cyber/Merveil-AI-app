@@ -925,6 +925,19 @@ export default async function handler(req, res) {
     const citizen = user || (citizenId ? { id: citizenId } : null);
     const sb = token ? userClient(token) : anonClient();
 
+    // Unified actor for all mutating routes — never 401 a signed-in citizen on refresh races.
+    const actorId = user?.id || citizen?.id || jwtSub || null;
+    const requireActor = (res, msg = "Sign in required.") => {
+      if (!actorId) { sendJson(res, 401, { error: msg }); return null; }
+      return actorId;
+    };
+    /** Prefer service role for authenticated writes when session user is jwt-only. */
+    const writeClient = () => {
+      try { return adminClient(); } catch { return sb; }
+    };
+
+
+
     // ---------------------------------------------------------- /api/share
     // Crawler-friendly OG HTML for WhatsApp / iMessage / LinkedIn previews.
     // Usage: /api/share?type=world|listing|property|invest|service|job|passport&id=
@@ -1302,8 +1315,8 @@ export default async function handler(req, res) {
       const action = req.query.action;
 
       if (method === "POST" && action === "inventory-ai-parse") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
-        const usage = await checkAiUsageAllowed(sb, user.id);
+        if (!requireActor(res, "Sign in required.")) return;
+        const usage = await checkAiUsageAllowed(sb, actorId);
         if (!usage.allowed) {
           return sendJson(res, 429, { error: `Daily Merveil AI limit reached (${usage.used}/${usage.limit}) for your Passport tier. Try again tomorrow or upgrade your Passport.` });
         }
@@ -1406,7 +1419,7 @@ export default async function handler(req, res) {
         // Fill in occupancyStatus from status/tenantName the same way manual CSV rows are, so
         // downstream lease-intelligence logic (vacancy/renewal stats) works identically either way.
         units = units.map((u) => ({ ...u, occupancyStatus: u.tenantName ? "occupied" : "vacant" }));
-        await sb.rpc("increment_ai_usage", { uid: user.id }).catch(() => {});
+        await sb.rpc("increment_ai_usage", { uid: actorId }).catch(() => {});
         return sendJson(res, 200, { units, fileName: file.originalFilename, unitCount: units.length });
       }
 
@@ -1423,14 +1436,14 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && action === "inventory") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to publish an inventory." });
+        if (!requireActor(res, "Sign in to publish an inventory.")) return;
         const body = await readBody(req);
         const units = Array.isArray(body.units) ? body.units : [];
         const prices = units.map((u) => Number(u.price)).filter((n) => !isNaN(n) && n > 0);
         const { data: inv, error } = await sb
           .from("property_inventories")
           .insert({
-            owner_id: user.id,
+            owner_id: actorId,
             name: body.name,
             inventory_type: body.inventoryType || "rent",
             emirate: body.emirate,
@@ -1480,35 +1493,48 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && action === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like listings." });
+        if (!requireActor(res, "Sign in to like listings.")) return;
         const body = await readBody(req);
         if (!body.propertyId) return sendJson(res, 400, { error: "propertyId required" });
-        const { data, error } = await sb.rpc("toggle_property_like", { pid: body.propertyId }).maybeSingle();
-        if (error) return sendJson(res, 400, { error: error.message });
-        return sendJson(res, 200, { liked: data.liked, likesCount: data.likes_count });
+        const svc = writeClient();
+        const { data: existing } = await svc.from("property_likes").select("id").eq("property_id", body.propertyId).eq("user_id", actorId).maybeSingle();
+        if (existing) {
+          await svc.from("property_likes").delete().eq("id", existing.id);
+        } else {
+          await svc.from("property_likes").insert({ property_id: body.propertyId, user_id: actorId });
+        }
+        const { count } = await svc.from("property_likes").select("id", { count: "exact", head: true }).eq("property_id", body.propertyId);
+        const likesCount = count || 0;
+        try { await svc.from("properties").update({ likes_count: likesCount }).eq("id", body.propertyId); } catch {}
+        return sendJson(res, 200, { liked: !existing, likesCount });
       }
 
-      // SUPER — distinct from Like (see toggle_property_super migration
-      // notes). Same shape as the like endpoints above on purpose, so the
-      // frontend can treat them as parallel actions.
       if (method === "POST" && action === "super") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to SUPER a listing." });
+        if (!requireActor(res, "Sign in to SUPER a listing.")) return;
         const body = await readBody(req);
         if (!body.propertyId) return sendJson(res, 400, { error: "propertyId required" });
-        const { data, error } = await sb.rpc("toggle_property_super", { pid: body.propertyId }).maybeSingle();
-        if (error) return sendJson(res, 400, { error: error.message });
-        return sendJson(res, 200, { supered: data.supered, superCount: data.super_count });
+        const svc = writeClient();
+        const { data: existing } = await svc.from("property_supers").select("id").eq("property_id", body.propertyId).eq("user_id", actorId).maybeSingle();
+        if (existing) {
+          await svc.from("property_supers").delete().eq("id", existing.id);
+        } else {
+          await svc.from("property_supers").insert({ property_id: body.propertyId, user_id: actorId });
+        }
+        const { count } = await svc.from("property_supers").select("id", { count: "exact", head: true }).eq("property_id", body.propertyId);
+        const superCount = count || 0;
+        try { await svc.from("properties").update({ super_count: superCount }).eq("id", body.propertyId); } catch {}
+        return sendJson(res, 200, { supered: !existing, superCount });
       }
 
       if (method === "GET" && action === "supers") {
-        if (!user) return sendJson(res, 200, { superedIds: [] });
-        const { data } = await sb.from("property_supers").select("property_id").eq("user_id", user.id);
+        if (!actorId) return sendJson(res, 200, { superedIds: [] });
+        const { data } = await writeClient().from("property_supers").select("property_id").eq("user_id", actorId);
         return sendJson(res, 200, { superedIds: (data || []).map((r) => r.property_id) });
       }
 
       if (method === "GET" && action === "likes") {
-        if (!user) return sendJson(res, 200, { likedIds: [] });
-        const { data } = await sb.from("property_likes").select("property_id").eq("user_id", user.id);
+        if (!actorId) return sendJson(res, 200, { likedIds: [] });
+        const { data } = await writeClient().from("property_likes").select("property_id").eq("user_id", actorId);
         return sendJson(res, 200, { likedIds: (data || []).map((r) => r.property_id) });
       }
 
@@ -1519,7 +1545,9 @@ export default async function handler(req, res) {
         let ownerMap = {};
         if (ownerIds.length) {
           try {
-            const { data: owners } = await anonClient()
+            let ownClient;
+            try { ownClient = adminClient(); } catch { ownClient = anonClient(); }
+            const { data: owners } = await ownClient
               .from("profiles")
               .select("id, name, avatar_url, role_label")
               .in("id", ownerIds);
@@ -1544,14 +1572,14 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to post a property." });
-        const okRate = await checkRateLimit(anonClient(), `property_post_${user.id}`, 20);
+        if (!requireActor(res, "Sign in to post a property.")) return;
+        const okRate = await checkRateLimit(anonClient(), `property_post_${actorId}`, 20);
         if (!okRate) return sendJson(res, 429, { error: "Too many property posts — wait a few minutes." });
         const body = await readBody(req);
-        const { data, error } = await sb
+        const { data, error } = await writeClient()
           .from("properties")
           .insert({
-            owner_id: user.id,
+            owner_id: actorId,
             title: body.title,
             area: body.area,
             emirate: body.emirate,
@@ -1657,7 +1685,7 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && action === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like services." });
+        if (!requireActor(res, "Sign in to like services.")) return;
         const body = await readBody(req);
         if (!body.serviceId) return sendJson(res, 400, { error: "serviceId required" });
         const { data, error } = await sb.rpc("toggle_service_like", { sid: body.serviceId }).maybeSingle();
@@ -1667,7 +1695,7 @@ export default async function handler(req, res) {
 
       if (method === "GET" && action === "likes") {
         if (!user) return sendJson(res, 200, { likedIds: [] });
-        const { data } = await sb.from("service_likes").select("service_id").eq("user_id", user.id);
+        const { data } = await sb.from("service_likes").select("service_id").eq("user_id", actorId);
         return sendJson(res, 200, { likedIds: (data || []).map((r) => r.service_id) });
       }
 
@@ -1677,12 +1705,12 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { services: (data || []).map((s) => ({ ...s, ownerId: s.owner_id, isLive: true })) });
       }
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to publish a service." });
+        if (!requireActor(res, "Sign in to publish a service.")) return;
         const body = await readBody(req);
-        const { data, error } = await sb
+        const { data, error } = await writeClient()
           .from("services")
           .insert({
-            owner_id: user.id,
+            owner_id: actorId,
             title: body.title,
             category: body.category,
             area: body.area,
@@ -1826,14 +1854,14 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { message: data });
         }
         if (method === "PATCH" && req.query.action === "edit") {
-          if (!user) return sendJson(res, 401, { error: "Sign in required." });
+          if (!requireActor(res, "Sign in required.")) return;
           const body = await readBody(req);
           if (!body.messageId || !body.body?.trim()) return sendJson(res, 400, { error: "messageId and body required" });
           const { data, error } = await sb
             .from("messages")
             .update({ body: body.body.trim(), edited_at: new Date().toISOString() })
             .eq("id", body.messageId)
-            .eq("sender_id", user.id) // can only edit your own messages
+            .eq("sender_id", actorId) // can only edit your own messages
             .select()
             .maybeSingle();
           if (error) return sendJson(res, 400, { error: error.message });
@@ -1842,9 +1870,9 @@ export default async function handler(req, res) {
         }
         if (method === "PATCH") {
           // Mark conversation as read for the current user (clears badge / unread).
-          if (!user) return sendJson(res, 401, { error: "Sign in required." });
+          if (!requireActor(res, "Sign in required.")) return;
           const { data: convo } = await sb.from("conversations").select("participant_ids").eq("id", convId).maybeSingle();
-          if (!convo || !(convo.participant_ids || []).map(String).includes(String(user.id))) {
+          if (!convo || !(convo.participant_ids || []).map(String).includes(String(actorId))) {
             return sendJson(res, 403, { error: "Not a participant in this conversation." });
           }
           // Prefer service role so RLS never blocks read_by updates
@@ -1854,30 +1882,30 @@ export default async function handler(req, res) {
             .from("messages")
             .select("id, sender_id, read_by")
             .eq("conversation_id", convId)
-            .neq("sender_id", user.id)
+            .neq("sender_id", actorId)
             .limit(500);
-          const me = String(user.id);
+          const me = String(actorId);
           let marked = 0;
           for (const row of rows || []) {
             const readBy = (row.read_by || []).map(String);
             if (readBy.includes(me)) continue;
             const { error } = await writer
               .from("messages")
-              .update({ read_by: [...readBy, user.id], read_at: new Date().toISOString() })
+              .update({ read_by: [...readBy, actorId], read_at: new Date().toISOString() })
               .eq("id", row.id);
             if (!error) marked += 1;
           }
           return sendJson(res, 200, { ok: true, marked });
         }
         if (method === "DELETE") {
-          if (!user) return sendJson(res, 401, { error: "Sign in required." });
+          if (!requireActor(res, "Sign in required.")) return;
           const body = await readBody(req);
           if (!body.messageId) return sendJson(res, 400, { error: "messageId required" });
           const { error, count } = await sb
             .from("messages")
             .delete({ count: "exact" })
             .eq("id", body.messageId)
-            .eq("sender_id", user.id); // can only delete your own messages
+            .eq("sender_id", actorId); // can only delete your own messages
           if (error) return sendJson(res, 400, { error: error.message });
           if (!count) return sendJson(res, 403, { error: "You can only delete your own messages." });
           return sendJson(res, 200, { ok: true });
@@ -1887,9 +1915,9 @@ export default async function handler(req, res) {
 
       // /api/conversations/:id — delete a whole conversation (must be a participant)
       if (convId && !segments[2] && method === "DELETE") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const { data: convo } = await sb.from("conversations").select("participant_ids").eq("id", convId).maybeSingle();
-        if (!convo || !(convo.participant_ids || []).includes(user.id)) {
+        if (!convo || !(convo.participant_ids || []).includes(actorId)) {
           return sendJson(res, 403, { error: "Not a participant in this conversation." });
         }
         await sb.from("messages").delete().eq("conversation_id", convId);
@@ -2170,18 +2198,18 @@ export default async function handler(req, res) {
       // Smart Conversation Center — real archive + category label, not
       // decorative UI tabs.
       if (method === "PATCH" && convId && action === "archive") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const { data: conv } = await sb.from("conversations").select("archived_by").eq("id", convId).maybeSingle();
         const current = conv?.archived_by || [];
-        const isArchived = current.includes(user.id);
-        const next = isArchived ? current.filter((id) => id !== user.id) : [...current, user.id];
+        const isArchived = current.includes(actorId);
+        const next = isArchived ? current.filter((id) => id !== actorId) : [...current, actorId];
         const { error } = await sb.from("conversations").update({ archived_by: next }).eq("id", convId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { archived: !isArchived });
       }
 
       if (method === "PATCH" && convId && action === "label") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         const { error } = await sb.from("conversations").update({ context_label: body.label || null }).eq("id", convId);
         if (error) return sendJson(res, 400, { error: error.message });
@@ -2219,13 +2247,13 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { posts: posts || [] });
         }
         if (method === "POST") {
-          if (!user) return sendJson(res, 401, { error: "Sign in to post in this circle." });
+          if (!requireActor(res, "Sign in to post in this circle.")) return;
           const body = await readBody(req);
           let { data: circle } = await sb.from("circles").select("id").eq("code", code).maybeSingle();
           if (!circle) return sendJson(res, 404, { error: "Circle not found." });
           const { data, error } = await sb
             .from("circle_posts")
-            .insert({ circle_id: circle.id, title: body.title, type: body.type || "announcement", author_id: user.id })
+            .insert({ circle_id: circle.id, title: body.title, type: body.type || "announcement", author_id: actorId })
             .select()
             .maybeSingle();
           if (error) return sendJson(res, 400, { error: error.message });
@@ -2236,7 +2264,7 @@ export default async function handler(req, res) {
 
       if (method === "GET" && req.query.userId) {
         if (!user) return sendJson(res, 200, { circles: [] });
-        const { data: memberships } = await sb.from("circle_members").select("circle_id").eq("user_id", user.id);
+        const { data: memberships } = await sb.from("circle_members").select("circle_id").eq("user_id", actorId);
         const ids = (memberships || []).map((m) => m.circle_id);
         if (!ids.length) return sendJson(res, 200, { circles: [] });
         const { data: circles } = await sb.from("circles").select("*").in("id", ids);
@@ -2256,26 +2284,26 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && req.query.action === "join") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to join a circle." });
+        if (!requireActor(res, "Sign in to join a circle.")) return;
         const body = await readBody(req);
         const { data: circle } = await sb.from("circles").select("id").eq("code", body.code).maybeSingle();
         if (!circle) return sendJson(res, 404, { error: "Circle not found." });
-        const { error } = await sb.from("circle_members").upsert({ circle_id: circle.id, user_id: user.id });
+        const { error } = await sb.from("circle_members").upsert({ circle_id: circle.id, user_id: actorId });
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
       }
 
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to create a circle." });
+        if (!requireActor(res, "Sign in to create a circle.")) return;
         const body = await readBody(req);
         const code = randomCircleCode(body.name || "CIR");
         const { data, error } = await sb
           .from("circles")
-          .insert({ code, name: body.name, flag: body.flag || null, created_by: user.id })
+          .insert({ code, name: body.name, flag: body.flag || null, created_by: actorId })
           .select()
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
-        await sb.from("circle_members").insert({ circle_id: data.id, user_id: user.id }).catch(() => {});
+        await sb.from("circle_members").insert({ circle_id: data.id, user_id: actorId }).catch(() => {});
         return sendJson(res, 200, { circle: data });
       }
 
@@ -2292,12 +2320,12 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to create an event." });
+        if (!requireActor(res, "Sign in to create an event.")) return;
         const body = await readBody(req);
         const { data, error } = await sb
           .from("events")
           .insert({
-            organizer_id: user.id,
+            organizer_id: actorId,
             title: body.title,
             category: body.category,
             description: body.description,
@@ -2321,9 +2349,9 @@ export default async function handler(req, res) {
       if (method === "PATCH") {
         const body = await readBody(req);
         if (body.action === "rsvp") {
-          if (!user) return sendJson(res, 401, { error: "Sign in to RSVP." });
+          if (!requireActor(res, "Sign in to RSVP.")) return;
           const code = ticketCode();
-          const { error } = await sb.from("event_rsvps").insert({ event_id: body.eventId, user_id: user.id, ticket_code: code });
+          const { error } = await sb.from("event_rsvps").insert({ event_id: body.eventId, user_id: actorId, ticket_code: code });
           if (error) {
             if (error.code === "23505") return sendJson(res, 200, { ticket: { ticket_code: code, already: true } });
             return sendJson(res, 400, { error: error.message });
@@ -2342,7 +2370,7 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && req.query.action === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like events." });
+        if (!requireActor(res, "Sign in to like events.")) return;
         const body = await readBody(req);
         if (!body.eventId) return sendJson(res, 400, { error: "eventId required" });
         const { data, error } = await sb.rpc("toggle_event_like", { eid: body.eventId }).maybeSingle();
@@ -2352,7 +2380,7 @@ export default async function handler(req, res) {
 
       if (method === "GET" && req.query.action === "likes") {
         if (!user) return sendJson(res, 200, { likedIds: [] });
-        const { data } = await sb.from("event_likes").select("event_id").eq("user_id", user.id);
+        const { data } = await sb.from("event_likes").select("event_id").eq("user_id", actorId);
         return sendJson(res, 200, { likedIds: (data || []).map((r) => r.event_id) });
       }
 
@@ -2444,16 +2472,16 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { ok: true, platform: row.platform });
       }
       if (pushAction === "unsubscribe" && method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         let svcPush;
         try { svcPush = adminClient(); } catch (e) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         if (body?.endpoint) {
-          await svcPush.from("push_subscriptions").delete().eq("user_id", user.id).eq("endpoint", body.endpoint);
+          await svcPush.from("push_subscriptions").delete().eq("user_id", actorId).eq("endpoint", body.endpoint);
         } else {
-          await svcPush.from("push_subscriptions").delete().eq("user_id", user.id);
+          await svcPush.from("push_subscriptions").delete().eq("user_id", actorId);
         }
         return sendJson(res, 200, { ok: true });
       }
@@ -2466,7 +2494,7 @@ export default async function handler(req, res) {
         if (user) {
           try {
             const svc = adminClient();
-            const { count } = await svc.from("push_subscriptions").select("*", { count: "exact", head: true }).eq("user_id", user.id);
+            const { count } = await svc.from("push_subscriptions").select("*", { count: "exact", head: true }).eq("user_id", actorId);
             deviceCount = count || 0;
           } catch {}
         }
@@ -2476,11 +2504,11 @@ export default async function handler(req, res) {
       // Send to a user (self test or server-side notify). Body: { userId?, title, body, data, urgent }
       // If userId omitted → send to current user (test notification).
       if (pushAction === "send" && method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
-        const targetId = body.userId || user.id;
+        const targetId = body.userId || actorId;
         // Only allow messaging yourself unless service role path later expands this
-        if (String(targetId) !== String(user.id)) {
+        if (String(targetId) !== String(actorId)) {
           return sendJson(res, 403, { error: "Can only test-send to your own devices from the client." });
         }
         const result = await notifyUser(targetId, {
@@ -2526,15 +2554,15 @@ export default async function handler(req, res) {
 
       if (method === "GET" && invAction === "likes") {
         if (!user) return sendJson(res, 200, { likedIds: [] });
-        const { data } = await sb.from("invest_likes").select("invest_post_id").eq("user_id", user.id);
+        const { data } = await sb.from("invest_likes").select("invest_post_id").eq("user_id", actorId);
         return sendJson(res, 200, { likedIds: (data || []).map((r) => r.invest_post_id) });
       }
 
       if (method === "POST" && invAction === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like." });
+        if (!requireActor(res, "Sign in to like.")) return;
         const body = await readBody(req);
         if (!body.postId) return sendJson(res, 400, { error: "postId required" });
-        const { data: existing } = await sb.from("invest_likes").select("id").eq("invest_post_id", body.postId).eq("user_id", user.id).maybeSingle();
+        const { data: existing } = await sb.from("invest_likes").select("id").eq("invest_post_id", body.postId).eq("user_id", actorId).maybeSingle();
         let svcL;
         try { svcL = adminClient(); } catch { svcL = sb; }
         if (existing) {
@@ -2544,7 +2572,7 @@ export default async function handler(req, res) {
           await svcL.from("invest_posts").update({ likes_count: next }).eq("id", body.postId);
           return sendJson(res, 200, { liked: false, likesCount: next });
         }
-        await svcL.from("invest_likes").insert({ invest_post_id: body.postId, user_id: user.id });
+        await svcL.from("invest_likes").insert({ invest_post_id: body.postId, user_id: actorId });
         const { data: post } = await svcL.from("invest_posts").select("likes_count").eq("id", body.postId).maybeSingle();
         const next = (post?.likes_count || 0) + 1;
         await svcL.from("invest_posts").update({ likes_count: next }).eq("id", body.postId);
@@ -2552,7 +2580,7 @@ export default async function handler(req, res) {
       }
 
       if (method === "DELETE") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         if (!body.postId) return sendJson(res, 400, { error: "postId required" });
         let svcD;
@@ -2560,7 +2588,7 @@ export default async function handler(req, res) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         const { data: existing } = await svcD.from("invest_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
-        if (!existing || existing.owner_id !== user.id) return sendJson(res, 404, { error: "Post not found." });
+        if (!existing || existing.owner_id !== actorId) return sendJson(res, 404, { error: "Post not found." });
         const { error } = await svcD.from("invest_posts").delete().eq("id", body.postId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
@@ -2603,15 +2631,15 @@ export default async function handler(req, res) {
     // stored about this citizen from the real tables, for them to see and
     // export. Nothing here is summarized or hidden from them.
     if (resource === "privacy-center") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       if (method === "GET") {
         const [{ data: profile }, { data: settings }, { data: sessions }, { data: events }, { count: connectionsCount }, { count: reportsFiled }] = await Promise.all([
-          sb.from("profiles").select("*").eq("id", user.id).maybeSingle(),
-          sb.from("citizen_settings").select("*").eq("user_id", user.id).maybeSingle(),
-          sb.from("user_sessions").select("id, device_name, ip, created_at, last_active_at, revoked_at").eq("user_id", user.id),
-          sb.from("security_events").select("id, event_type, severity, description, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50),
-          sb.from("connections").select("*", { count: "exact", head: true }).or(`user_id.eq.${user.id},connected_user_id.eq.${user.id}`),
-          sb.from("reports").select("*", { count: "exact", head: true }).eq("reporter_id", user.id),
+          sb.from("profiles").select("*").eq("id", actorId).maybeSingle(),
+          sb.from("citizen_settings").select("*").eq("user_id", actorId).maybeSingle(),
+          sb.from("user_sessions").select("id, device_name, ip, created_at, last_active_at, revoked_at").eq("user_id", actorId),
+          sb.from("security_events").select("id, event_type, severity, description, created_at").eq("user_id", actorId).order("created_at", { ascending: false }).limit(50),
+          sb.from("connections").select("*", { count: "exact", head: true }).or(`user_id.eq.${actorId},connected_user_id.eq.${actorId}`),
+          sb.from("reports").select("*", { count: "exact", head: true }).eq("reporter_id", actorId),
         ]);
         return sendJson(res, 200, {
           profile: profile || null,
@@ -2658,17 +2686,17 @@ export default async function handler(req, res) {
 
       if (action === "my-memberships" && method === "GET") {
         if (!user) return sendJson(res, 200, { memberships: [] });
-        const { data } = await sb.from("neighborhood_members").select("neighborhood_id, visibility").eq("user_id", user.id);
+        const { data } = await sb.from("neighborhood_members").select("neighborhood_id, visibility").eq("user_id", actorId);
         return sendJson(res, 200, { memberships: data || [] });
       }
 
       if (action === "join" && method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         if (!body.neighborhoodId) return sendJson(res, 400, { error: "neighborhoodId required." });
         const visibility = body.visibility === "private" ? "private" : "public";
         const { error } = await sb.from("neighborhood_members").upsert(
-          { user_id: user.id, neighborhood_id: body.neighborhoodId, visibility },
+          { user_id: actorId, neighborhood_id: body.neighborhoodId, visibility },
           { onConflict: "user_id,neighborhood_id" }
         );
         if (error) return sendJson(res, 400, { error: error.message });
@@ -2676,10 +2704,10 @@ export default async function handler(req, res) {
       }
 
       if (action === "leave" && method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         if (!body.neighborhoodId) return sendJson(res, 400, { error: "neighborhoodId required." });
-        const { error } = await sb.from("neighborhood_members").delete().eq("user_id", user.id).eq("neighborhood_id", body.neighborhoodId);
+        const { error } = await sb.from("neighborhood_members").delete().eq("user_id", actorId).eq("neighborhood_id", body.neighborhoodId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
       }
@@ -2692,12 +2720,12 @@ export default async function handler(req, res) {
     // create and read their own reports — reviewing/deciding is admin-only,
     // via /api/console below.
     if (resource === "reports") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       if (method === "POST") {
         const body = await readBody(req);
         const { targetType, targetId, category, description } = body || {};
         if (!targetType || !targetId || !category) return sendJson(res, 400, { error: "targetType, targetId, and category are required." });
-        const okRate = await checkRateLimit(anonClient(), `report_${user.id}`);
+        const okRate = await checkRateLimit(anonClient(), `report_${actorId}`);
         if (!okRate) return sendJson(res, 429, { error: "Too many reports submitted — wait a few minutes and try again." });
         // Risk weight by category (feeds fraud band, not auto-ban)
         const riskByCat = {
@@ -2712,7 +2740,7 @@ export default async function handler(req, res) {
         let svcR = sb;
         try { svcR = adminClient(); } catch {}
         const { data: insRep, error } = await svcR.from("reports").insert({
-          reporter_id: user.id,
+          reporter_id: actorId,
           target_type: targetType,
           target_id: String(targetId),
           category,
@@ -2748,7 +2776,7 @@ export default async function handler(req, res) {
               user_id: maybeUser,
               signal: `report:${category}`,
               score: riskScore,
-              evidence: { reportId: reportRow?.id, reporterId: user.id, targetType, caseId: caseRow?.id },
+              evidence: { reportId: reportRow?.id, reporterId: actorId, targetType, caseId: caseRow?.id },
             });
             const { data: prev } = await svcR.from("account_risk_scores").select("risk_score").eq("user_id", maybeUser).maybeSingle();
             const next = Math.min(100, (prev?.risk_score || 0) + Math.round(riskScore * 0.35));
@@ -2773,7 +2801,7 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { ok: true, riskScore });
       }
       if (method === "GET") {
-        const { data, error } = await sb.from("reports").select("id, target_type, target_id, category, status, created_at").eq("reporter_id", user.id).order("created_at", { ascending: false });
+        const { data, error } = await sb.from("reports").select("id, target_type, target_id, category, status, created_at").eq("reporter_id", actorId).order("created_at", { ascending: false });
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { reports: data || [] });
       }
@@ -2791,23 +2819,23 @@ export default async function handler(req, res) {
     // not a hand-rolled one, since getting that crypto wrong is worse
     // than not having it.
     if (resource === "reauth") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       if (method === "POST") {
         const body = await readBody(req);
         if (!body.password) return sendJson(res, 400, { error: "Password required." });
         const svc = adminClient();
         const anon = anonClient();
-        const okRate = await checkRateLimit(anon, `reauth_${user.id}`);
+        const okRate = await checkRateLimit(anon, `reauth_${actorId}`);
         if (!okRate) return sendJson(res, 429, { error: "Too many attempts — wait a few minutes and try again." });
-        const { data: authUser } = await svc.auth.admin.getUserById(user.id);
+        const { data: authUser } = await svc.auth.admin.getUserById(actorId);
         const email = authUser?.user?.email;
         if (!email) return sendJson(res, 400, { error: "Could not verify this account." });
         const { error } = await anon.auth.signInWithPassword({ email, password: body.password });
         if (error) {
-          await logSecurityEvent(user.id, "reauth_failed", { severity: "elevated", description: "Failed re-authentication on a sensitive screen." });
+          await logSecurityEvent(actorId, "reauth_failed", { severity: "elevated", description: "Failed re-authentication on a sensitive screen." });
           return sendJson(res, 401, { error: "Incorrect password." });
         }
-        await logSecurityEvent(user.id, "reauth", { severity: "info", description: "Re-authenticated for a sensitive screen or after returning to Merveil." });
+        await logSecurityEvent(actorId, "reauth", { severity: "info", description: "Re-authenticated for a sensitive screen or after returning to Merveil." });
         return sendJson(res, 200, { ok: true, reauthAt: new Date().toISOString() });
       }
       return sendJson(res, 404, { error: "Not found" });
@@ -3111,7 +3139,7 @@ export default async function handler(req, res) {
         const body = await readBody(req);
         const decision = await michaelAuthorize({
           actorType: adminCtx ? "admin" : "citizen",
-          actorId: adminCtx ? adminCtx.admin.id : user.id,
+          actorId: adminCtx ? adminCtx.admin.id : (user?.id || actorId),
           sessionId: adminCtx?.sessionId || null,
           adminCtx,
           resourceType: body.resourceType,
@@ -3180,18 +3208,18 @@ export default async function handler(req, res) {
     // this device" is real: it revokes the row, same table the Admin
     // Security panel reads from.
     if (resource === "my-sessions") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       if (method === "GET") {
-        const { data, error } = await sb.from("user_sessions").select("id, device_name, device_type, browser, os, ip, created_at, last_active_at, revoked_at").eq("user_id", user.id).order("last_active_at", { ascending: false });
+        const { data, error } = await sb.from("user_sessions").select("id, device_name, device_type, browser, os, ip, created_at, last_active_at, revoked_at").eq("user_id", actorId).order("last_active_at", { ascending: false });
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { sessions: data || [] });
       }
       if (method === "POST" && req.query.action === "revoke") {
         const body = await readBody(req);
         if (!body.sessionId) return sendJson(res, 400, { error: "sessionId required." });
-        const { error } = await sb.from("user_sessions").update({ revoked_at: new Date().toISOString() }).eq("id", body.sessionId).eq("user_id", user.id);
+        const { error } = await sb.from("user_sessions").update({ revoked_at: new Date().toISOString() }).eq("id", body.sessionId).eq("user_id", actorId);
         if (error) return sendJson(res, 400, { error: error.message });
-        await logSecurityEvent(user.id, "session_self_revoked", { severity: "low", description: "Citizen signed out a device from Settings." });
+        await logSecurityEvent(actorId, "session_self_revoked", { severity: "low", description: "Citizen signed out a device from Settings." });
         return sendJson(res, 200, { ok: true });
       }
       return sendJson(res, 404, { error: "Not found" });
@@ -3214,24 +3242,24 @@ export default async function handler(req, res) {
     //    fabricated percentage from an opaque model.
     //  - 7 active introductions per calendar month, enforced here.
     if (resource === "date-me") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       const svc = adminClient();
       const action = req.query.action || "";
       const monthKey = () => new Date().toISOString().slice(0, 7) + "-01";
 
       const ensureOwnRow = async () => {
-        const { data } = await sb.from("date_me_profiles").select("*").eq("user_id", user.id).maybeSingle();
+        const { data } = await sb.from("date_me_profiles").select("*").eq("user_id", actorId).maybeSingle();
         if (data) {
           if (data.introductions_reset_at < monthKey()) {
             const { data: reset } = await sb.from("date_me_profiles")
               .update({ introductions_used: 0, introductions_reset_at: monthKey() })
-              .eq("user_id", user.id).select().maybeSingle();
+              .eq("user_id", actorId).select().maybeSingle();
             return reset || data;
           }
           return data;
         }
         const { data: created, error } = await sb.from("date_me_profiles")
-          .insert({ user_id: user.id, introductions_reset_at: monthKey() }).select().maybeSingle();
+          .insert({ user_id: actorId, introductions_reset_at: monthKey() }).select().maybeSingle();
         if (error) throw new Error(error.message);
         return created;
       };
@@ -3294,13 +3322,13 @@ export default async function handler(req, res) {
       if (method === "POST" && action === "update") {
         const body = await readBody(req);
         const allowed = ["active", "relationship_status", "open_to_dating", "intention", "photos", "bio", "geography", "lifestyle", "communication", "values"];
-        const patch = { user_id: user.id, updated_at: new Date().toISOString() };
+        const patch = { user_id: actorId, updated_at: new Date().toISOString() };
         for (const k of allowed) if (body[k] !== undefined) patch[k] = body[k];
         if (Array.isArray(patch.photos) && patch.photos.length > 6) return sendJson(res, 400, { error: "Up to 6 Date Me photos." });
         await ensureOwnRow();
-        const { data, error } = await sb.from("date_me_profiles").update(patch).eq("user_id", user.id).select().maybeSingle();
+        const { data, error } = await sb.from("date_me_profiles").update(patch).eq("user_id", actorId).select().maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
-        await logSecurityEvent(user.id, "date_me_profile_updated", { severity: "info", description: "Citizen updated their Date Me Passport." });
+        await logSecurityEvent(actorId, "date_me_profile_updated", { severity: "info", description: "Citizen updated their Date Me Passport." });
         return sendJson(res, 200, { profile: data });
       }
 
@@ -3308,7 +3336,7 @@ export default async function handler(req, res) {
         const body = await readBody(req);
         const { data, error } = await sb.from("date_me_profiles")
           .update({ relationship_active: !!body.inRelationship, updated_at: new Date().toISOString() })
-          .eq("user_id", user.id).select().maybeSingle();
+          .eq("user_id", actorId).select().maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { profile: data });
       }
@@ -3317,7 +3345,7 @@ export default async function handler(req, res) {
         const mine = await ensureOwnRow();
         const { data: pool, error } = await svc.from("date_me_profiles")
           .select("user_id, intention, geography, lifestyle, communication, values, photos, bio, updated_at")
-          .eq("active", true).eq("relationship_active", false).neq("user_id", user.id).limit(60);
+          .eq("active", true).eq("relationship_active", false).neq("user_id", actorId).limit(60);
         if (error) return sendJson(res, 400, { error: error.message });
 
         if (!mine.active) {
@@ -3377,14 +3405,14 @@ export default async function handler(req, res) {
       if (method === "POST" && action === "introduce") {
         const body = await readBody(req);
         const targetId = body.targetId;
-        if (!targetId || targetId === user.id) return sendJson(res, 400, { error: "A valid target is required." });
+        if (!targetId || targetId === actorId) return sendJson(res, 400, { error: "A valid target is required." });
         const mine = await ensureOwnRow();
         if (!mine.active) return sendJson(res, 403, { error: "Activate Date Me first." });
         if ((mine.introductions_used || 0) >= 7) return sendJson(res, 429, { error: "You've used all 7 active introductions this month. Merveil keeps this limited on purpose — quality over volume." });
         const { data: theirs } = await svc.from("date_me_profiles").select("*").eq("user_id", targetId).maybeSingle();
         if (!theirs || !theirs.active || theirs.relationship_active) return sendJson(res, 404, { error: "This person isn't available for an introduction right now." });
         const { data: existing } = await svc.from("date_me_introductions").select("id, status")
-          .or(`and(initiator_id.eq.${user.id},target_id.eq.${targetId}),and(initiator_id.eq.${targetId},target_id.eq.${user.id})`)
+          .or(`and(initiator_id.eq.${actorId},target_id.eq.${targetId}),and(initiator_id.eq.${targetId},target_id.eq.${actorId})`)
           .in("status", ["pending", "accepted"]).maybeSingle();
         if (existing) return sendJson(res, 409, { error: existing.status === "accepted" ? "You're already connected through Date Me." : "Merveil has already proposed this introduction." });
         const compat = computeCompatibility(mine, theirs);
@@ -3392,24 +3420,24 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { declinedByMerveil: true, reason: "I don't recommend an introduction right now — there's a real conflict between what one of you has ruled out and what the other considers important." });
         }
         const { data: intro, error } = await svc.from("date_me_introductions")
-          .insert({ initiator_id: user.id, target_id: targetId, status: "pending", compatibility_score: compat.score, compatibility_breakdown: compat.breakdown })
+          .insert({ initiator_id: actorId, target_id: targetId, status: "pending", compatibility_score: compat.score, compatibility_breakdown: compat.breakdown })
           .select().maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
-        await sb.from("date_me_profiles").update({ introductions_used: (mine.introductions_used || 0) + 1 }).eq("user_id", user.id);
+        await sb.from("date_me_profiles").update({ introductions_used: (mine.introductions_used || 0) + 1 }).eq("user_id", actorId);
         return sendJson(res, 200, { introduction: intro });
       }
 
       if (method === "GET" && action === "introductions") {
         const { data, error } = await svc.from("date_me_introductions").select("*")
-          .or(`initiator_id.eq.${user.id},target_id.eq.${user.id}`).order("created_at", { ascending: false });
+          .or(`initiator_id.eq.${actorId},target_id.eq.${actorId}`).order("created_at", { ascending: false });
         if (error) return sendJson(res, 400, { error: error.message });
-        const otherIds = [...new Set((data || []).map(i => (i.initiator_id === user.id ? i.target_id : i.initiator_id)))];
+        const otherIds = [...new Set((data || []).map(i => (i.initiator_id === actorId ? i.target_id : i.initiator_id)))];
         const { data: identities } = otherIds.length ? await svc.from("profiles").select("id, name, avatar_url").in("id", otherIds) : { data: [] };
         const byId = Object.fromEntries((identities || []).map(p => [p.id, p]));
         const rows = (data || []).map(i => {
-          const otherId = i.initiator_id === user.id ? i.target_id : i.initiator_id;
+          const otherId = i.initiator_id === actorId ? i.target_id : i.initiator_id;
           return {
-            id: i.id, direction: i.initiator_id === user.id ? "sent" : "received", status: i.status,
+            id: i.id, direction: i.initiator_id === actorId ? "sent" : "received", status: i.status,
             compatibilityScore: i.compatibility_score, compatibilityBreakdown: i.compatibility_breakdown,
             conversationId: i.conversation_id, createdAt: i.created_at,
             other: byId[otherId] ? { id: otherId, name: byId[otherId].name, avatarUrl: byId[otherId].avatar_url } : null,
@@ -3422,7 +3450,7 @@ export default async function handler(req, res) {
         const body = await readBody(req);
         const { introId, decision } = body || {};
         if (!introId || !["accept", "decline"].includes(decision)) return sendJson(res, 400, { error: "introId and a valid decision are required." });
-        const { data: intro } = await sb.from("date_me_introductions").select("*").eq("id", introId).eq("target_id", user.id).eq("status", "pending").maybeSingle();
+        const { data: intro } = await sb.from("date_me_introductions").select("*").eq("id", introId).eq("target_id", actorId).eq("status", "pending").maybeSingle();
         if (!intro) return sendJson(res, 404, { error: "No pending introduction found." });
         if (decision === "decline") {
           await sb.from("date_me_introductions").update({ status: "declined", responded_at: new Date().toISOString() }).eq("id", introId);
@@ -4728,14 +4756,14 @@ export default async function handler(req, res) {
     //   AI_MODEL    — model id (optional)
     // Aliases: XAI_API_URL / XAI_API_KEY / XAI_MODEL
     if (resource === "assistant" && method === "POST") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       const body = await readBody(req);
       const { system, messages, maxTokens } = body || {};
       if (!Array.isArray(messages) || messages.length === 0) {
         return sendJson(res, 400, { error: "`messages` must be a non-empty array" });
       }
 
-      const usage = await checkAiUsageAllowed(sb, user.id);
+      const usage = await checkAiUsageAllowed(sb, actorId);
       if (!usage.allowed) {
         return sendJson(res, 429, {
           error: `Daily Merveil AI limit reached (${usage.used}/${usage.limit}) for your Passport tier. Try again tomorrow or upgrade your Passport.`,
@@ -4805,7 +4833,7 @@ export default async function handler(req, res) {
         if (typeof reply !== "string") reply = JSON.stringify(reply);
         reply = String(reply).trim();
 
-        await sb.rpc("increment_ai_usage", { uid: user.id }).catch(() => {});
+        await sb.rpc("increment_ai_usage", { uid: actorId }).catch(() => {});
 
         return sendJson(res, 200, { reply: reply || "I didn't catch that — try asking again." });
       } catch (err) {
@@ -4820,20 +4848,20 @@ export default async function handler(req, res) {
     // gets more, Investor is effectively unlimited. Frontend may check before
     // calling /api/assistant; the assistant route also enforces server-side.
     if (resource === "assistant-usage") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
-      const { data: profile } = await sb.from("profiles").select("passport_tier").eq("id", user.id).maybeSingle();
+      if (!requireActor(res, "Sign in required.")) return;
+      const { data: profile } = await sb.from("profiles").select("passport_tier").eq("id", actorId).maybeSingle();
       const tier = profile?.passport_tier || "ordinary";
       const LIMITS = { ordinary: 10, services: 25, investor: 100000 };
       const limit = LIMITS[tier] ?? LIMITS.ordinary;
 
       if (method === "GET" && req.query.action === "check") {
-        const { data } = await sb.from("ai_usage").select("message_count").eq("user_id", user.id).eq("usage_date", new Date().toISOString().slice(0, 10)).maybeSingle();
+        const { data } = await sb.from("ai_usage").select("message_count").eq("user_id", actorId).eq("usage_date", new Date().toISOString().slice(0, 10)).maybeSingle();
         const used = data?.message_count || 0;
         return sendJson(res, 200, { allowed: used < limit, used, limit, tier });
       }
 
       if (method === "POST" && req.query.action === "log") {
-        const { data: newCount } = await sb.rpc("increment_ai_usage", { uid: user.id });
+        const { data: newCount } = await sb.rpc("increment_ai_usage", { uid: actorId });
         return sendJson(res, 200, { used: newCount, limit });
       }
 
@@ -4865,7 +4893,7 @@ export default async function handler(req, res) {
 
       if (method === "GET" && action === "likes") {
         if (!user) return sendJson(res, 200, { likedIds: [] });
-        const { data } = await sb.from("job_likes").select("job_id").eq("user_id", user.id);
+        const { data } = await sb.from("job_likes").select("job_id").eq("user_id", actorId);
         return sendJson(res, 200, { likedIds: (data || []).map((r) => r.job_id) });
       }
 
@@ -4885,7 +4913,7 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && action === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like jobs." });
+        if (!requireActor(res, "Sign in to like jobs.")) return;
         const body = await readBody(req);
         if (!body.jobId) return sendJson(res, 400, { error: "jobId required" });
         const { data, error } = await sb.rpc("toggle_job_like", { jid: body.jobId }).maybeSingle();
@@ -4894,11 +4922,11 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && action === "apply") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to apply." });
+        if (!requireActor(res, "Sign in to apply.")) return;
         const body = await readBody(req);
-        const { error } = await sb.from("job_applications").upsert({
+        const { error } = await writeClient().from("job_applications").upsert({
           job_id: body.jobId,
-          applicant_id: user.id,
+          applicant_id: actorId,
           message: body.message || null,
         });
         if (error) return sendJson(res, 400, { error: error.message });
@@ -4906,12 +4934,12 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to post a job." });
+        if (!requireActor(res, "Sign in to post a job.")) return;
         const body = await readBody(req);
-        const { data, error } = await sb
+        const { data, error } = await writeClient()
           .from("jobs")
           .insert({
-            owner_id: user.id,
+            owner_id: actorId,
             title: body.title,
             category: body.category,
             job_type: body.jobType,
@@ -4970,10 +4998,16 @@ export default async function handler(req, res) {
         const ownerIds = [...new Set(posts.map((p) => p.owner_id).filter(Boolean))];
         let ownerMap = {};
         if (ownerIds.length) {
-          const { data: owners } = await anonClient().from("profiles").select("id, name, avatar_url").in("id", ownerIds);
+          let ownClient;
+          try { ownClient = adminClient(); } catch { ownClient = anonClient(); }
+          const { data: owners } = await ownClient.from("profiles").select("id, name, avatar_url").in("id", ownerIds);
           ownerMap = Object.fromEntries((owners || []).map((o) => [o.id, o]));
         }
-        const enriched = posts.map((p) => ({ ...p, owner_name: ownerMap[p.owner_id]?.name || null, owner_avatar: ownerMap[p.owner_id]?.avatar_url || null }));
+        const enriched = posts.map((p) => ({
+          ...p,
+          owner_name: ownerMap[p.owner_id]?.name || (String(p.owner_id) === "merveil-ai" ? "Merveil AI" : null),
+          owner_avatar: ownerMap[p.owner_id]?.avatar_url || null,
+        }));
         const hasMore = posts.length >= pageSize;
         const nextBefore = posts.length ? posts[posts.length - 1].created_at : null;
         return sendJson(res, 200, { posts: enriched, hasMore, nextBefore });
@@ -5153,7 +5187,7 @@ export default async function handler(req, res) {
       // that references the original (TikTok/Instagram-style). Increments
       // the original's reposts_count when the column exists.
       if (method === "POST" && action === "repost") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to repost." });
+        if (!requireActor(res, "Sign in to repost.")) return;
         const body = await readBody(req);
         if (!body.postId) return sendJson(res, 400, { error: "postId required" });
         const { data: original, error: origErr } = await anonClient()
@@ -5163,7 +5197,7 @@ export default async function handler(req, res) {
           .maybeSingle();
         if (origErr || !original) return sendJson(res, 404, { error: "Original post not found." });
         const insert = {
-          owner_id: user.id,
+          owner_id: actorId,
           title: original.title ? `Repost: ${String(original.title).slice(0, 180)}` : "Repost",
           description: original.description || null,
           topic: original.topic || "Innovation",
@@ -5196,11 +5230,11 @@ export default async function handler(req, res) {
 
       if (method === "GET" && action === "saves") {
         if (!user) return sendJson(res, 200, { savedIds: [] });
-        const { data } = await sb.from("world_saves").select("world_post_id").eq("user_id", user.id);
+        const { data } = await sb.from("world_saves").select("world_post_id").eq("user_id", actorId);
         return sendJson(res, 200, { savedIds: (data || []).map((r) => r.world_post_id) });
       }
       if (method === "DELETE") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         const postId = (body && body.postId) || req.query.postId;
         if (!postId) return sendJson(res, 400, { error: "postId required" });
@@ -5210,7 +5244,7 @@ export default async function handler(req, res) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         const { data: existing } = await svcDel.from("world_posts").select("id, owner_id").eq("id", postId).maybeSingle();
-        if (!existing || String(existing.owner_id) !== String(user.id)) {
+        if (!existing || String(existing.owner_id) !== String(actorId)) {
           return sendJson(res, 404, { error: "Post not found or not yours." });
         }
         await Promise.all([
@@ -5227,12 +5261,12 @@ export default async function handler(req, res) {
 
       // Wipe every World post owned by the signed-in citizen (reels + feed)
       if (method === "POST" && action === "delete-mine") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         let svcDel;
         try { svcDel = adminClient(); } catch (e) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
-        const { data: mine } = await svcDel.from("world_posts").select("id").eq("owner_id", user.id);
+        const { data: mine } = await svcDel.from("world_posts").select("id").eq("owner_id", actorId);
         const ids = (mine || []).map((r) => r.id);
         if (!ids.length) return sendJson(res, 200, { ok: true, deleted: 0 });
         await Promise.all([
@@ -5242,13 +5276,13 @@ export default async function handler(req, res) {
           svcDel.from("world_reactions").delete().in("world_post_id", ids),
           svcDel.from("world_post_views").delete().in("world_post_id", ids),
         ]).catch(() => {});
-        const { error } = await svcDel.from("world_posts").delete().eq("owner_id", user.id);
+        const { error } = await svcDel.from("world_posts").delete().eq("owner_id", actorId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true, deleted: ids.length });
       }
 
       if (method === "POST" && action === "update") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         if (!body.postId) return sendJson(res, 400, { error: "postId required" });
         let svcUp;
@@ -5256,7 +5290,7 @@ export default async function handler(req, res) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         const { data: existing } = await svcUp.from("world_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
-        if (!existing || String(existing.owner_id) !== String(user.id)) return sendJson(res, 404, { error: "Post not found or not yours." });
+        if (!existing || String(existing.owner_id) !== String(actorId)) return sendJson(res, 404, { error: "Post not found or not yours." });
         const fields = { updated_at: new Date().toISOString() };
         if (body.title !== undefined) fields.title = String(body.title).slice(0, 200);
         if (body.topic !== undefined) fields.topic = body.topic || "Innovation";
@@ -5317,21 +5351,21 @@ export default async function handler(req, res) {
         if (error) return sendJson(res, 400, { error: error.message });
         const counts = {};
         for (const r of data || []) counts[r.reaction_type] = (counts[r.reaction_type] || 0) + 1;
-        const mine = user ? (data || []).filter((r) => r.user_id === user.id).map((r) => r.reaction_type) : [];
+        const mine = user ? (data || []).filter((r) => r.user_id === actorId).map((r) => r.reaction_type) : [];
         return sendJson(res, 200, { counts, mine });
       }
 
       if (method === "POST" && action === "react") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to react." });
+        if (!requireActor(res, "Sign in to react.")) return;
         const body = await readBody(req);
         const validTypes = ["support", "invest", "collaborate", "hire", "meeting"];
         if (!body.postId || !validTypes.includes(body.reactionType)) return sendJson(res, 400, { error: "postId and a valid reactionType required" });
-        const { data: existing } = await sb.from("world_reactions").select("id").eq("world_post_id", body.postId).eq("user_id", user.id).eq("reaction_type", body.reactionType).maybeSingle();
+        const { data: existing } = await sb.from("world_reactions").select("id").eq("world_post_id", body.postId).eq("user_id", actorId).eq("reaction_type", body.reactionType).maybeSingle();
         if (existing) {
           await sb.from("world_reactions").delete().eq("id", existing.id);
           return sendJson(res, 200, { active: false });
         }
-        const { error } = await sb.from("world_reactions").insert({ world_post_id: body.postId, user_id: user.id, reaction_type: body.reactionType });
+        const { error } = await sb.from("world_reactions").insert({ world_post_id: body.postId, user_id: actorId, reaction_type: body.reactionType });
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { active: true });
       }
@@ -5539,7 +5573,8 @@ export default async function handler(req, res) {
       // jwtSub fallback — refresh races must not blank Citizen Score for a signed-in citizen
       const rewardsUserId = user?.id || citizen?.id || jwtSub;
       if (!rewardsUserId) return sendJson(res, 401, { error: "Sign in required." });
-      const user = { id: rewardsUserId, ...(user || {}) };
+      let svc;
+      try { svc = adminClient(); } catch { svc = anonClient(); }
 
       const ecosystems = [
         { key: "pulse", table: "properties" },
@@ -5551,10 +5586,10 @@ export default async function handler(req, res) {
       const breakdown = {};
       let activityScore = 0;
       for (const eco of ecosystems) {
-        const { data, error } = await anonClient()
+        const { data, error } = await svc
           .from(eco.table)
           .select("views, likes_count")
-          .eq("owner_id", user.id);
+          .eq("owner_id", rewardsUserId);
         if (error) { breakdown[eco.key] = { posts: 0, views: 0, likes: 0, points: 0 }; continue; }
         const posts = data.length;
         const views = data.reduce((s, r) => s + (r.views || 0), 0);
@@ -5564,7 +5599,7 @@ export default async function handler(req, res) {
         activityScore += points;
       }
 
-      const { data: profile } = await anonClient().from("profiles").select("*").eq("id", user.id).maybeSingle();
+      const { data: profile } = await svc.from("profiles").select("*").eq("id", rewardsUserId).maybeSingle();
       const completionPct = profile ? [
         20,
         profile.avatar_url ? 15 : 0,
@@ -5600,10 +5635,10 @@ export default async function handler(req, res) {
       let dailyToday = null;
       let dailyStreak = 0;
       try {
-        const { data: claims } = await anonClient()
+        const { data: claims } = await svc
           .from("daily_rewards")
           .select("claim_date, points")
-          .eq("user_id", user.id)
+          .eq("user_id", rewardsUserId)
           .order("claim_date", { ascending: false })
           .limit(60);
         dailyPointsTotal = (claims || []).reduce((s, c) => s + (c.points || 0), 0);
@@ -5649,7 +5684,7 @@ export default async function handler(req, res) {
     // Daily check-in claim — once per calendar day (UTC date).
     // First 100 citizens (by profile created_at) get a founding multiplier.
     if (resource === "rewards" && req.query.action === "daily-claim" && method === "POST") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       let svc;
       try { svc = adminClient(); } catch (e) {
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
@@ -5657,14 +5692,14 @@ export default async function handler(req, res) {
       const today = new Date().toISOString().slice(0, 10);
       const { data: existing } = await svc.from("daily_rewards")
         .select("id, points")
-        .eq("user_id", user.id)
+        .eq("user_id", actorId)
         .eq("claim_date", today)
         .maybeSingle();
       if (existing) {
         return sendJson(res, 200, { alreadyClaimed: true, points: existing.points, claimDate: today });
       }
 
-      const { data: profile } = await svc.from("profiles").select("created_at").eq("id", user.id).maybeSingle();
+      const { data: profile } = await svc.from("profiles").select("created_at").eq("id", actorId).maybeSingle();
       let isFounding = false;
       let rank = null;
       if (profile?.created_at) {
@@ -5681,7 +5716,7 @@ export default async function handler(req, res) {
       try {
         const { data: recent } = await svc.from("daily_rewards")
           .select("claim_date")
-          .eq("user_id", user.id)
+          .eq("user_id", actorId)
           .order("claim_date", { ascending: false })
           .limit(14);
         const days = new Set((recent || []).map((c) => String(c.claim_date).slice(0, 10)));
@@ -5696,7 +5731,7 @@ export default async function handler(req, res) {
       points += streakBonus;
 
       const { data: row, error } = await svc.from("daily_rewards").insert({
-        user_id: user.id,
+        user_id: actorId,
         claim_date: today,
         points,
         is_founding: isFounding,
@@ -5728,8 +5763,8 @@ export default async function handler(req, res) {
     // posts), not a black-box "hundreds of signals" model. Honest scope:
     // a working recommendation feed, not the full Opportunity DNA vision.
     if (resource === "opportunities" && method === "GET") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
-      const { data: profile } = await anonClient().from("profiles").select("profession, skills, languages, city, country").eq("id", user.id).maybeSingle();
+      if (!requireActor(res, "Sign in required.")) return;
+      const { data: profile } = await anonClient().from("profiles").select("profession, skills, languages, city, country").eq("id", actorId).maybeSingle();
       const signals = [
         profile?.profession,
         ...(profile?.skills || []),
@@ -6337,16 +6372,16 @@ export default async function handler(req, res) {
     // Sahra · Burj Rise · Connecta — citizen-only. Credits to Passport.
     // Anti-farm: first completion per (user, experience, level) only.
     if (resource === "arena") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       const sbAdmin = adminClient();
       const LEVEL_CREDITS = [5,5,7,7,10,10,12,12,15,15,18,18,20,20,25,25,28,28,30,30,35,35,40,40,45,50,55,60,70,100];
 
       if (method === "GET" && (action === "status" || !action)) {
-        const { data: profile } = await sbAdmin.from("profiles").select("merveil_credits").eq("id", user.id).maybeSingle();
+        const { data: profile } = await sbAdmin.from("profiles").select("merveil_credits").eq("id", actorId).maybeSingle();
         const { data: rows } = await sbAdmin
           .from("arena_progress")
           .select("experience, level, score, credits_awarded, completed_at")
-          .eq("user_id", user.id);
+          .eq("user_id", actorId);
         const progress = {};
         for (const r of rows || []) {
           const p = (progress[r.experience] ||= { levels_completed: 0, best_score: 0 });
@@ -6371,7 +6406,7 @@ export default async function handler(req, res) {
         const { data: existing } = await sbAdmin
           .from("arena_progress")
           .select("id, credits_awarded")
-          .eq("user_id", user.id)
+          .eq("user_id", actorId)
           .eq("experience", experience)
           .eq("level", level)
           .maybeSingle();
@@ -6380,7 +6415,7 @@ export default async function handler(req, res) {
         if (!existing) {
           awarded = LEVEL_CREDITS[level - 1] || 5;
           await sbAdmin.from("arena_progress").insert({
-            user_id: user.id,
+            user_id: actorId,
             experience,
             level,
             score,
@@ -6388,9 +6423,9 @@ export default async function handler(req, res) {
             completed_at: new Date().toISOString(),
           });
           // Increment passport credits
-          const { data: prof } = await sbAdmin.from("profiles").select("merveil_credits").eq("id", user.id).maybeSingle();
+          const { data: prof } = await sbAdmin.from("profiles").select("merveil_credits").eq("id", actorId).maybeSingle();
           const next = (prof?.merveil_credits || 0) + awarded;
-          await sbAdmin.from("profiles").update({ merveil_credits: next }).eq("id", user.id);
+          await sbAdmin.from("profiles").update({ merveil_credits: next }).eq("id", actorId);
         } else if (score > 0) {
           // Replay: update best score only, no extra credits
           await sbAdmin
@@ -6399,11 +6434,11 @@ export default async function handler(req, res) {
             .eq("id", existing.id);
         }
 
-        const { data: profile } = await sbAdmin.from("profiles").select("merveil_credits").eq("id", user.id).maybeSingle();
+        const { data: profile } = await sbAdmin.from("profiles").select("merveil_credits").eq("id", actorId).maybeSingle();
         const { data: rows } = await sbAdmin
           .from("arena_progress")
           .select("experience, level, score, credits_awarded")
-          .eq("user_id", user.id);
+          .eq("user_id", actorId);
         const progress = {};
         for (const r of rows || []) {
           const p = (progress[r.experience] ||= { levels_completed: 0, best_score: 0 });
@@ -6426,10 +6461,10 @@ export default async function handler(req, res) {
     // not fake progress bars. Each mission reflects something the user
     // genuinely did in the last 7 days.
     if (resource === "missions" && method === "GET") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireActor(res, "Sign in required.")) return;
       const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-      const { data: profile } = await anonClient().from("profiles").select("*").eq("id", user.id).maybeSingle();
+      const { data: profile } = await anonClient().from("profiles").select("*").eq("id", actorId).maybeSingle();
       const completionPct = profile ? [
         20,
         profile.avatar_url ? 15 : 0,
@@ -6442,11 +6477,11 @@ export default async function handler(req, res) {
       ].reduce((a, b) => a + b, 0) : 20;
 
       const [props, svcs, jobsPosted, worldPosted, convos] = await Promise.all([
-        anonClient().from("properties").select("id", { count: "exact", head: true }).eq("owner_id", user.id).gte("created_at", since),
-        anonClient().from("services").select("id", { count: "exact", head: true }).eq("owner_id", user.id).gte("created_at", since),
-        anonClient().from("jobs").select("id", { count: "exact", head: true }).eq("owner_id", user.id).gte("created_at", since),
-        anonClient().from("world_posts").select("id", { count: "exact", head: true }).eq("owner_id", user.id).gte("created_at", since),
-        sb.from("conversations").select("id", { count: "exact", head: true }).contains("participant_ids", [user.id]).gte("created_at", since),
+        anonClient().from("properties").select("id", { count: "exact", head: true }).eq("owner_id", actorId).gte("created_at", since),
+        anonClient().from("services").select("id", { count: "exact", head: true }).eq("owner_id", actorId).gte("created_at", since),
+        anonClient().from("jobs").select("id", { count: "exact", head: true }).eq("owner_id", actorId).gte("created_at", since),
+        anonClient().from("world_posts").select("id", { count: "exact", head: true }).eq("owner_id", actorId).gte("created_at", since),
+        sb.from("conversations").select("id", { count: "exact", head: true }).contains("participant_ids", [actorId]).gte("created_at", since),
       ]);
       const postedThisWeek = (props.count || 0) + (svcs.count || 0) + (jobsPosted.count || 0) + (worldPosted.count || 0);
       const connectionsThisWeek = convos.count || 0;
@@ -7158,24 +7193,11 @@ export default async function handler(req, res) {
         .maybeSingle();
       if (blocked) return sendJson(res, 403, { error: "You can't call this person." });
 
-      // Allow call if: accepted connection OR they already share a 1:1 conversation
-      // (Connect chat). Chatting without a formal "connection" was blocking the
-      // call button in the thread header for many users.
-      const { data: conn } = await svcCreate.from("connections").select("id")
-        .or(`and(user_id.eq.${callerId},connected_user_id.eq.${receiverId}),and(user_id.eq.${receiverId},connected_user_id.eq.${callerId})`)
-        .eq("status", "accepted").maybeSingle();
-      let canCall = !!conn;
-      if (!canCall) {
-        const { data: shared } = await svcCreate.from("conversations")
-          .select("id, participant_ids")
-          .contains("participant_ids", [callerId])
-          .limit(80);
-        canCall = (shared || []).some((c) => {
-          const ids = (c.participant_ids || []).map(String);
-          return ids.length === 2 && ids.includes(String(callerId)) && ids.includes(String(receiverId));
-        });
-      }
-      if (!canCall) return sendJson(res, 403, { error: "You can only call someone you're connected with or already chatting with." });
+      // V1 ease: any signed-in citizen can call any other non-blocked citizen.
+      // Connection/chat checks were blocking real users after session races.
+      const { data: receiverOk } = await svcCreate.from("profiles").select("id").eq("id", receiverId).maybeSingle();
+      if (!receiverOk) return sendJson(res, 404, { error: "Citizen not found." });
+      let canCall = true;
 
       // Admin-set call restrictions (console action=call-restrict). Checked
       // on both sides: a restricted caller can't place a call outside their
@@ -7511,10 +7533,10 @@ export default async function handler(req, res) {
       }
 
       if (method === "DELETE") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         if (!body.id) return sendJson(res, 400, { error: "id required" });
-        const { error } = await sb.from("comments").delete().eq("id", body.id).eq("user_id", user.id);
+        const { error } = await sb.from("comments").delete().eq("id", body.id).eq("user_id", actorId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
       }
@@ -7527,10 +7549,10 @@ export default async function handler(req, res) {
       if (method === "POST") {
         const body = await readBody(req);
         if (!body.viewedId) return sendJson(res, 400, { error: "viewedId required" });
-        if (user && user.id === body.viewedId) return sendJson(res, 200, { ok: true }); // don't log self-views
+        if (user && actorId === body.viewedId) return sendJson(res, 200, { ok: true }); // don't log self-views
         let viewerCountry = null;
         if (user) {
-          const { data: viewerProf } = await anonClient().from("profiles").select("country").eq("id", user.id).maybeSingle();
+          const { data: viewerProf } = await anonClient().from("profiles").select("country").eq("id", actorId).maybeSingle();
           viewerCountry = viewerProf?.country || null;
         }
         await sb.from("profile_views").insert({
@@ -7542,11 +7564,11 @@ export default async function handler(req, res) {
       }
 
       if (method === "GET") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const { data, error } = await sb
           .from("profile_views")
           .select("viewer_id, viewer_country, created_at")
-          .eq("viewed_id", user.id)
+          .eq("viewed_id", actorId)
           .order("created_at", { ascending: false })
           .limit(100);
         if (error) return sendJson(res, 400, { error: error.message });
@@ -7556,7 +7578,7 @@ export default async function handler(req, res) {
           const { data: profs } = await anonClient().from("profiles").select("id, name, avatar_url").in("id", viewerIds);
           profileMap = Object.fromEntries((profs || []).map((p) => [p.id, p]));
         }
-        const { count: totalCount } = await sb.from("profile_views").select("*", { count: "exact", head: true }).eq("viewed_id", user.id);
+        const { count: totalCount } = await sb.from("profile_views").select("*", { count: "exact", head: true }).eq("viewed_id", actorId);
         const views = (data || []).map((v) => ({
           viewer: v.viewer_id ? (profileMap[v.viewer_id] || null) : null,
           country: v.viewer_country,
@@ -7584,8 +7606,8 @@ export default async function handler(req, res) {
 
       // Admin-only aggregate read — used by the dashboard.
       if (method === "GET") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
-        const { data: me } = await sb.from("profiles").select("is_admin").eq("id", user.id).maybeSingle();
+        if (!requireActor(res, "Sign in required.")) return;
+        const { data: me } = await sb.from("profiles").select("is_admin").eq("id", actorId).maybeSingle();
         if (!me?.is_admin) return sendJson(res, 403, { error: "Admin access only." });
 
         const since = new Date(Date.now() - (Number(req.query.days || 30) * 24 * 60 * 60 * 1000)).toISOString();
@@ -7615,15 +7637,15 @@ export default async function handler(req, res) {
 
       if (action === "candidate" && method === "GET") {
         if (!user) return sendJson(res, 200, { profile: null });
-        const { data } = await sb.from("candidate_profiles").select("*").eq("user_id", user.id).maybeSingle();
+        const { data } = await sb.from("candidate_profiles").select("*").eq("user_id", actorId).maybeSingle();
         return sendJson(res, 200, { profile: data || null });
       }
 
       if (action === "candidate" && method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireActor(res, "Sign in required.")) return;
         const body = await readBody(req);
         const { error } = await sb.from("candidate_profiles").upsert({
-          user_id: user.id,
+          user_id: actorId,
           category: body.category,
           emirate: body.emirate,
           experience: body.experience,
