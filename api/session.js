@@ -49,8 +49,6 @@ export default async function handler(req, res) {
     }
     const session = await getSession(req, res);
     if (!session.user?.id || !session.token) return sendJson(res, 401, { error: "Authentication required" });
-    // Return only the already-verified, short-lived Supabase access token needed by
-    // the browser's Realtime WebSocket. Never return refresh tokens or service keys.
     res.setHeader("Cache-Control", "private, no-store, max-age=0");
     return sendJson(res, 200, { authenticated: true, access_token: session.token, user_id: session.user.id });
   }
@@ -86,39 +84,65 @@ export default async function handler(req, res) {
   const offset = boundedInt(req.query?.offset, 0, 0, 100000);
   const limit = boundedInt(req.query?.limit, 100, 1, 100);
 
-  const [{ data: profiles, error: profileError }, { data: connections, error: connectionError }, { data: presence, error: presenceError }, { data: conversations, error: conversationError }] = await Promise.all([
+  const { data: connections, error: connectionError } = await db.from("connections")
+    .select("user_id,connected_user_id,status,created_at")
+    .or(`user_id.eq.${userId},connected_user_id.eq.${userId}`)
+    .eq("status", "accepted");
+  if (connectionError) return sendJson(res, 500, { authenticated: true, error: "Connect unavailable" });
+
+  const connectedIds = new Set((connections || []).map(c => c.user_id === userId ? c.connected_user_id : c.user_id));
+  const connectedIdList = [...connectedIds].filter(Boolean);
+
+  // IMPORTANT: connected citizens must remain resolvable even if they turn
+  // discoverability off. Discoverability controls discovery, not an existing
+  // accepted relationship. The previous query only selected discoverable
+  // profiles, which made My Circle show connections with missing profiles.
+  const profileColumns = "id,name,avatar_url,passport_tier,role_label,profession,company_name,country,city,discoverable,suspended,kyc_status,last_seen_at";
+  const [{ data: discoverableProfiles, error: profileError }, { data: circleProfiles, error: circleProfileError }, { data: presence, error: presenceError }, { data: conversations, error: conversationError }] = await Promise.all([
     db.from("profiles")
-      .select("id,name,avatar_url,passport_tier,role_label,profession,company_name,country,city,discoverable,suspended,kyc_status,last_seen_at")
+      .select(profileColumns)
       .eq("discoverable", true).eq("suspended", false).neq("id", userId)
       .order("last_seen_at", { ascending: false, nullsFirst: false }).range(offset, offset + limit - 1),
-    db.from("connections").select("user_id,connected_user_id,status,created_at").or(`user_id.eq.${userId},connected_user_id.eq.${userId}`).eq("status", "accepted"),
+    connectedIdList.length
+      ? db.from("profiles").select(profileColumns).in("id", connectedIdList).neq("id", userId)
+      : Promise.resolve({ data: [], error: null }),
     db.from("presence").select("user_id,status,updated_at").limit(2000),
     db.from("conversations").select("id,participant_ids,context_label,created_at").contains("participant_ids", [userId]).order("created_at", { ascending: false }).limit(100),
   ]);
-  if (profileError || connectionError || presenceError || conversationError) return sendJson(res, 500, { authenticated: true, error: "Connect unavailable" });
 
-  const connectedIds = new Set((connections || []).map(c => c.user_id === userId ? c.connected_user_id : c.user_id));
-  const presenceMap = new Map((presence || []).map(p => [p.user_id, p.status]));
-  const citizens = (profiles || []).map(p => ({
-    id:p.id, name:p.name || "Merveil Citizen", avatar:p.avatar_url || null,
-    passportTier:String(p.passport_tier || "citizen").toLowerCase(),
-    role:p.role_label || p.profession || "Citizen",
-    profession:p.profession || null, companyName:p.company_name || null,
-    country:p.country || null, city:p.city || null,
-    location:[p.city,p.country].filter(Boolean).join(", "),
-    presence:presenceMap.get(p.id) || "offline", lastSeenAt:p.last_seen_at || null,
-    context:connectedIds.has(p.id)?"My Circle":"Discoverable citizen",
-    connected:connectedIds.has(p.id), verified:p.kyc_status === "verified"
-  }));
+  if (profileError || circleProfileError || presenceError || conversationError) {
+    console.error("connect-session data error", { profileError, circleProfileError, presenceError, conversationError });
+    return sendJson(res, 500, { authenticated: true, error: "Connect unavailable" });
+  }
+
+  // Union discovery results with all accepted-circle profiles, de-duplicated.
+  const mergedProfiles = new Map();
+  for (const p of (discoverableProfiles || [])) mergedProfiles.set(p.id, p);
+  for (const p of (circleProfiles || [])) mergedProfiles.set(p.id, p);
+  const presenceMap = new Map((presence || []).map(p => [p.user_id, p]));
+  const citizens = [...mergedProfiles.values()].map(p => {
+    const live = presenceMap.get(p.id);
+    return {
+      id:p.id, name:p.name || "Merveil Citizen", avatar:p.avatar_url || null,
+      passportTier:String(p.passport_tier || "citizen").toLowerCase(),
+      role:p.role_label || p.profession || "Citizen",
+      profession:p.profession || null, companyName:p.company_name || null,
+      country:p.country || null, city:p.city || null,
+      location:[p.city,p.country].filter(Boolean).join(", "),
+      presence:live?.status || "offline", lastSeenAt:live?.updated_at || p.last_seen_at || null,
+      context:connectedIds.has(p.id) ? "My Circle" : "Discoverable citizen",
+      connected:connectedIds.has(p.id), verified:p.kyc_status === "verified"
+    };
+  });
 
   const conversationIds = (conversations || []).map(c => c.id).filter(Boolean);
   let latestMessages = [];
   if (conversationIds.length) {
-    const { data } = await db.from("messages")
+    const { data, error } = await db.from("messages")
       .select("id,conversation_id,sender_id,type,body,ciphertext,created_at,read_by")
       .in("conversation_id", conversationIds)
       .order("created_at", { ascending: false }).limit(Math.min(500, conversationIds.length * 5));
-    latestMessages = data || [];
+    if (!error) latestMessages = data || [];
   }
   const latestByConversation = new Map();
   for (const m of latestMessages) if (!latestByConversation.has(m.conversation_id)) latestByConversation.set(m.conversation_id, m);
@@ -130,7 +154,7 @@ export default async function handler(req, res) {
     const last = latestByConversation.get(c.id) || null;
     return {
       conversationId:c.id, participantId:otherId, name:other?.name || "Merveil Citizen", avatar:other?.avatar || null,
-      passportTier:other?.passportTier || "citizen", presence:other ? other.presence : "offline",
+      passportTier:other?.passportTier || "citizen", presence:other?.presence || "offline",
       lastMessageAt:last?.created_at || c.created_at, lastMessageId:last?.id || null,
       lastMessagePreview:last ? (last.ciphertext ? "Encrypted message" : (last.body || "Message")) : "No messages yet",
       unread:last ? !(Array.isArray(last.read_by) && last.read_by.includes(userId)) && last.sender_id !== userId : false,
@@ -139,9 +163,9 @@ export default async function handler(req, res) {
 
   res.setHeader("Cache-Control", "private, no-store, max-age=0");
   return sendJson(res, 200, {
-    authenticated:true, citizens, circle_ids:[...connectedIds],
+    authenticated:true, citizens, circle_ids:connectedIdList,
     conversations:(conversations || []).map(c=>({id:c.id,context_label:c.context_label||null,created_at:c.created_at,participant_count:Array.isArray(c.participant_ids)?c.participant_ids.length:0})),
-    messages, offset, limit, has_more:(profiles || []).length === limit,
+    messages, offset, limit, has_more:(discoverableProfiles || []).length === limit,
     request_id:crypto.randomUUID()
   });
 }
