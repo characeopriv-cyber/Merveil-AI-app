@@ -10,12 +10,24 @@ function client() {
 }
 async function userFromRequest(req, svc) {
   const h = String(req.headers.authorization || '');
-  if (!h.startsWith('Bearer ')) return null;
-  const token = h.slice(7).trim();
-  if (!token) return null;
-  const { data, error } = await svc.auth.getUser(token);
-  if (error || !data?.user) return null;
-  return data.user;
+  if (h.startsWith('Bearer ')) {
+    const token = h.slice(7).trim();
+    if (token) {
+      const { data, error } = await svc.auth.getUser(token);
+      if (!error && data?.user) return data.user;
+    }
+  }
+  const cookie = String(req.headers.cookie || '');
+  if (cookie) {
+    try {
+      const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+      const host = String(req.headers.host || '').split(',')[0];
+      const r = await fetch(`${proto}://${host}/api/auth-session?reason=developer`, { headers:{cookie}, cache:'no-store' });
+      const body = await r.json().catch(()=>null);
+      if (r.ok && body?.authenticated && body?.user?.id) return body.user;
+    } catch {}
+  }
+  return null;
 }
 function validName(v) { return typeof v === 'string' && v.trim().length >= 1 && v.trim().length <= 80; }
 function slugify(v) { return v.toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60) || 'project'; }
