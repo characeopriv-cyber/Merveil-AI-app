@@ -18,12 +18,67 @@ const styles=`.mcon{min-height:100dvh;background:#f7f5f1;color:#18202a;font-fami
 
 export default function MerveilConnect({citizens=null,onOpenProfile=()=>{},onMessage=()=>{},onCall=()=>{},e2eeVerified=false}){
  const [tab,setTab]=useState("Citizens"),[query,setQuery]=useState(""),[list,setList]=useState(Array.isArray(citizens)?citizens.map(normalizePerson):null),[messages,setMessages]=useState([]),[offset,setOffset]=useState(0),[hasMore,setHasMore]=useState(false),[state,setState]=useState(Array.isArray(citizens)?"ready":"loading"),[notice,setNotice]=useState(""),[locale,setLocale]=useState(lang());
- const realtimeRef=useRef(null),loadingRef=useRef(false),presenceRef=useRef(new Map()),noticeTimer=useRef(null),listRef=useRef([]);
+ const realtimeRef=useRef(null),loadingRef=useRef(false),presenceRef=useRef(new Map()),noticeTimer=useRef(null),listRef=useRef([]),reloadQueuedRef=useRef(false),reloadTimerRef=useRef(null);
  useEffect(()=>{listRef.current=list||[]},[list]);
  useEffect(()=>{const update=()=>setLocale(lang());window.addEventListener("languagechange",update);const mo=new MutationObserver(update);mo.observe(document.documentElement,{attributes:true,attributeFilter:["lang","dir"]});return()=>{window.removeEventListener("languagechange",update);mo.disconnect()}},[]);
- const load=useCallback(async(nextOffset=0,append=false)=>{if(loadingRef.current)return;loadingRef.current=true;try{const r=await fetch(`/api/connect-session?offset=${nextOffset}&limit=100`,{credentials:"include",cache:"no-store",headers:{"Cache-Control":"no-cache"}});const b=await r.json().catch(()=>({}));if(!r.ok){setState(b?.error==="Authentication required"?"auth":"error");return}const incoming=Array.isArray(b.citizens)?b.citizens.map(normalizePerson):[];setList(prev=>append?[...(prev||[]),...incoming]:incoming);setMessages(Array.isArray(b.messages)?b.messages:[]);setOffset(nextOffset);setHasMore(Boolean(b.has_more));setState("ready")}catch{setState("error")}finally{loadingRef.current=false}},[]);
+ const load=useCallback(async(nextOffset=0,append=false)=>{
+  if(loadingRef.current){reloadQueuedRef.current=true;return;}
+  loadingRef.current=true;
+  try{
+   const r=await fetch(`/api/connect-session?offset=${nextOffset}&limit=100`,{credentials:"include",cache:"no-store",headers:{"Cache-Control":"no-cache"}});
+   const b=await r.json().catch(()=>({}));
+   if(!r.ok){setState(b?.error==="Authentication required"?"auth":"error");return}
+   const incoming=Array.isArray(b.citizens)?b.citizens.map(normalizePerson):[];
+   setList(prev=>append?[...(prev||[]),...incoming]:incoming);
+   setMessages(Array.isArray(b.messages)?b.messages:[]);
+   setOffset(nextOffset);setHasMore(Boolean(b.has_more));setState("ready");
+  }catch{setState("error");}
+  finally{loadingRef.current=false;if(reloadQueuedRef.current){reloadQueuedRef.current=false;setTimeout(()=>load(0,false),0)}}
+ },[]);
+ const scheduleReload=useCallback(()=>{
+  reloadQueuedRef.current=true;
+  clearTimeout(reloadTimerRef.current);
+  reloadTimerRef.current=setTimeout(()=>{reloadQueuedRef.current=false;load(0,false)},250);
+ },[load]);
  useEffect(()=>{if(!Array.isArray(citizens))load(0,false);else setList(citizens.map(normalizePerson))},[citizens,load]);
- useEffect(()=>{let alive=true;let channel=null;(async()=>{try{const r=await fetch("/api/realtime-token",{credentials:"include",cache:"no-store"}),b=await r.json().catch(()=>({}));if(!alive||!r.ok||!b.access_token)return;await supabase.realtime.setAuth(b.access_token);channel=supabase.channel(`merveil-live-${b.user_id}`);channel.on("postgres_changes",{event:"*",schema:"public",table:"messages"},payload=>{const m=payload.new||{},old=payload.old||{};if(payload.eventType==="DELETE"){setMessages(p=>p.filter(x=>x.lastMessageId!==old.id));return}setMessages(p=>{const idx=p.findIndex(x=>x.conversationId===m.conversation_id);if(idx<0){load(0,false);return p}const n=[...p];n[idx]={...n[idx],lastMessageId:m.id,lastMessageAt:m.created_at,lastMessagePreview:m.ciphertext?t("encrypted"):(m.body||t("message")),unread:m.sender_id!==b.user_id};return n.sort((a,c)=>new Date(c.lastMessageAt||0)-new Date(a.lastMessageAt||0))})});channel.on("postgres_changes",{event:"*",schema:"public",table:"conversations"},()=>load(0,false));channel.on("postgres_changes",{event:"*",schema:"public",table:"connections"},()=>load(0,false));channel.on("postgres_changes",{event:"*",schema:"public",table:"profiles"},payload=>{const p=payload.new||{};if(payload.eventType==="DELETE"){setList(x=>(x||[]).filter(c=>c.id!==payload.old?.id));return}setList(x=>{const n=normalizePerson(p),arr=x||[],i=arr.findIndex(c=>c.id===n.id);if(i<0)return arr;const out=[...arr];out[i]={...out[i],...n};return out})});channel.on("postgres_changes",{event:"*",schema:"public",table:"presence"},payload=>{const p=payload.new||{},id=p.user_id||payload.old?.user_id;if(!id)return;const next=p.status||"offline",prev=presenceRef.current.get(id);presenceRef.current.set(id,next);setList(x=>(x||[]).map(c=>c.id===id?{...c,presence:next,lastSeenAt:p.updated_at||c.lastSeenAt}:c));setMessages(x=>x.map(m=>m.participantId===id?{...m,presence:next}:m));if(prev!=="online"&&next==="online"){const person=listRef.current.find(x=>x.id===id);if(person?.connected){setNotice(`${person.name||t("citizen")} ${t("nowOnline")}`);clearTimeout(noticeTimer.current);noticeTimer.current=setTimeout(()=>setNotice(""),4500)}}});channel.subscribe(status=>{if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")setTimeout(()=>{if(alive)load(0,false)},2500)});realtimeRef.current=channel}catch{}})();return()=>{alive=false;clearTimeout(noticeTimer.current);if(channel)supabase.removeChannel(channel);realtimeRef.current=null}},[load]);
+ useEffect(()=>{
+  let alive=true;let channel=null;let retryTimer=null;
+  const connect=async()=>{
+   try{
+    const r=await fetch("/api/realtime-token",{credentials:"include",cache:"no-store",headers:{"Cache-Control":"no-cache"}}),b=await r.json().catch(()=>({}));
+    if(!alive||!r.ok||!b.access_token)return;
+    await supabase.realtime.setAuth(b.access_token);
+    channel=supabase.channel(`merveil-live-${b.user_id}-${Date.now()}`);
+    channel.on("postgres_changes",{event:"*",schema:"public",table:"messages"},()=>scheduleReload());
+    channel.on("postgres_changes",{event:"*",schema:"public",table:"conversations"},()=>scheduleReload());
+    channel.on("postgres_changes",{event:"*",schema:"public",table:"connections"},()=>scheduleReload());
+    channel.on("postgres_changes",{event:"*",schema:"public",table:"profiles"},()=>scheduleReload());
+    channel.on("postgres_changes",{event:"*",schema:"public",table:"passport_signals"},()=>scheduleReload());
+    channel.on("postgres_changes",{event:"*",schema:"public",table:"presence"},payload=>{
+      const p=payload.new||{},id=p.user_id||payload.old?.user_id;if(!id)return;
+      const next=p.status||"offline",prev=presenceRef.current.get(id);presenceRef.current.set(id,next);
+      setList(x=>(x||[]).map(c=>c.id===id?{...c,presence:next,lastSeenAt:p.updated_at||c.lastSeenAt}:c));
+      setMessages(x=>x.map(m=>m.participantId===id?{...m,presence:next}:m));
+      if(prev!=="online"&&next==="online"){
+       const person=listRef.current.find(x=>x.id===id);
+       if(person?.connected){setNotice(`${person.name||t("citizen")} ${t("nowOnline")}`);clearTimeout(noticeTimer.current);noticeTimer.current=setTimeout(()=>setNotice(""),4500)}
+      }
+    });
+    channel.subscribe(status=>{
+      if(status==="SUBSCRIBED")scheduleReload();
+      if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){
+       scheduleReload();clearTimeout(retryTimer);retryTimer=setTimeout(()=>{if(alive){if(channel)supabase.removeChannel(channel);channel=null;connect()}},2500);
+      }
+    });
+    realtimeRef.current=channel;
+   }catch{if(alive){clearTimeout(retryTimer);retryTimer=setTimeout(connect,3000)}}
+  };
+  connect();
+  const refresh=()=>load(0,false);
+  const onVisibility=()=>{if(document.visibilityState==="visible")refresh()};
+  window.addEventListener("focus",refresh);window.addEventListener("online",refresh);document.addEventListener("visibilitychange",onVisibility);
+  return()=>{alive=false;clearTimeout(noticeTimer.current);clearTimeout(retryTimer);clearTimeout(reloadTimerRef.current);window.removeEventListener("focus",refresh);window.removeEventListener("online",refresh);document.removeEventListener("visibilitychange",onVisibility);if(channel)supabase.removeChannel(channel);realtimeRef.current=null};
+ },[load,scheduleReload]);
  const filtered=useMemo(()=>{const q=query.trim().toLowerCase();return Array.isArray(list)?list.filter(p=>!q||`${p.name} ${p.role} ${p.location} ${p.profession} ${p.country}`.toLowerCase().includes(q)):[]},[list,query]);
  const visible=useMemo(()=>tab==="My Circle"?filtered.filter(p=>p.connected):filtered,[filtered,tab]);
  const groups=useMemo(()=>{const map={citizen:[],professional:[],investor:[],company:[]};for(const p of visible){const k=normalizeTier(p.passportTier);map[k==="services"?"professional":k].push(p)}Object.keys(map).forEach(k=>map[k].sort((a,b)=>(a.presence==="online"?0:a.presence==="away"?1:2)-(b.presence==="online"?0:b.presence==="away"?1:2)||new Date(b.lastSeenAt||0)-new Date(a.lastSeenAt||0)));return map},[visible]);
