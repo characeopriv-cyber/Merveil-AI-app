@@ -99,11 +99,11 @@ async function callMerveilAI({ system, messages, maxTokens = 600 }) {
 
 // Soft session keep: on 401, hit /api/auth/session once then retry the same request.
 // Stops false "Please sign in" when the access token just rotated but the citizen is still signed in.
+let _lastSessionLostAt = 0;
 async function merveilFetch(url, options = {}, { retryOn401 = true } = {}) {
   const opts = { credentials: "include", ...options };
   let res = await fetch(url, opts);
   if (retryOn401 && res.status === 401) {
-    // Soft restore: rotate cookies, then retry once.
     let restoredUser = null;
     try {
       const sess = await fetch("/api/auth/session", { credentials: "include" });
@@ -112,17 +112,27 @@ async function merveilFetch(url, options = {}, { retryOn401 = true } = {}) {
         restoredUser = body?.user || null;
         if (restoredUser?.id) {
           try {
+            localStorage.setItem("junction_user", JSON.stringify(restoredUser));
             window.dispatchEvent(new CustomEvent("merveil:session-user", { detail: restoredUser }));
           } catch {}
         }
       }
     } catch { /* ignore */ }
-    res = await fetch(url, opts);
-    // Still 401 → real session loss (not a refresh race)
-    if (res.status === 401 && !restoredUser) {
+    // Prefer local citizen over declaring session lost
+    if (!restoredUser?.id) {
       try {
-        window.dispatchEvent(new CustomEvent("merveil:session-lost"));
+        const cached = JSON.parse(localStorage.getItem("junction_user") || "null");
+        if (cached?.id) restoredUser = cached;
       } catch {}
+    }
+    res = await fetch(url, opts);
+    // Only emit session-lost at most once per 90s, and only if no local citizen
+    if (res.status === 401 && !restoredUser?.id) {
+      const now = Date.now();
+      if (now - _lastSessionLostAt > 90_000) {
+        _lastSessionLostAt = now;
+        try { window.dispatchEvent(new CustomEvent("merveil:session-lost")); } catch {}
+      }
     }
   }
   return res;
@@ -3105,6 +3115,20 @@ const UAE_REACTIONS = [
   { e: "💬", label: "Chat" }, { e: "📞", label: "Call" }, { e: "📷", label: "Camera" }, { e: "🎥", label: "Video" },
   { e: "⏰", label: "Time" }, { e: "📅", label: "Calendar" }, { e: "✈️", label: "Flight" }, { e: "🚗", label: "Car" },
   { e: "☕", label: "Coffee2" }, { e: "🍽️", label: "Dine" }, { e: "⚽", label: "Football" }, { e: "🎵", label: "Music" },
+];
+
+// Extra global emojis for the chat picker (must exist — was missing and crashed the screen)
+const GLOBAL_EXTRA_EMOJIS = [
+  { e: "🙂", label: "Smile" }, { e: "😆", label: "Happy" }, { e: "😘", label: "Kiss" }, { e: "🤩", label: "Star eyes" },
+  { e: "😏", label: "Smirk" }, { e: "😒", label: "Unamused" }, { e: "😔", label: "Sad" }, { e: "😤", label: "Huff" },
+  { e: "🤢", label: "Sick" }, { e: "🤮", label: "Puke" }, { e: "🤧", label: "Sneeze" }, { e: "🤒", label: "Ill" },
+  { e: "🫡", label: "Salute" }, { e: "🤝", label: "Shake" }, { e: "👊", label: "Fist" }, { e: "✊", label: "Raise fist" },
+  { e: "🌹", label: "Rose" }, { e: "🌸", label: "Blossom" }, { e: "🍀", label: "Clover" }, { e: "🌈", label: "Rainbow" },
+  { e: "⚡", label: "Zap" }, { e: "💡", label: "Idea" }, { e: "🔔", label: "Bell" }, { e: "📌", label: "Pin" },
+  { e: "📝", label: "Note" }, { e: "📎", label: "Clip" }, { e: "🔗", label: "Link" }, { e: "🔒", label: "Lock" },
+  { e: "📱", label: "Phone" }, { e: "💻", label: "Laptop" }, { e: "🖥️", label: "Desktop" }, { e: "⌚", label: "Watch" },
+  { e: "🍔", label: "Burger" }, { e: "🍕", label: "Pizza" }, { e: "🍰", label: "Cake" }, { e: "🥂", label: "Cheers" },
+  { e: "🌍", label: "Earth" }, { e: "🗺️", label: "Map" }, { e: "🧭", label: "Compass" }, { e: "🏗️", label: "Build" },
 ];
 
 // ---------------------------------------------------------------
@@ -10635,7 +10659,16 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           }
           if (cancelled) return;
           setThreadMessages((prev) => {
-            const locals = prev.filter((m) => String(m.id).startsWith("local-") && !msgs.some((s) => s.body === m.body && String(s.sender_id) === String(m.sender_id)));
+            // Keep optimistic local bubbles until server rows appear (stops messages vanishing)
+            const locals = prev.filter((m) => {
+              const id = String(m.id || "");
+              if (!id.startsWith("local-") && !id.startsWith("err-")) return false;
+              if (id.startsWith("err-")) return true;
+              return !msgs.some((s) =>
+                (m.body && s.body === m.body && String(s.sender_id) === String(m.sender_id))
+                || (m.media_url && s.media_url === m.media_url)
+              );
+            });
             return [...msgs, ...locals];
           });
         })
@@ -10892,8 +10925,23 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     form.append("file", file);
     form.append("folder", "chat");
     try {
+      // Soft-restore session before upload so voice/photo never forces a false logout
+      try {
+        const sess = await fetch("/api/auth/session", { credentials: "include" });
+        if (sess.ok) {
+          const body = await sess.json().catch(() => null);
+          if (body?.user?.id) {
+            try { window.dispatchEvent(new CustomEvent("merveil:session-user", { detail: body.user })); } catch {}
+          }
+        }
+      } catch {}
       const res = await fetch("/api/people?action=upload", { method: "POST", credentials: "include", body: form });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        // Do not open auth spam — keep composing; show error in-thread
+        setThreadMessages((p) => [...p, { id: `err-${Date.now()}`, sender_id: "system", type: "text", body: "Upload needs a moment — try again (session refreshing).", created_at: new Date().toISOString() }]);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || "Upload failed");
       sendMessage({ type: kind, mediaUrl: data.url, mediaMeta: { name: data.name, size: data.size, contentType: data.contentType } });
     } catch (e) {
@@ -11587,19 +11635,22 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                       </div>
                     </div>
                   )}
-                  {mine && !isAiThread && editingMessageId !== m.id && type === "text" && (
-                    <div className="relative shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setMsgMenuId(msgMenuId === m.id ? null : m.id)}
-                        className="w-6 h-6 rounded-full flex items-center justify-center"
-                        style={{ color: T.sub }}>
+                  {mine && !isAiThread && editingMessageId !== m.id && (
+                    <div className="relative shrink-0">
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setMsgMenuId(msgMenuId === m.id ? null : m.id); }}
+                        className="w-7 h-7 rounded-full flex items-center justify-center"
+                        style={{ color: T.sub, background: "rgba(18,22,28,0.06)" }}
+                        aria-label="Message options">
                         <MoreVertical size={14} />
                       </button>
                       {msgMenuId === m.id && (
-                        <div className="absolute z-20 top-7 right-0 rounded-xl overflow-hidden shadow-lg" style={{ background: "#fff", border: `1px solid ${T.line}`, minWidth: 110 }}>
-                          <button onClick={() => startEditMessage(m)} className="w-full text-left text-xs px-3 py-2 flex items-center gap-2" style={{ color: T.ink }}>
-                            <Edit3 size={12} /> Edit
-                          </button>
-                          <button onClick={() => deleteMessage(m)} className="w-full text-left text-xs px-3 py-2 flex items-center gap-2" style={{ color: "#E0554C" }}>
+                        <div className="absolute z-30 top-8 right-0 rounded-xl overflow-hidden shadow-lg" style={{ background: "#fff", border: `1px solid ${T.line}`, minWidth: 120 }}>
+                          {type === "text" && (
+                            <button type="button" onClick={() => startEditMessage(m)} className="w-full text-left text-xs px-3 py-2.5 flex items-center gap-2" style={{ color: T.ink }}>
+                              <Edit3 size={12} /> Edit
+                            </button>
+                          )}
+                          <button type="button" onClick={() => deleteMessage(m)} className="w-full text-left text-xs px-3 py-2.5 flex items-center gap-2" style={{ color: "#E0554C" }}>
                             <Trash2 size={12} /> Delete
                           </button>
                         </div>
@@ -11619,11 +11670,14 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         </div>
 
         {showEmoji && (
-          <div className="px-3 py-3 border-t shrink-0" style={{ borderColor: "rgba(18,22,28,0.1)", background: "#F7F5F1", maxHeight: 280, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-            <div className="text-[10px] font-bold uppercase tracking-[0.14em] mb-2" style={{ color: "#5C6570" }}>Emojis & reactions</div>
-            <div className="grid grid-cols-8 gap-1.5">
-              {[...UAE_REACTIONS, ...GLOBAL_EXTRA_EMOJIS].map((r, i) => (
-                <button key={(r.e || r) + (r.label || "") + i} type="button" title={r.label || ""} onClick={() => { setDraft((d) => d + (r.e || r)); setShowEmoji(false); }} className="text-[24px] h-11 flex items-center justify-center rounded-xl active:scale-95" style={{ background: "rgba(14,154,167,0.08)" }}>{r.e || r}</button>
+          <div className="px-3 py-2 border-t shrink-0" style={{ borderColor: "rgba(18,22,28,0.1)", background: "#F7F5F1", maxHeight: 168, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: "#5C6570" }}>Emojis</div>
+              <button type="button" onClick={() => setShowEmoji(false)} className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: T.sub }}>Close</button>
+            </div>
+            <div className="grid grid-cols-8 gap-1">
+              {[...(Array.isArray(UAE_REACTIONS) ? UAE_REACTIONS : []), ...(Array.isArray(GLOBAL_EXTRA_EMOJIS) ? GLOBAL_EXTRA_EMOJIS : [])].map((r, i) => (
+                <button key={(r.e || r) + (r.label || "") + i} type="button" title={r.label || ""} onClick={() => { setDraft((d) => d + (r.e || r)); setShowEmoji(false); }} className="text-[22px] h-9 flex items-center justify-center rounded-lg active:scale-95" style={{ background: "rgba(14,154,167,0.08)" }}>{r.e || r}</button>
               ))}
             </div>
           </div>
@@ -24991,7 +25045,10 @@ function AuthModal({ onClose, onAuthed }) {
             <div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: T.signal, fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div>
             <h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: T.ink, letterSpacing: "-0.02em" }}>{t("auth.enterCitizen")}</h2>
           </div>
-          <button type="button" onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.04)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Close">
+          <button type="button" onClick={() => {
+            try { sessionStorage.setItem("merveil_auth_dismissed", "1"); } catch {}
+            onClose?.();
+          }} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.04)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Close">
             <X size={16} color={T.sub} />
           </button>
         </div>
@@ -25017,6 +25074,7 @@ function AuthModal({ onClose, onAuthed }) {
           try {
             sessionStorage.setItem("junction_entered", "1");
             sessionStorage.setItem("merveil_visitor", "1");
+            sessionStorage.setItem("merveil_auth_dismissed", "1");
           } catch {}
           onClose?.();
         }} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: T.sub }}>
@@ -29339,6 +29397,10 @@ function AppInner() {
   const handleAuthed = (user) => {
     syncCurrentUser(user);
     setShowAuthModal(false);
+    try {
+      sessionStorage.removeItem("merveil_visitor");
+      sessionStorage.removeItem("merveil_auth_dismissed");
+    } catch {}
     const firstName = (user.name || "there").split(" ")[0];
     callMerveilAI({
       system: merveilVoiceSystem(user, "You are Merveil's AI concierge greeting a user who just signed into the app. Write exactly one short, warm sentence (max 18 words) welcoming them back by first name, varied in phrasing each time — never the same sentence twice. No emoji spam, at most one. Use their Passport language when appropriate."),
@@ -29429,11 +29491,20 @@ function AppInner() {
     };
     window.addEventListener("merveil:session-user", onSessionUser);
     const onSessionLost = () => {
-      // Only prompt sign-in if the user was a citizen (had local user).
-      // Pure visitors must never be forced into AuthModal by a session-lost event.
+      // Rate-limit + respect visitor dismiss. Never spam every few seconds.
       try {
+        if (sessionStorage.getItem("merveil_visitor") === "1") return;
+        if (sessionStorage.getItem("merveil_auth_dismissed") === "1") return;
+        const last = Number(sessionStorage.getItem("merveil_auth_last") || "0");
+        if (Date.now() - last < 90_000) return;
         const cached = JSON.parse(localStorage.getItem("junction_user") || "null");
-        if (cached?.id) setShowAuthModal(true);
+        // If we still have a local citizen, soft-restore instead of modal spam
+        if (cached?.id) {
+          syncCurrentUser(cached);
+          return;
+        }
+        sessionStorage.setItem("merveil_auth_last", String(Date.now()));
+        setShowAuthModal(true);
       } catch {}
     };
     window.addEventListener("merveil:session-lost", onSessionLost);
@@ -31491,7 +31562,16 @@ function AdminAlertsPanel() {
           }
           if (cancelled) return;
           setThreadMessages((prev) => {
-            const locals = prev.filter((m) => String(m.id).startsWith("local-") && !msgs.some((s) => s.body === m.body && String(s.sender_id) === String(m.sender_id)));
+            // Keep optimistic local bubbles until server rows appear (stops messages vanishing)
+            const locals = prev.filter((m) => {
+              const id = String(m.id || "");
+              if (!id.startsWith("local-") && !id.startsWith("err-")) return false;
+              if (id.startsWith("err-")) return true;
+              return !msgs.some((s) =>
+                (m.body && s.body === m.body && String(s.sender_id) === String(m.sender_id))
+                || (m.media_url && s.media_url === m.media_url)
+              );
+            });
             return [...msgs, ...locals];
           });
         })
@@ -31748,8 +31828,23 @@ function AdminAlertsPanel() {
     form.append("file", file);
     form.append("folder", "chat");
     try {
+      // Soft-restore session before upload so voice/photo never forces a false logout
+      try {
+        const sess = await fetch("/api/auth/session", { credentials: "include" });
+        if (sess.ok) {
+          const body = await sess.json().catch(() => null);
+          if (body?.user?.id) {
+            try { window.dispatchEvent(new CustomEvent("merveil:session-user", { detail: body.user })); } catch {}
+          }
+        }
+      } catch {}
       const res = await fetch("/api/people?action=upload", { method: "POST", credentials: "include", body: form });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        // Do not open auth spam — keep composing; show error in-thread
+        setThreadMessages((p) => [...p, { id: `err-${Date.now()}`, sender_id: "system", type: "text", body: "Upload needs a moment — try again (session refreshing).", created_at: new Date().toISOString() }]);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || "Upload failed");
       sendMessage({ type: kind, mediaUrl: data.url, mediaMeta: { name: data.name, size: data.size, contentType: data.contentType } });
     } catch (e) {
@@ -32443,19 +32538,22 @@ function AdminAlertsPanel() {
                       </div>
                     </div>
                   )}
-                  {mine && !isAiThread && editingMessageId !== m.id && type === "text" && (
-                    <div className="relative shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setMsgMenuId(msgMenuId === m.id ? null : m.id)}
-                        className="w-6 h-6 rounded-full flex items-center justify-center"
-                        style={{ color: T.sub }}>
+                  {mine && !isAiThread && editingMessageId !== m.id && (
+                    <div className="relative shrink-0">
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setMsgMenuId(msgMenuId === m.id ? null : m.id); }}
+                        className="w-7 h-7 rounded-full flex items-center justify-center"
+                        style={{ color: T.sub, background: "rgba(18,22,28,0.06)" }}
+                        aria-label="Message options">
                         <MoreVertical size={14} />
                       </button>
                       {msgMenuId === m.id && (
-                        <div className="absolute z-20 top-7 right-0 rounded-xl overflow-hidden shadow-lg" style={{ background: "#fff", border: `1px solid ${T.line}`, minWidth: 110 }}>
-                          <button onClick={() => startEditMessage(m)} className="w-full text-left text-xs px-3 py-2 flex items-center gap-2" style={{ color: T.ink }}>
-                            <Edit3 size={12} /> Edit
-                          </button>
-                          <button onClick={() => deleteMessage(m)} className="w-full text-left text-xs px-3 py-2 flex items-center gap-2" style={{ color: "#E0554C" }}>
+                        <div className="absolute z-30 top-8 right-0 rounded-xl overflow-hidden shadow-lg" style={{ background: "#fff", border: `1px solid ${T.line}`, minWidth: 120 }}>
+                          {type === "text" && (
+                            <button type="button" onClick={() => startEditMessage(m)} className="w-full text-left text-xs px-3 py-2.5 flex items-center gap-2" style={{ color: T.ink }}>
+                              <Edit3 size={12} /> Edit
+                            </button>
+                          )}
+                          <button type="button" onClick={() => deleteMessage(m)} className="w-full text-left text-xs px-3 py-2.5 flex items-center gap-2" style={{ color: "#E0554C" }}>
                             <Trash2 size={12} /> Delete
                           </button>
                         </div>
@@ -32475,11 +32573,14 @@ function AdminAlertsPanel() {
         </div>
 
         {showEmoji && (
-          <div className="px-3 py-3 border-t shrink-0" style={{ borderColor: "rgba(18,22,28,0.1)", background: "#F7F5F1", maxHeight: 280, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-            <div className="text-[10px] font-bold uppercase tracking-[0.14em] mb-2" style={{ color: "#5C6570" }}>Emojis & reactions</div>
-            <div className="grid grid-cols-8 gap-1.5">
-              {[...UAE_REACTIONS, ...GLOBAL_EXTRA_EMOJIS].map((r, i) => (
-                <button key={(r.e || r) + (r.label || "") + i} type="button" title={r.label || ""} onClick={() => { setDraft((d) => d + (r.e || r)); setShowEmoji(false); }} className="text-[24px] h-11 flex items-center justify-center rounded-xl active:scale-95" style={{ background: "rgba(14,154,167,0.08)" }}>{r.e || r}</button>
+          <div className="px-3 py-2 border-t shrink-0" style={{ borderColor: "rgba(18,22,28,0.1)", background: "#F7F5F1", maxHeight: 168, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: "#5C6570" }}>Emojis</div>
+              <button type="button" onClick={() => setShowEmoji(false)} className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: T.sub }}>Close</button>
+            </div>
+            <div className="grid grid-cols-8 gap-1">
+              {[...(Array.isArray(UAE_REACTIONS) ? UAE_REACTIONS : []), ...(Array.isArray(GLOBAL_EXTRA_EMOJIS) ? GLOBAL_EXTRA_EMOJIS : [])].map((r, i) => (
+                <button key={(r.e || r) + (r.label || "") + i} type="button" title={r.label || ""} onClick={() => { setDraft((d) => d + (r.e || r)); setShowEmoji(false); }} className="text-[22px] h-9 flex items-center justify-center rounded-lg active:scale-95" style={{ background: "rgba(14,154,167,0.08)" }}>{r.e || r}</button>
               ))}
             </div>
           </div>
