@@ -1,0 +1,38 @@
+name: Apply call auth fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-call-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Patch call authentication regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('api/router.js')
+          s = p.read_text(encoding='utf-8')
+          old = '''if (resource === "calls" && action === "create" && method === "POST") {\n  // actorId = user || jwtSub — simplest path: any signed-in citizen can call.\n  if (!requireActor(res, "Sign in required.")) return;\n  const callerId = actorId;'''
+          new = '''if (resource === "calls" && action === "create" && method === "POST") {\n  // Keep the established signed-in citizen session path; no second auth prompt.\n  if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });\n  const callerId = citizen.id;'''
+          if old not in s:
+              raise SystemExit('CALL_AUTH_BLOCK_NOT_FOUND')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          print('CALL_AUTH_FIXED')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name 'Merveil CI'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/router.js
+          git commit -m 'fix(calls): restore signed-in session authentication' || exit 0
+          git push
