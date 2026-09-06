@@ -9882,16 +9882,30 @@ async function initiateCitizenCall(user, mode) {
     return { res, data };
   };
   try {
-    // Restore session quietly, then create. One automatic retry on auth race.
-    try { await fetch("/api/auth/session", { credentials: "include" }); } catch {}
+    // Hard session restore before create (handles refresh races + cookie lag).
+    try {
+      const sess = await fetch("/api/auth/session", { credentials: "include", cache: "no-store" });
+      if (sess.ok) {
+        const body = await sess.json().catch(() => null);
+        if (body?.user?.id) {
+          try { window.dispatchEvent(new CustomEvent("merveil:session-user", { detail: body.user })); } catch {}
+        }
+      }
+    } catch {}
     let { res, data } = await tryCreate();
-    if (!res.ok && /sign in|auth|session/i.test(String(data?.error || ""))) {
-      try { await fetch("/api/auth/session", { credentials: "include" }); } catch {}
-      await new Promise((r) => setTimeout(r, 400));
+    if (!res.ok && /sign in|auth|session|authentication/i.test(String(data?.error || ""))) {
+      try {
+        await fetch("/api/auth/session", { credentials: "include", cache: "no-store" });
+      } catch {}
+      await new Promise((r) => setTimeout(r, 500));
       ({ res, data } = await tryCreate());
     }
     if (!res.ok) {
-      alert(data?.error || "Couldn't start the call. Check your connection and try again.");
+      const raw = String(data?.error || "");
+      const friendly = /sign in|auth|session|authentication/i.test(raw)
+        ? "Session expired — open Passport or pull to refresh, then try the call again."
+        : (raw || "Couldn't start the call. Check your connection and try again.");
+      alert(friendly);
       return;
     }
     if (!data?.call?.id) {
@@ -11460,7 +11474,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           </div>
         )}
         {!isAiThread && (
-          <div className="px-3 pt-2 pb-1 flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          <div className="px-3 pt-2 pb-1 flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
             {[
               { label: "Summarize", prompt: "Summarize this conversation briefly." },
               { label: "Translate", prompt: "Translate my next message to English and Arabic." },
@@ -11475,26 +11489,37 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                   setDraft((d) => d || "");
                 }}
                 className="text-[11px] font-bold px-3 py-1.5 rounded-full shrink-0"
-                style={{ background: "#FFFFFF", color: "#0A5F68", border: "1px solid rgba(14,154,167,0.55)", boxShadow: "0 1px 4px rgba(14,154,167,0.15)" }}
+                style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff", border: "none", boxShadow: "0 2px 8px rgba(14,154,167,0.28)" }}
               >
                 ✦ {chip.label}
               </button>
             ))}
           </div>
         )}
-        <div className="px-3 py-3 border-t flex items-center gap-2" style={{ borderColor: T.line, background: "#F7F5F1", minHeight: 64 }}>
-          <button type="button" onClick={() => setShowEmoji((s) => !s)} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: showEmoji ? "rgba(14,154,167,0.15)" : "#fff", border: `1px solid ${T.line}` }} title="Emojis" aria-label="Emojis">
-            <span className="text-xl leading-none">😊</span>
+        <div
+          className="px-2 py-2 border-t flex items-center gap-1.5"
+          style={{
+            borderColor: T.line,
+            background: "#F7F5F1",
+            minHeight: 60,
+            paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+            position: "sticky",
+            bottom: 0,
+            zIndex: 20,
+          }}
+        >
+          <button type="button" onClick={() => setShowEmoji((s) => !s)} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: showEmoji ? "rgba(14,154,167,0.15)" : "#fff", border: `1px solid ${T.line}` }} title="Emojis" aria-label="Emojis">
+            <span className="text-lg leading-none">😊</span>
           </button>
           {!isAiThread && (
             <>
               <input ref={fileInputRef} type="file" className="hidden" accept="image/*,video/*,application/pdf"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAndSend(f, f.type.startsWith("image/") ? "image" : f.type.startsWith("video/") ? "video" : "file"); e.target.value = ""; }} />
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: "#fff", border: `1px solid ${T.line}` }} title="Attach photo, video, or file" aria-label="Attach">
-                <Upload size={17} style={{ color: T.ink }} />
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "#fff", border: `1px solid ${T.line}` }} title="Attach photo, video, or file" aria-label="Attach">
+                <Upload size={16} style={{ color: T.ink }} />
               </button>
-              <button onClick={recording ? stopRecording : startRecording} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: recording ? "#E0554C" : "#fff", border: `1px solid ${recording ? "#E0554C" : T.line}` }} title="Voice message">
-                {recording ? <MicOff size={15} color="#fff" /> : <Mic size={15} style={{ color: "#0E9AA7" }} />}
+              <button type="button" onClick={recording ? stopRecording : startRecording} className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: recording ? "#E0554C" : "#fff", border: `1px solid ${recording ? "#E0554C" : T.line}` }} title="Voice message" aria-label="Voice message">
+                {recording ? <MicOff size={14} color="#fff" /> : <Mic size={14} style={{ color: "#0E9AA7" }} />}
               </button>
             </>
           )}
@@ -11502,12 +11527,19 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && (isAiThread ? sendToAi() : send())}
-            placeholder={isOnline ? "Type a message…" : "Offline — message will send when reconnected…"}
+            placeholder={isOnline ? "Type a message…" : "Offline — will send when back…"}
             disabled={sending}
-            className="flex-1 text-[14px] px-3.5 py-2.5 rounded-full border outline-none min-h-[44px] text-[15px]"
+            className="flex-1 min-w-0 text-[14px] px-3 py-2.5 rounded-full border outline-none min-h-[42px]"
             style={{ borderColor: T.line, background: "#fff", color: T.ink }}
           />
-          <button type="button" onClick={isAiThread ? sendToAi : send} disabled={sending} className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(145deg,#0E9AA7,#06B6D4)", opacity: sending ? 0.6 : 1, boxShadow: "0 4px 14px rgba(6,182,212,0.35)" }} aria-label="Send message">
+          <button
+            type="button"
+            onClick={isAiThread ? sendToAi : send}
+            disabled={sending}
+            className="w-11 h-11 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: "linear-gradient(145deg,#0E9AA7,#06B6D4)", opacity: sending ? 0.6 : 1, boxShadow: "0 4px 14px rgba(6,182,212,0.35)" }}
+            aria-label="Send message"
+          >
             <Send size={16} color="#fff" />
           </button>
         </div>
@@ -23227,26 +23259,26 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
                 </div>
               ))}
             </div>
-            <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <div className="rounded-2xl p-4" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.12)" }}>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold" style={{ color: "#D1D5DB" }}>Reward journey</span>
-                <span className="text-[10px]" style={{ color: "#9CA3AF" }}>{totalViews.toLocaleString()} / {nextMilestone.views.toLocaleString()}</span>
+                <span className="text-[11px] font-bold" style={{ color: "#252321" }}>Reward journey</span>
+                <span className="text-[10px]" style={{ color: "#5C5346" }}>{totalViews.toLocaleString()} / {nextMilestone.views.toLocaleString()}</span>
               </div>
-              <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: "rgba(255,255,255,0.1)" }}>
-                <div className="h-full rounded-full" style={{ width: `${progressPct}%`, background: "linear-gradient(90deg,#06B6D4,#A78BFA)" }} />
+              <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: "rgba(37,35,33,0.12)" }}>
+                <div className="h-full rounded-full" style={{ width: `${progressPct}%`, background: "linear-gradient(90deg,#0E9AA7,#7C3AED)" }} />
               </div>
-              <div className="text-xs" style={{ color: "#E5E7EB" }}>
+              <div className="text-xs" style={{ color: "#252321" }}>
                 Next: <span className="font-semibold">{nextMilestone.label}</span> at {nextMilestone.views.toLocaleString()} valid views
               </div>
-              <p className="text-[10px] mt-2" style={{ color: "#6B7280" }}>
+              <p className="text-[10px] mt-2" style={{ color: "#5C5346" }}>
                 Only legitimate activity counts. Bots and artificial engagement do not unlock rewards.
               </p>
             </div>
-            <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.04)" }}>
-              <div className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: "#9CA3AF" }}>Ecosystems</div>
-              <div className="text-xs space-y-2" style={{ color: "#D1D5DB" }}>
-                <div><span className="font-semibold text-cyan-400">World Reels</span> — global discovery. “What should I discover next?”</div>
-                <div><span className="font-semibold text-sky-300">Pulse Reels</span> — real estate only. “What is happening now in real estate?”</div>
+            <div className="rounded-2xl p-4" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.12)" }}>
+              <div className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: "#5C5346" }}>Ecosystems</div>
+              <div className="text-xs space-y-2" style={{ color: "#252321" }}>
+                <div><span className="font-semibold" style={{ color: "#0E9AA7" }}>World Reels</span> — global discovery. “What should I discover next?”</div>
+                <div><span className="font-semibold" style={{ color: "#0A7A85" }}>Pulse Reels</span> — real estate only. “What is happening now in real estate?”</div>
               </div>
             </div>
           </div>
@@ -23254,30 +23286,34 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
 
         {tab === "content" && (
           <div className="space-y-2">
-            <p className="text-[11px] mb-2" style={{ color: "#9CA3AF" }}>Published World reels · performance is quality + relevance, not volume alone.</p>
-            {dashLoading && <div className="text-[11px] flex items-center gap-2" style={{ color: "#6B7280" }}><Loader2 size={12} className="animate-spin" /> Loading studio…</div>}
+            <p className="text-[11px] mb-2" style={{ color: "#5C5346" }}>Published World reels · performance is quality + relevance, not volume alone.</p>
+            {dashLoading && <div className="text-[11px] flex items-center gap-2" style={{ color: "#5C5346" }}><Loader2 size={12} className="animate-spin" /> Loading studio…</div>}
             {contentList.length === 0 ? (
-              <div className="text-xs text-center py-10" style={{ color: "#6B7280" }}>No published reels yet.</div>
+              <div className="text-xs text-center py-10" style={{ color: "#5C5346" }}>No published reels yet.</div>
             ) : (
               contentList.slice(0, 40).map((p) => {
                 const v = Number(p.views) || Number(p.valid_views) || Number(p.views_count) || 0;
                 const next = milestones.find((m) => v < m.views);
                 return (
-                  <div key={p.id} className="rounded-xl p-3 flex gap-3" style={{ background: "rgba(255,255,255,0.05)" }}>
-                    <div className="w-12 h-16 rounded-lg overflow-hidden bg-black shrink-0">
-                      {p.photo_url || p.cover_url ? <img src={p.photo_url || p.cover_url} alt="" className="w-full h-full object-cover" /> : null}
+                  <div key={p.id} className="rounded-xl p-3 flex gap-3" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.1)" }}>
+                    <div className="w-12 h-16 rounded-lg overflow-hidden shrink-0" style={{ background: "#EAE4DB" }}>
+                      {p.photo_url || p.cover_url || p.video_url ? (
+                        <img src={p.photo_url || p.cover_url || p.video_url} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] font-bold" style={{ color: "#0E9AA7" }}>REEL</div>
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-semibold truncate">{p.title || "Untitled reel"}</div>
-                      <div className="text-[10px] mt-0.5" style={{ color: "#9CA3AF" }}>
+                      <div className="text-xs font-semibold truncate" style={{ color: "#252321" }}>{p.title || "Untitled reel"}</div>
+                      <div className="text-[10px] mt-0.5" style={{ color: "#5C5346" }}>
                         {v.toLocaleString()} views · {Number(p.likes_count || 0).toLocaleString()} likes · {Number(p.super_count || 0).toLocaleString()} super
                       </div>
                       {next && (
-                        <div className="text-[10px] mt-1" style={{ color: "#7DD3FC" }}>
+                        <div className="text-[10px] mt-1" style={{ color: "#0E9AA7" }}>
                           Next reward at {next.views.toLocaleString()}: {next.label}
                         </div>
                       )}
-                      <div className="text-[9px] mt-1 uppercase tracking-wide" style={{ color: "#6B7280" }}>
+                      <div className="text-[9px] mt-1 uppercase tracking-wide" style={{ color: "#8B847B" }}>
                         {p.distribution_status || "testing"} · {p.monetization_eligible === false ? "not eligible" : "eligible"}
                       </div>
                     </div>
@@ -23297,31 +23333,31 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
                 ["Merveil Points", String(Number(wallet.points_balance || 0))],
                 ["Rewards unlocked", String(rewards.length)],
               ].map(([label, val]) => (
-                <div key={label} className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.05)" }}>
-                  <div className="text-[10px]" style={{ color: "#9CA3AF" }}>{label}</div>
-                  <div className="text-sm font-bold mt-1">{val}</div>
+                <div key={label} className="rounded-xl p-3" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.1)" }}>
+                  <div className="text-[10px]" style={{ color: "#5C5346" }}>{label}</div>
+                  <div className="text-sm font-bold mt-1" style={{ color: "#252321" }}>{val}</div>
                 </div>
               ))}
             </div>
             {rewards.length > 0 && (
-              <div className="rounded-xl p-3 space-y-2" style={{ background: "rgba(255,255,255,0.04)" }}>
-                <div className="text-[10px] font-bold uppercase" style={{ color: "#9CA3AF" }}>Your rewards</div>
+              <div className="rounded-xl p-3 space-y-2" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.1)" }}>
+                <div className="text-[10px] font-bold uppercase" style={{ color: "#5C5346" }}>Your rewards</div>
                 {rewards.slice(0, 12).map((r) => (
-                  <div key={r.id} className="flex justify-between text-[11px] gap-2" style={{ color: "#E5E7EB" }}>
+                  <div key={r.id} className="flex justify-between text-[11px] gap-2" style={{ color: "#252321" }}>
                     <span className="truncate">{r.title}{r.partner_name ? ` · ${r.partner_name}` : ""}</span>
-                    <span style={{ color: "#9CA3AF" }}>{r.status}</span>
+                    <span style={{ color: "#5C5346" }}>{r.status}</span>
                   </div>
                 ))}
               </div>
             )}
-            <p className="text-[11px] leading-relaxed" style={{ color: "#9CA3AF" }}>
+            <p className="text-[11px] leading-relaxed" style={{ color: "#5C5346" }}>
               Reward Wallet connects performance to real-world value: cash, points, partner gift cards, products, restaurants, hotels, and services.
               {dashLoading ? " Loading live balances…" : " Balances from Creator Studio API."}
             </p>
-            <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.04)" }}>
-              <div className="text-[10px] font-bold uppercase mb-2" style={{ color: "#9CA3AF" }}>Milestone ladder</div>
+            <div className="rounded-xl p-3" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.1)" }}>
+              <div className="text-[10px] font-bold uppercase mb-2" style={{ color: "#5C5346" }}>Milestone ladder</div>
               {milestones.map((m) => (
-                <div key={m.level} className="flex justify-between text-[11px] py-1.5 border-b" style={{ borderColor: "rgba(255,255,255,0.06)", color: totalViews >= m.views ? "#34D399" : "#D1D5DB" }}>
+                <div key={m.level} className="flex justify-between text-[11px] py-1.5 border-b" style={{ borderColor: "rgba(37,35,33,0.08)", color: totalViews >= m.views ? "#3F8064" : "#252321" }}>
                   <span>L{m.level} · {m.views.toLocaleString()} views</span>
                   <span>{m.label}</span>
                 </div>
@@ -23332,22 +23368,22 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
 
         {tab === "partners" && (
           <div className="space-y-3">
-            <p className="text-xs leading-relaxed" style={{ color: "#D1D5DB" }}>
+            <p className="text-xs leading-relaxed" style={{ color: "#252321" }}>
               Brands provide real rewards. Merveil provides creator visibility, discovery, and measurable performance.
             </p>
             {campaigns.length === 0 ? (
-              <div className="rounded-2xl p-4 text-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px dashed rgba(255,255,255,0.15)" }}>
-                <div className="text-sm font-semibold mb-1">Partner opportunities</div>
-                <div className="text-[11px]" style={{ color: "#9CA3AF" }}>
+              <div className="rounded-2xl p-4 text-center" style={{ background: "#F7F5F1", border: "1px dashed rgba(37,35,33,0.2)" }}>
+                <div className="text-sm font-semibold mb-1" style={{ color: "#252321" }}>Partner opportunities</div>
+                <div className="text-[11px]" style={{ color: "#5C5346" }}>
                   Active campaigns will appear here after partners are added in `partner_campaigns`.
                 </div>
               </div>
             ) : (
               campaigns.map((c) => (
-                <div key={c.id} className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.05)" }}>
-                  <div className="text-xs font-bold">{c.title}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "#9CA3AF" }}>{c.partner_name} · {c.ecosystem || "world"}</div>
-                  <div className="text-[11px] mt-1" style={{ color: "#E5E7EB" }}>
+                <div key={c.id} className="rounded-xl p-3" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.1)" }}>
+                  <div className="text-xs font-bold" style={{ color: "#252321" }}>{c.title}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "#5C5346" }}>{c.partner_name} · {c.ecosystem || "world"}</div>
+                  <div className="text-[11px] mt-1" style={{ color: "#252321" }}>
                     {Number(c.threshold_valid_views || 0).toLocaleString()} valid views → {c.reward_title || c.reward_kind}
                   </div>
                 </div>
@@ -23357,19 +23393,19 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
         )}
 
         {tab === "settings" && (
-          <div className="space-y-3 text-xs" style={{ color: "#D1D5DB" }}>
-            <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.05)" }}>
+          <div className="space-y-3 text-xs" style={{ color: "#252321" }}>
+            <div className="rounded-xl p-3" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.1)" }}>
               <div className="font-bold mb-1">Creator profile</div>
-              <p style={{ color: "#9CA3AF" }}>Name, bio, category, cover, and page presentation are managed in Creator Studio — not inside Passport.</p>
-              <p className="mt-2" style={{ color: "#6B7280" }}>Signed in as {currentUser?.name || currentUser?.email || "citizen"}.</p>
+              <p style={{ color: "#5C5346" }}>Name, bio, category, cover, and page presentation are managed in Creator Studio — not inside Passport.</p>
+              <p className="mt-2" style={{ color: "#8B847B" }}>Signed in as {currentUser?.name || currentUser?.email || "citizen"}.</p>
             </div>
-            <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <div className="rounded-xl p-3" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.1)" }}>
               <div className="font-bold mb-1">Passport stays separate</div>
-              <p style={{ color: "#9CA3AF" }}>Passport answers “Who are you?” (identity, verification, trust). Studio answers “What do you create?”</p>
+              <p style={{ color: "#5C5346" }}>Passport answers “Who are you?” (identity, verification, trust). Studio answers “What do you create?”</p>
             </div>
-            <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <div className="rounded-xl p-3" style={{ background: "#F7F5F1", border: "1px solid rgba(37,35,33,0.1)" }}>
               <div className="font-bold mb-1">No ranking manipulation</div>
-              <p style={{ color: "#9CA3AF" }}>Insights are available. Creators cannot buy organic ranking or force distribution.</p>
+              <p style={{ color: "#5C5346" }}>Insights are available. Creators cannot buy organic ranking or force distribution.</p>
             </div>
           </div>
         )}
@@ -23710,16 +23746,16 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         <button key={f} type="button" onClick={() => setFeeling(f)}
                           className="text-[10px] font-semibold px-2 py-1 rounded-full"
                           style={{
-                            background: feeling === f ? "rgba(6,182,212,0.35)" : "rgba(255,255,255,0.08)",
-                            color: "#fff",
-                            border: feeling === f ? "1px solid #06B6D4" : "1px solid transparent",
+                            background: feeling === f ? "rgba(14,154,167,0.2)" : "#F7F5F1",
+                            color: feeling === f ? "#0A5F68" : "#252321",
+                            border: feeling === f ? "1px solid #0E9AA7" : "1px solid #C4BAAC",
                           }}>{f}</button>
                       ))}
                     </div>
                     <input value={thought} onChange={(e) => setThought(e.target.value.slice(0, 120))}
                       placeholder="My thought — e.g. Building something meaningful today."
-                      className="w-full text-xs px-2.5 py-2 rounded-xl outline-none bg-transparent"
-                      style={{ border: "1px solid rgba(255,255,255,0.12)", color: "#fff" }} />
+                      className="w-full text-xs px-2.5 py-2 rounded-xl outline-none"
+                      style={{ border: "1px solid #C4BAAC", color: "#12161C", background: "#F7F5F1" }} />
                     <button type="button" disabled={savingMood}
                       onClick={async () => {
                         setSavingMood(true);
@@ -23734,15 +23770,15 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         setSavingMood(false);
                       }}
                       className="mt-2 text-[10px] font-bold px-3 py-1.5 rounded-full"
-                      style={{ background: "#06B6D4", color: "#fff", opacity: savingMood ? 0.7 : 1 }}>
+                      style={{ background: "#0E9AA7", color: "#fff", opacity: savingMood ? 0.7 : 1 }}>
                       {savingMood ? "Saving…" : "Save expression"}
                     </button>
                   </>
                 ) : (
-                  <div className="text-xs" style={{ color: "#E5E7EB" }}>
+                  <div className="text-xs" style={{ color: "#12161C" }}>
                     {feeling && <span className="font-semibold">{feeling}</span>}
                     {feeling && thought ? " · " : null}
-                    {thought && <span style={{ color: "#B8C2D0" }}>{thought}</span>}
+                    {thought && <span style={{ color: "#625D56" }}>{thought}</span>}
                   </div>
                 )}
               </div>
@@ -23767,26 +23803,26 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
 
             {/* Visitors list (self only) */}
             {isSelf && showVisitors && (
-              <div className="mt-3 w-full max-w-sm rounded-2xl overflow-hidden text-left" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <div className="px-3 py-2 flex items-center justify-between border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
-                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#9CA3AF" }}>
+              <div className="mt-3 w-full max-w-sm rounded-2xl overflow-hidden text-left" style={{ background: "#F7F5F1", border: "1px solid #C4BAAC" }}>
+                <div className="px-3 py-2 flex items-center justify-between border-b" style={{ borderColor: "#C4BAAC" }}>
+                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#625D56" }}>
                     Profile visitors · {visitors.totalCount || 0}
                   </span>
-                  <button type="button" onClick={() => setShowVisitors(false)} className="text-[10px]" style={{ color: "#6B7280" }}>Close</button>
+                  <button type="button" onClick={() => setShowVisitors(false)} className="text-[10px]" style={{ color: "#0E9AA7" }}>Close</button>
                 </div>
                 <div className="max-h-48 overflow-y-auto">
                   {(visitors.views || []).length === 0 ? (
-                    <div className="px-3 py-4 text-xs text-center" style={{ color: "#6B7280" }}>No visitors yet — share your reels.</div>
+                    <div className="px-3 py-4 text-xs text-center" style={{ color: "#625D56" }}>No visitors yet — share your reels.</div>
                   ) : (
                     (visitors.views || []).slice(0, 40).map((v, i) => {
                       const name = v.viewer?.name || (v.viewer ? "Citizen" : "Anonymous");
                       const when = v.createdAt ? new Date(v.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
                       return (
-                        <div key={i} className="flex items-center gap-2.5 px-3 py-2 border-b" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+                        <div key={i} className="flex items-center gap-2.5 px-3 py-2 border-b" style={{ borderColor: "rgba(37,35,33,0.08)" }}>
                           <Avatar name={name} src={v.viewer?.avatar_url} size={32} />
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-semibold text-white truncate">{name}</div>
-                            <div className="text-[10px]" style={{ color: "#6B7280" }}>{[v.country, when].filter(Boolean).join(" · ")}</div>
+                            <div className="text-xs font-semibold truncate" style={{ color: "#12161C" }}>{name}</div>
+                            <div className="text-[10px]" style={{ color: "#625D56" }}>{[v.country, when].filter(Boolean).join(" · ")}</div>
                           </div>
                         </div>
                       );
@@ -23849,10 +23885,11 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               <div className="grid grid-cols-3 gap-3">
                 {worldPosts.map((p) => (
                   <button key={p.id} type="button" onClick={() => onPlayPost?.(p)}
-                    className="relative overflow-hidden bg-black group text-left aspect-square"
+                    className="relative overflow-hidden group text-left aspect-square"
                     style={{
                       borderRadius: "50%",
-                      boxShadow: "0 0 0 2px rgba(6,182,212,0.45), 0 6px 20px rgba(0,0,0,0.4)",
+                      background: "linear-gradient(160deg,#1F2937 0%,#0E9AA7 55%,#7C3AED 100%)",
+                      boxShadow: "0 0 0 2px rgba(14,154,167,0.55), 0 6px 20px rgba(0,0,0,0.25)",
                     }}>
                     {p.photo_url ? (
                       <img src={p.photo_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
@@ -23864,15 +23901,15 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         onLoadedData={(e) => { e.currentTarget.play().catch(() => {}); }}
                         onError={(e) => { e.currentTarget.style.opacity = "0"; }} />
                     ) : !p.photo_url ? (
-                      <div className="absolute inset-0 flex items-center justify-center" style={{ background: "linear-gradient(160deg,#1F2937,#7C3AED55)" }}>
-                        <Video size={20} color="#fff" style={{ opacity: 0.5 }} />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Video size={20} color="#fff" style={{ opacity: 0.7 }} />
                       </div>
                     ) : null}
-                    <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 45%, rgba(0,0,0,.8) 100%)" }} />
+                    <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,.75) 100%)" }} />
                     <div className="absolute bottom-2 left-0 right-0 flex flex-col items-center gap-0.5 text-[9px] font-semibold text-white px-1">
                       <div className="flex items-center gap-1">
-                        <Zap size={9} color="#06B6D4" /> {(p.super_count || 0).toLocaleString()}
-                        <Eye size={9} className="opacity-80" /> {(p.views || 0).toLocaleString()}
+                        <Zap size={9} color="#67E8F9" /> {(p.super_count || 0).toLocaleString()}
+                        <Eye size={9} className="opacity-90" /> {(p.views || 0).toLocaleString()}
                       </div>
                     </div>
                   </button>
