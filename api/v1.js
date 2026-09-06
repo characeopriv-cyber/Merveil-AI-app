@@ -19,7 +19,7 @@ import usage from '../server/merveil-v1/usage.js';
 import commercial from '../server/merveil-v1/commercial.js';
 import billing from '../server/merveil-v1/billing.js';
 import developerConfig from '../server/merveil-v1/developer/config.js';
-import developerProjects from '../server/merveil-v1/developer/projects.js';
+import developerProjects from '../server/merveil-v1/developer/projects-router.js';
 import providerCatalog from '../server/merveil-v1/developer/provider-catalog.js';
 import { json, requestId } from '../server/merveil-v1/_lib.js';
 
