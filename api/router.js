@@ -945,11 +945,17 @@ export default async function handler(req, res) {
       const type = (req.query.type || "world").toLowerCase();
       const id = req.query.id || "";
       const origin = "https://www.junction.technology";
-      const defaultImage = `${origin}/icons/icon-512.png`;
+      const defaultImage = `${origin}/icons/feature-graphic-1024x500.png`;
       let title = "Merveil AI";
       let description = "Identity, network & opportunity — powered by your Passport.";
       let image = defaultImage;
       let dest = origin + "/";
+      if (type === "invite") {
+        title = "Join me on Merveil AI";
+        description = "Identity, network & opportunity — connect in one tap.";
+        image = defaultImage;
+        dest = origin + "/?invite=" + encodeURIComponent(id || "MERVEIL");
+      }
       try {
         if (type === "world" && id) {
           const { data } = await anonClient().from("world_posts").select("id, title, caption, photo_url, video_url, poster_url, thumbnail_url").eq("id", id).maybeSingle();
@@ -7174,9 +7180,9 @@ export default async function handler(req, res) {
     // message downstream is checked against this row, not trusted from
     // either client.
     if (resource === "calls" && action === "create" && method === "POST") {
-      // citizen (jwtSub fallback) so refresh races never 401 a signed-in caller.
-      if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });
-      const callerId = citizen.id;
+      // actorId = user || jwtSub — simplest path: any signed-in citizen can call.
+      if (!requireActor(res, "Sign in required.")) return;
+      const callerId = actorId;
       const body = await readBody(req);
       const receiverId = body?.receiverId;
       const type = body?.type;
