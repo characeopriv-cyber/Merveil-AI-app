@@ -1620,18 +1620,52 @@ const UI_STRINGS = {
     "nav.world": "World",
     "nav.arena": "Arena",
     "nav.market": "Market",
+    "nav.invest": "Invest",
     "settings.title": "Citizen Settings",
     "settings.sub": "Your Merveil. Your preferences. Your control.",
     "settings.appearance": "Appearance",
     "settings.language": "Language",
     "settings.textSize": "Text size",
     "settings.notifications": "Notifications",
+    "settings.experience": "Your Experience",
+    "settings.experienceSub": "Everything that controls how Merveil looks and communicates with you.",
+    "settings.voice": "Merveil's Voice",
+    "settings.voiceSub": "How Merveil AI sounds when it speaks to you.",
+    "settings.yourWorld": "Your World",
+    "settings.yourWorldSub": "Tell Merveil what matters to you so it can make your experience more relevant.",
+    "settings.whoCanCall": "Who can call me",
+    "settings.myConnections": "My Connections",
+    "settings.verifiedOnly": "Verified only",
+    "settings.nobodyDnd": "Nobody — DND",
+    "settings.allowVideo": "Allow video calls",
+    "settings.allowVideoSub": "Off = voice only from people who can reach you",
+    "settings.startCameraOff": "Start with camera off",
+    "settings.startCameraOffSub": "Camera stays off until you turn it on",
+    "settings.startMuted": "Start muted",
+    "settings.startMutedSub": "Join calls with microphone muted",
+    "settings.aiCallAssist": "AI Call Assistant",
+    "settings.aiCallAssistSub": "Notes, captions, summary — never auto-records",
+    "settings.missedCall": "Missed-call notifications",
+    "settings.missedCallSub": "Alert when someone calls and you miss it",
+    "settings.suspiciousCall": "Suspicious-call warning",
+    "settings.suspiciousCallSub": "Warn when risk signals are elevated",
+    "settings.callsFooter": "Calls use Merveil Secure (WebRTC + TURN). Recording and AI notes always require explicit consent — they never run hidden.",
+    "auth.enterCitizen": "Enter as a citizen",
+    "auth.enterSub": "One foundation for identity, connection, and opportunity. Sign in to keep your Passport, messages, and LifeLink across devices.",
+    "auth.continueGoogle": "Continue with Google",
+    "auth.continueVisitor": "Continue as visitor",
     "common.save": "Save",
     "common.cancel": "Cancel",
     "common.tryAgain": "Please try again.",
     "common.somethingWrong": "Something went wrong.",
     "common.signIn": "Sign in",
     "common.loading": "Loading…",
+    "common.light": "Light",
+    "common.dark": "Dark",
+    "common.system": "System",
+    "common.small": "Small",
+    "common.medium": "Medium",
+    "common.large": "Large",
     "pulse.emptyTitle": "No real-estate reels yet",
     "pulse.emptyBody": "Pulse is for properties, listings, tours, launches and market activity only.",
     "pulse.like": "Like",
@@ -1649,6 +1683,12 @@ const UI_STRINGS = {
     "settings.open": "Settings",
     "messages.unread": "Unread",
     "messages.noMessages": "No conversations yet",
+    "messages.typePlaceholder": "Type a message…",
+    "messages.secureTransport": "Secure transport",
+    "messages.summarize": "Summarize",
+    "messages.translate": "Translate",
+    "messages.replyIdea": "Reply idea",
+    "messages.meeting": "Meeting",
   },
   fr: {
     "nav.home": "Accueil",
@@ -1659,18 +1699,52 @@ const UI_STRINGS = {
     "nav.world": "World",
     "nav.arena": "Arena",
     "nav.market": "Marché",
+    "nav.invest": "Investir",
     "settings.title": "Paramètres citoyen",
     "settings.sub": "Votre Merveil. Vos préférences. Votre contrôle.",
     "settings.appearance": "Apparence",
     "settings.language": "Langue",
     "settings.textSize": "Taille du texte",
     "settings.notifications": "Notifications",
+    "settings.experience": "Votre expérience",
+    "settings.experienceSub": "Tout ce qui contrôle l'apparence de Merveil et la façon dont il communique avec vous.",
+    "settings.voice": "Voix de Merveil",
+    "settings.voiceSub": "Comment Merveil AI vous parle.",
+    "settings.yourWorld": "Votre monde",
+    "settings.yourWorldSub": "Dites à Merveil ce qui compte pour vous afin de rendre l'expérience plus pertinente.",
+    "settings.whoCanCall": "Qui peut m'appeler",
+    "settings.myConnections": "Mes connexions",
+    "settings.verifiedOnly": "Vérifiés uniquement",
+    "settings.nobodyDnd": "Personne — Ne pas déranger",
+    "settings.allowVideo": "Autoriser les appels vidéo",
+    "settings.allowVideoSub": "Désactivé = voix uniquement pour ceux qui peuvent vous joindre",
+    "settings.startCameraOff": "Démarrer avec caméra off",
+    "settings.startCameraOffSub": "La caméra reste éteinte jusqu'à ce que vous l'allumiez",
+    "settings.startMuted": "Démarrer en sourdine",
+    "settings.startMutedSub": "Rejoindre les appels avec le micro coupé",
+    "settings.aiCallAssist": "Assistant d'appel IA",
+    "settings.aiCallAssistSub": "Notes, sous-titres, résumé — jamais d'enregistrement auto",
+    "settings.missedCall": "Notifications d'appels manqués",
+    "settings.missedCallSub": "Alerte quand quelqu'un vous appelle et que vous ratez l'appel",
+    "settings.suspiciousCall": "Alerte appel suspect",
+    "settings.suspiciousCallSub": "Avertir quand les signaux de risque sont élevés",
+    "settings.callsFooter": "Les appels utilisent Merveil Secure (WebRTC + TURN). L'enregistrement et les notes IA nécessitent toujours un consentement explicite.",
+    "auth.enterCitizen": "Entrer en tant que citoyen",
+    "auth.enterSub": "Une base pour l'identité, la connexion et l'opportunité. Connectez-vous pour garder votre Passeport, messages et LifeLink sur tous vos appareils.",
+    "auth.continueGoogle": "Continuer avec Google",
+    "auth.continueVisitor": "Continuer en visiteur",
     "common.save": "Enregistrer",
     "common.cancel": "Annuler",
     "common.tryAgain": "Veuillez réessayer.",
     "common.somethingWrong": "Une erreur s'est produite.",
     "common.signIn": "Se connecter",
     "common.loading": "Chargement…",
+    "common.light": "Clair",
+    "common.dark": "Sombre",
+    "common.system": "Système",
+    "common.small": "Petit",
+    "common.medium": "Moyen",
+    "common.large": "Grand",
     "pulse.emptyTitle": "Aucun reel immobilier pour le moment",
     "pulse.emptyBody": "Pulse est réservé aux biens, annonces, visites et activité de marché.",
     "pulse.like": "J'aime",
@@ -1688,6 +1762,12 @@ const UI_STRINGS = {
     "settings.open": "Paramètres",
     "messages.unread": "Non lus",
     "messages.noMessages": "Aucune conversation",
+    "messages.typePlaceholder": "Écrire un message…",
+    "messages.secureTransport": "Transport sécurisé",
+    "messages.summarize": "Résumer",
+    "messages.translate": "Traduire",
+    "messages.replyIdea": "Idée de réponse",
+    "messages.meeting": "Réunion",
   },
   ar: {
     "nav.home": "الرئيسية",
@@ -1698,18 +1778,52 @@ const UI_STRINGS = {
     "nav.world": "العالم",
     "nav.arena": "الساحة",
     "nav.market": "السوق",
+    "nav.invest": "استثمار",
     "settings.title": "إعدادات المواطن",
     "settings.sub": "ميرفيل خاصتك. تفضيلاتك. تحكمك.",
     "settings.appearance": "المظهر",
     "settings.language": "اللغة",
     "settings.textSize": "حجم النص",
     "settings.notifications": "الإشعارات",
+    "settings.experience": "تجربتك",
+    "settings.experienceSub": "كل ما يتحكم في شكل ميرفيل وكيفية تواصله معك.",
+    "settings.voice": "صوت ميرفيل",
+    "settings.voiceSub": "كيف يتحدث ميرفيل AI إليك.",
+    "settings.yourWorld": "عالمك",
+    "settings.yourWorldSub": "أخبر ميرفيل بما يهمك ليجعل تجربتك أكثر ملاءمة.",
+    "settings.whoCanCall": "من يمكنه الاتصال بي",
+    "settings.myConnections": "اتصالاتي",
+    "settings.verifiedOnly": "الموثقون فقط",
+    "settings.nobodyDnd": "لا أحد — عدم الإزعاج",
+    "settings.allowVideo": "السماح بمكالمات الفيديو",
+    "settings.allowVideoSub": "إيقاف = صوت فقط ممن يمكنهم الوصول إليك",
+    "settings.startCameraOff": "البدء والكاميرا مغلقة",
+    "settings.startCameraOffSub": "تبقى الكاميرا مغلقة حتى تشغلها",
+    "settings.startMuted": "البدء بكتم الصوت",
+    "settings.startMutedSub": "الانضمام للمكالمات والميكروفون مكتوم",
+    "settings.aiCallAssist": "مساعد مكالمات الذكاء الاصطناعي",
+    "settings.aiCallAssistSub": "ملاحظات، ترجمة، ملخص — بدون تسجيل تلقائي",
+    "settings.missedCall": "إشعارات المكالمات الفائتة",
+    "settings.missedCallSub": "تنبيه عند اتصال شخص وفاتك الرد",
+    "settings.suspiciousCall": "تحذير مكالمة مشبوهة",
+    "settings.suspiciousCallSub": "تحذير عند ارتفاع إشارات المخاطر",
+    "settings.callsFooter": "المكالمات تستخدم ميرفيل الآمن (WebRTC + TURN). التسجيل وملاحظات الذكاء الاصطناعي تتطلب موافقة صريحة دائماً.",
+    "auth.enterCitizen": "الدخول كمواطن",
+    "auth.enterSub": "أساس واحد للهوية والاتصال والفرصة. سجّل الدخول للاحتفاظ بجوازك ورسائلك وLifeLink عبر الأجهزة.",
+    "auth.continueGoogle": "المتابعة مع Google",
+    "auth.continueVisitor": "المتابعة كزائر",
     "common.save": "حفظ",
     "common.cancel": "إلغاء",
     "common.tryAgain": "يرجى المحاولة مرة أخرى.",
     "common.somethingWrong": "حدث خطأ ما.",
     "common.signIn": "تسجيل الدخول",
     "common.loading": "جاري التحميل…",
+    "common.light": "فاتح",
+    "common.dark": "داكن",
+    "common.system": "النظام",
+    "common.small": "صغير",
+    "common.medium": "متوسط",
+    "common.large": "كبير",
     "pulse.emptyTitle": "لا توجد ريلز عقارية بعد",
     "pulse.emptyBody": "بولس مخصص للعقارات والإعلانات والجولات ونشاط السوق فقط.",
     "pulse.like": "إعجاب",
@@ -1727,6 +1841,12 @@ const UI_STRINGS = {
     "settings.open": "الإعدادات",
     "messages.unread": "غير مقروء",
     "messages.noMessages": "لا توجد محادثات بعد",
+    "messages.typePlaceholder": "اكتب رسالة…",
+    "messages.secureTransport": "نقل آمن",
+    "messages.summarize": "تلخيص",
+    "messages.translate": "ترجمة",
+    "messages.replyIdea": "فكرة رد",
+    "messages.meeting": "اجتماع",
   },
 };
 
@@ -9083,12 +9203,21 @@ function ReelsView({ properties, liveViews, onChat, currentUserId, onRequireSign
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.conversation?.id) {
+        const detail = {
+          conversationId: data.conversation.id,
+          otherUserId: ownerId,
+          participantIds: [currentUserId, ownerId],
+          reused: !!data.reused,
+        };
         try {
-          window.dispatchEvent(new CustomEvent("merveil:open-conversation", {
-            detail: { conversationId: data.conversation.id, otherUserId: ownerId, reused: !!data.reused },
-          }));
+          sessionStorage.setItem("merveil_pending_conversation", JSON.stringify({ ...detail, at: Date.now() }));
+        } catch {}
+        try {
+          window.dispatchEvent(new CustomEvent("merveil:open-conversation", { detail }));
         } catch {}
       }
+      // Switch to Connect/Messages AFTER pending is stored so the mounted
+      // MessagesView can open the exact person chat, not a blank list.
       onChat?.();
     } catch {
       onChat?.();
@@ -9104,7 +9233,7 @@ function ReelsView({ properties, liveViews, onChat, currentUserId, onRequireSign
       const res = await merveilFetch("/api/calls?action=create", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ receiverId: ownerId, type: "voice" }),
+        body: JSON.stringify({ calleeId: ownerId, mode: "voice" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { alert(data?.error || "Couldn't start the call."); return; }
@@ -10207,26 +10336,53 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const [msgActionError, setMsgActionError] = useState("");
   const [viewingProfileId, setViewingProfileId] = useState(null);
 
-  // World / Creator Message opens the exact conversation (not AI default)
+  // World / Creator / Pulse Message opens the exact conversation (not AI default).
+  // Pending open is stored because MessagesView may not be mounted when the
+  // event fires (user is still on Pulse/World) — apply on mount + live.
   useEffect(() => {
-    const onOpen = (e) => {
-      const d = e?.detail || {};
-      const conversationId = d.conversationId;
+    const applyOpen = (d) => {
+      const conversationId = d?.conversationId;
       if (!conversationId) return;
       setThreads((p) => {
         if (p.some((t) => t.id === conversationId)) return p;
         return [{
           id: conversationId,
-          participant_ids: d.participantIds || [],
+          participant_ids: d.participantIds || (d.otherUserId ? [d.otherUserId] : []),
+          other_user_id: d.otherUserId || null,
           context_label: null,
-          last_body: d.reused ? "" : "",
+          last_body: "",
           last_message_at: new Date().toISOString(),
         }, ...p];
       });
       setActiveId(conversationId);
       setMobileView("chat");
     };
+    const onOpen = (e) => {
+      const d = e?.detail || {};
+      if (d.conversationId) {
+        try {
+          sessionStorage.setItem("merveil_pending_conversation", JSON.stringify({
+            conversationId: d.conversationId,
+            otherUserId: d.otherUserId || null,
+            participantIds: d.participantIds || [],
+            at: Date.now(),
+          }));
+        } catch {}
+        applyOpen(d);
+      }
+    };
     window.addEventListener("merveil:open-conversation", onOpen);
+    // Consume pending open from Pulse/World (event may have fired before mount)
+    try {
+      const raw = sessionStorage.getItem("merveil_pending_conversation");
+      if (raw) {
+        const pending = JSON.parse(raw);
+        if (pending?.conversationId && Date.now() - (pending.at || 0) < 60_000) {
+          applyOpen(pending);
+        }
+        sessionStorage.removeItem("merveil_pending_conversation");
+      }
+    } catch {}
     return () => window.removeEventListener("merveil:open-conversation", onOpen);
   }, []);
 
@@ -10622,7 +10778,10 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
   const sendMessage = async ({ type = "text", text, mediaUrl, mediaMeta } = {}) => {
     if (isAiThread) return sendToAi();
-    if (!currentUser?.id || !otherUserId) return;
+    // Allow send with conversation id even if participant list is still
+    // hydrating (Pulse/World open race). Missing otherUserId used to clear
+    // the draft with nothing on screen — "hello disappears".
+    if (!currentUser?.id || !activeId) return;
     const nowIso = new Date().toISOString();
     const preview = type === "text" ? (text || "") : type === "image" ? "📷 Photo" : type === "voice" ? "🎤 Voice" : type === "file" ? "📎 File" : "Message";
     const localId = `local-${Date.now()}`;
@@ -11465,10 +11624,9 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         )}
 
         {!isAiThread && e2eeUi.label && (
-          <div className="mx-3 mt-1 mb-0.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold leading-tight shrink-0 text-center flex items-center justify-center gap-1"
+          <div className="mx-3 mt-0.5 mb-0 px-2 py-1 rounded-md text-[9px] leading-tight shrink-0 text-center"
             style={{
-              background: e2eeUi.verified ? "rgba(22,101,52,0.12)" : "rgba(14,154,167,0.12)",
-              border: `1px solid ${e2eeUi.verified ? "rgba(22,101,52,0.3)" : "rgba(14,154,167,0.3)"}`,
+              background: e2eeUi.verified ? "rgba(22,101,52,0.06)" : "rgba(14,154,167,0.06)",
               color: e2eeUi.verified ? "#166534" : "#0A5F68",
             }}>
             {e2eeUi.verified ? "🔒 End-to-end encrypted" : e2eeUi.enabled ? "🔐 Securing keys…" : "🔐 Secure transport"}
@@ -18060,16 +18218,18 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       const conversationId = data?.conversation?.id;
       // Open the exact thread (new or reused) so Messages does not land on AI / wrong chat
       if (conversationId) {
+        const detail = {
+          conversationId,
+          participantIds: [me.id, post.owner_id],
+          otherUserId: post.owner_id,
+          otherName: post.owner_name || post.author_name || "Citizen",
+          reused: !!data.reused,
+        };
         try {
-          window.dispatchEvent(new CustomEvent("merveil:open-conversation", {
-            detail: {
-              conversationId,
-              participantIds: [me.id, post.owner_id],
-              otherUserId: post.owner_id,
-              otherName: post.owner_name || post.author_name || "Citizen",
-              reused: !!data.reused,
-            },
-          }));
+          sessionStorage.setItem("merveil_pending_conversation", JSON.stringify({ ...detail, at: Date.now() }));
+        } catch {}
+        try {
+          window.dispatchEvent(new CustomEvent("merveil:open-conversation", { detail }));
         } catch {}
       }
       onChat?.();
@@ -18754,18 +18914,22 @@ function SettingsView({ settings, setSettings }) {
       </p>
 
       {/* 01 — YOUR EXPERIENCE */}
-      <SectionNumber n="01" title="Your Experience" sub="Everything that controls how Merveil looks and communicates with you." />
+      <SectionNumber n="01" title={t("settings.experience", settings.language)} sub={t("settings.experienceSub", settings.language)} />
       <Card>
-        <Row icon={Moon} title="Appearance" sub="Choose how Merveil appears" last={false}>
+        <Row icon={Moon} title={t("settings.appearance", settings.language)} sub="Light · Dark · System" last={false}>
           <SegmentedControl
-            options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }, { value: "system", label: "System" }]}
+            options={[
+              { value: "light", label: t("common.light", settings.language) },
+              { value: "dark", label: t("common.dark", settings.language) },
+              { value: "system", label: t("common.system", settings.language) },
+            ]}
             value={settings.theme}
             onChange={(v) => update("theme", v)}
           />
         </Row>
-        <Row icon={Languages} title={t("settings.language", settings.language)} sub="English · Français · العربية translate the full UI. Other languages guide Merveil AI replies.">
+        <Row icon={Languages} title={t("settings.language", settings.language)} sub="English · Français · العربية">
           <select
-            value={["en","fr","ar"].includes(settings.language) ? settings.language : settings.language}
+            value={settings.language || "en"}
             onChange={(e) => {
               e.stopPropagation();
               const code = e.target.value;
@@ -18777,7 +18941,6 @@ function SettingsView({ settings, setSettings }) {
                 const langInfo = LANGUAGES.find((l) => l.code === code);
                 document.documentElement.setAttribute("lang", code || "en");
                 document.documentElement.setAttribute("dir", langInfo?.rtl ? "rtl" : "ltr");
-                // Force UI re-render path for t()
                 window.dispatchEvent(new CustomEvent("merveil:language", { detail: { code } }));
               } catch {}
             }}
@@ -18791,17 +18954,18 @@ function SettingsView({ settings, setSettings }) {
             ))}
           </select>
         </Row>
-        <Row icon={Type} title="Text size" sub="Adjust reading comfort across Merveil" last>
+        <Row icon={Type} title={t("settings.textSize", settings.language)} sub="" last>
           <SegmentedControl
-            options={[{ value: "sm", label: "Small" }, { value: "md", label: "Medium" }, { value: "lg", label: "Large" }]}
+            options={[
+              { value: "sm", label: t("common.small", settings.language) },
+              { value: "md", label: t("common.medium", settings.language) },
+              { value: "lg", label: t("common.large", settings.language) },
+            ]}
             value={settings.textSize}
             onChange={(v) => update("textSize", v)}
           />
         </Row>
       </Card>
-      <p className="text-[11px] mt-2.5" style={{ color: T.sub }}>
-        Full translation of every screen into the selected language is a fast follow — Merveil AI's voice and the language selector are ready now.
-      </p>
 
       {ccLoading && <div className="text-sm mt-8" style={{ color: T.sub }}>Loading your Merveil Control Center…</div>}
 
@@ -20103,9 +20267,9 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
             width: 48,
             height: 48,
             borderRadius: 14,
-            background: "linear-gradient(160deg, #0F172A, #0B1220)",
-            border: "1px solid rgba(6,182,212,0.55)",
-            boxShadow: "0 4px 16px rgba(6,182,212,0.35), 0 0 0 1px rgba(6,182,212,0.15) inset",
+            background: "linear-gradient(160deg, rgba(255,255,255,0.96), rgba(247,245,241,0.94))",
+            border: "1px solid rgba(14,154,167,0.28)",
+            boxShadow: "0 2px 12px rgba(6,182,212,0.18), 0 0 0 1px rgba(255,255,255,0.6) inset",
           }}
         >
           <MerveilLogoMark size={28} glow animate={!open} />
@@ -23662,7 +23826,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: "radial-gradient(ellipse 70% 40% at 50% 0%, rgba(14,165,233,0.10), transparent 60%), #070B12", color: "#F8FAFC" }}>
+    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: "#F7F5F1", color: "#12161C" }}>
       {/* Sticky top bar */}
       <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 pointer-events-none"
         style={{ paddingTop: "calc(8px + var(--safe-top))" }}>
@@ -23692,7 +23856,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             ) : (
               <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#0F172A 0%,#1E293B 50%,#0B0E14 100%)" }} />
             )}
-            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(7,11,18,0.94) 100%)" }} />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(247,245,241,0.92) 100%)" }} />
             {coverUrl && (
               <button type="button" aria-label="Toggle cover sound"
                 onClick={(e) => {
@@ -23725,21 +23889,21 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
 
           {/* Identity — dark ink on light surface (readable) */}
           <div className="px-5 pb-3 flex flex-col items-center text-center -mt-12 relative z-10">
-            <div className="rounded-full p-1" style={{ background: "#0B0E14", boxShadow: "0 0 0 3px #0E9AA7" }}>
+            <div className="rounded-full p-1" style={{ background: "#F7F5F1", boxShadow: "0 0 0 3px #0E9AA7" }}>
               <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={92} />
             </div>
-            <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: "#F8FAFC" }}>{profile.name || "Merveil Citizen"}</div>
+            <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: "#12161C" }}>{profile.name || "Merveil Citizen"}</div>
             {(profile.profession || profile.city) && (
-              <div className="text-xs mt-1" style={{ color: "rgba(148,163,184,0.9)" }}>
+              <div className="text-xs mt-1" style={{ color: "#625D56" }}>
                 {[profile.profession, profile.city || profile.country].filter(Boolean).join(" · ")}
               </div>
             )}
-            {profile.bio && <p className="text-xs mt-2 max-w-sm line-clamp-3" style={{ color: "rgba(203,213,225,0.85)" }}>{profile.bio}</p>}
+            {profile.bio && <p className="text-xs mt-2 max-w-sm line-clamp-3" style={{ color: "#4B5563" }}>{profile.bio}</p>}
 
             {/* Feeling / thought */}
             {(feeling || thought || isSelf) && (
-              <div className="mt-3 w-full max-w-sm rounded-2xl px-3 py-2.5 text-left" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(148,163,184,0.25)" }}>
-                <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "rgba(148,163,184,0.85)" }}>What I'm feeling</div>
+              <div className="mt-3 w-full max-w-sm rounded-2xl px-3 py-2.5 text-left" style={{ background: "#EAE4DB", border: "1px solid #C4BAAC" }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "#625D56" }}>What I'm feeling</div>
                 {isSelf ? (
                   <>
                     <div className="flex flex-wrap gap-1.5 mb-2">
@@ -23747,16 +23911,16 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         <button key={f} type="button" onClick={() => setFeeling(f)}
                           className="text-[10px] font-semibold px-2 py-1 rounded-full"
                           style={{
-                            background: feeling === f ? "rgba(14,154,167,0.25)" : "rgba(255,255,255,0.06)",
-                            color: feeling === f ? "#5EEAD4" : "#E2E8F0",
-                            border: feeling === f ? "1px solid #0E9AA7" : "1px solid rgba(148,163,184,0.3)",
+                            background: feeling === f ? "rgba(14,154,167,0.2)" : "#F7F5F1",
+                            color: feeling === f ? "#0A5F68" : "#252321",
+                            border: feeling === f ? "1px solid #0E9AA7" : "1px solid #C4BAAC",
                           }}>{f}</button>
                       ))}
                     </div>
                     <input value={thought} onChange={(e) => setThought(e.target.value.slice(0, 120))}
                       placeholder="My thought — e.g. Building something meaningful today."
                       className="w-full text-xs px-2.5 py-2 rounded-xl outline-none"
-                      style={{ border: "1px solid rgba(148,163,184,0.3)", color: "#F1F5F9", background: "rgba(255,255,255,0.05)" }} />
+                      style={{ border: "1px solid #C4BAAC", color: "#12161C", background: "#F7F5F1" }} />
                     <button type="button" disabled={savingMood}
                       onClick={async () => {
                         setSavingMood(true);
@@ -23776,10 +23940,10 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                     </button>
                   </>
                 ) : (
-                  <div className="text-xs" style={{ color: "#F1F5F9" }}>
+                  <div className="text-xs" style={{ color: "#12161C" }}>
                     {feeling && <span className="font-semibold">{feeling}</span>}
                     {feeling && thought ? " · " : null}
-                    {thought && <span style={{ color: "rgba(148,163,184,0.85)" }}>{thought}</span>}
+                    {thought && <span style={{ color: "#625D56" }}>{thought}</span>}
                   </div>
                 )}
               </div>
@@ -23795,35 +23959,35 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               ].map(([label, val, onTap]) => (
                 <button key={label} type="button" onClick={onTap || undefined}
                   className="rounded-xl py-2.5"
-                  style={{ background: onTap && showVisitors ? "rgba(14,154,167,0.18)" : "rgba(255,255,255,0.05)", border: "1px solid rgba(148,163,184,0.25)" }}>
-                  <div className="text-base font-bold" style={{ color: "#F8FAFC" }}>{Number(val).toLocaleString()}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "rgba(148,163,184,0.85)" }}>{label}{onTap ? " ▾" : ""}</div>
+                  style={{ background: onTap && showVisitors ? "rgba(14,154,167,0.15)" : "#EAE4DB", border: "1px solid #C4BAAC" }}>
+                  <div className="text-base font-bold" style={{ color: "#12161C" }}>{Number(val).toLocaleString()}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "#625D56" }}>{label}{onTap ? " ▾" : ""}</div>
                 </button>
               ))}
             </div>
 
             {/* Visitors list (self only) */}
             {isSelf && showVisitors && (
-              <div className="mt-3 w-full max-w-sm rounded-2xl overflow-hidden text-left" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(148,163,184,0.25)" }}>
-                <div className="px-3 py-2 flex items-center justify-between border-b" style={{ borderColor: "rgba(148,163,184,0.2)" }}>
-                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "rgba(148,163,184,0.85)" }}>
+              <div className="mt-3 w-full max-w-sm rounded-2xl overflow-hidden text-left" style={{ background: "#F7F5F1", border: "1px solid #C4BAAC" }}>
+                <div className="px-3 py-2 flex items-center justify-between border-b" style={{ borderColor: "#C4BAAC" }}>
+                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#625D56" }}>
                     Profile visitors · {visitors.totalCount || 0}
                   </span>
                   <button type="button" onClick={() => setShowVisitors(false)} className="text-[10px]" style={{ color: "#0E9AA7" }}>Close</button>
                 </div>
                 <div className="max-h-48 overflow-y-auto">
                   {(visitors.views || []).length === 0 ? (
-                    <div className="px-3 py-4 text-xs text-center" style={{ color: "rgba(148,163,184,0.75)" }}>No visitors yet — share your reels.</div>
+                    <div className="px-3 py-4 text-xs text-center" style={{ color: "#625D56" }}>No visitors yet — share your reels.</div>
                   ) : (
                     (visitors.views || []).slice(0, 40).map((v, i) => {
                       const name = v.viewer?.name || (v.viewer ? "Citizen" : "Anonymous");
                       const when = v.createdAt ? new Date(v.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
                       return (
-                        <div key={i} className="flex items-center gap-2.5 px-3 py-2 border-b" style={{ borderColor: "rgba(148,163,184,0.12)" }}>
+                        <div key={i} className="flex items-center gap-2.5 px-3 py-2 border-b" style={{ borderColor: "rgba(37,35,33,0.08)" }}>
                           <Avatar name={name} src={v.viewer?.avatar_url} size={32} />
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-semibold truncate" style={{ color: "#F1F5F9" }}>{name}</div>
-                            <div className="text-[10px]" style={{ color: "rgba(148,163,184,0.75)" }}>{[v.country, when].filter(Boolean).join(" · ")}</div>
+                            <div className="text-xs font-semibold truncate" style={{ color: "#12161C" }}>{name}</div>
+                            <div className="text-[10px]" style={{ color: "#625D56" }}>{[v.country, when].filter(Boolean).join(" · ")}</div>
                           </div>
                         </div>
                       );
@@ -23848,7 +24012,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                 )}
                 {!isSelf && (
                   <button type="button" onClick={() => onChat?.(userId)}
-                    className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "rgba(255,255,255,0.08)", color: "#F1F5F9", border: "1px solid rgba(148,163,184,0.3)" }}>
+                    className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "#EAE4DB", color: "#12161C", border: "1px solid #C4BAAC" }}>
                     Message
                   </button>
                 )}
@@ -23870,7 +24034,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
 
           {/* Reels as circles */}
           <div className="px-4 pt-2 pb-1 flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "rgba(148,163,184,0.85)" }}>
+            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#6B7280" }}>
               Reels · {worldPosts.length}
             </span>
           </div>
@@ -23881,7 +24045,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
           )}
           <div className="px-3 pb-6">
             {worldPosts.length === 0 ? (
-              <div className="text-xs text-center py-12" style={{ color: "rgba(148,163,184,0.7)" }}>No World reels yet.</div>
+              <div className="text-xs text-center py-12" style={{ color: "#5C6779" }}>No World reels yet.</div>
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 {worldPosts.map((p) => (
@@ -24801,42 +24965,48 @@ function AuthModal({ onClose, onAuthed }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(3,6,10,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(37,35,33,0.32)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
       <div className="w-full max-w-sm rounded-[22px] p-6 relative overflow-hidden" style={{
-        background: "radial-gradient(ellipse 100% 60% at 50% 0%, rgba(14,165,233,0.16), transparent 65%), linear-gradient(165deg, #0F172A 0%, #070B12 100%)",
-        border: "1px solid rgba(14,165,233,0.25)",
-        boxShadow: "0 24px 64px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset",
+        background: "linear-gradient(165deg, #EAE4DB 0%, #D8D0C4 100%)",
+        border: "1px solid rgba(37,35,33,0.10)",
+        boxShadow: "0 24px 64px rgba(37,35,33,0.14), 0 1px 0 rgba(255,255,255,0.55) inset",
       }}>
-        <div className="pointer-events-none absolute -top-16 -right-10 w-40 h-40 rounded-full" style={{ background: "radial-gradient(circle, rgba(14,165,233,0.18), transparent 70%)" }} />
+        <div className="pointer-events-none absolute -top-16 -right-10 w-40 h-40 rounded-full" style={{ background: "radial-gradient(circle, rgba(14,154,167,0.08), transparent 70%)" }} />
         <div className="flex items-center justify-between mb-5 relative">
           <div>
-            <div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: "rgba(14,165,233,0.85)", fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div>
-            <h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: "#F8FAFC", letterSpacing: "-0.02em" }}>Enter as a citizen</h2>
+            <div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: T.signal, fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div>
+            <h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: T.ink, letterSpacing: "-0.02em" }}>{t("auth.enterCitizen")}</h2>
           </div>
-          <button type="button" onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(148,163,184,0.25)" }} aria-label="Close">
-            <X size={16} color="rgba(203,213,225,0.9)" />
+          <button type="button" onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.04)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Close">
+            <X size={16} color={T.sub} />
           </button>
         </div>
 
-        <p className="text-sm mb-5 leading-relaxed relative" style={{ color: "rgba(148,163,184,0.9)" }}>
-          One foundation for identity, connection, and opportunity. Sign in to keep your Passport, messages, and LifeLink across devices.
+        <p className="text-sm mb-5 leading-relaxed relative" style={{ color: T.sub }}>
+          {t("auth.enterSub")}
         </p>
 
         <button type="button" onClick={continueWithGoogle} disabled={busy}
           className="w-full py-3.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 relative"
           style={{
-            background: busy ? "rgba(14,165,233,0.55)" : "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)",
-            color: "#04111F",
-            boxShadow: "0 8px 24px rgba(14,165,233,0.35)",
+            background: busy ? "rgba(14,154,167,0.55)" : "linear-gradient(135deg, #0E9AA7 0%, #0A7A85 100%)",
+            color: "#FFFFFF",
+            boxShadow: "0 8px 24px rgba(14,154,167,0.28)",
             opacity: busy ? 0.85 : 1,
           }}>
-          {busy ? "Opening Google…" : "Continue with Google"}
+          {busy ? "…" : t("auth.continueGoogle")}
         </button>
 
-        {error && <div className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ color: "#FCA5A5", background: "rgba(153,27,27,0.18)", border: "1px solid rgba(248,113,113,0.35)" }}>{error}</div>}
+        {error && <div className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ color: "#991B1B", background: "#FEF2F2", border: "1px solid #FECACA" }}>{error}</div>}
 
-        <button type="button" onClick={onClose} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: "rgba(148,163,184,0.85)" }}>
-          Continue as visitor
+        <button type="button" onClick={() => {
+          try {
+            sessionStorage.setItem("junction_entered", "1");
+            sessionStorage.setItem("merveil_visitor", "1");
+          } catch {}
+          onClose?.();
+        }} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: T.sub }}>
+          {t("auth.continueVisitor")}
         </button>
       </div>
     </div>
@@ -27177,7 +27347,7 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
             { id: "verify", label: "Verify", icon: ShieldCheck, badge: pendingCount },
             { id: "tier", label: "Capabilities", icon: Crown },
             { id: "rewards", label: "Score", icon: Star },
-            { id: "listings", label: "Listings", icon: LayoutGrid, badge: myProperties.length + myServices.length },
+            // Listings list removed from Passport — manage via Pulse / Marketplace
             { id: "lifelink", label: "LifeLink", icon: Link2 },
             { id: "company", label: "Company", icon: Building2 },
             { id: "settings", label: "Settings", icon: Settings },
@@ -27447,40 +27617,6 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
             style={{ background: T.panel, color: "#E0554C", border: `1px solid ${T.inkLine}` }}>
             Sign out
           </button>
-        </div>
-      )}
-
-      {subTab === "listings" && (
-        <div className="p-4 pb-8">
-          {myProperties.length > 0 && (
-            <>
-              <div className="text-xs font-semibold mb-2" style={{ color: T.sub }}>Your properties</div>
-              <div className="flex flex-col gap-2 mb-5">
-                {myProperties.map((p) => (
-                  <div key={p.id} className="p-3 rounded-xl" style={{ background: T.panel, border: `1px solid ${T.inkLine}` }}>
-                    <div className="text-sm font-semibold" style={{ color: T.ink }}>{p.title}</div>
-                    <div className="text-xs" style={{ color: T.sub }}>{p.area} · AED {p.price?.toLocaleString()} · {p.views} views</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {myServices.length > 0 && (
-            <>
-              <div className="text-xs font-semibold mb-2" style={{ color: T.sub }}>Your jobs/services</div>
-              <div className="flex flex-col gap-2 mb-5">
-                {myServices.map((s) => (
-                  <div key={s.id} className="p-3 rounded-xl" style={{ background: T.panel, border: `1px solid ${T.inkLine}` }}>
-                    <div className="text-sm font-semibold" style={{ color: T.ink }}>{s.name}</div>
-                    <div className="text-xs" style={{ color: T.sub }}>{s.category} · {s.area}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {myProperties.length === 0 && myServices.length === 0 && (
-            <p className="text-xs" style={{ color: T.sub }}>You haven't posted anything yet — post a property or a service from the "+ Post" button up top.</p>
-          )}
         </div>
       )}
 
@@ -29253,7 +29389,14 @@ function AppInner() {
       if (ev?.detail?.id) syncCurrentUser(ev.detail);
     };
     window.addEventListener("merveil:session-user", onSessionUser);
-    const onSessionLost = () => { try { setShowAuthModal(true); } catch {} };
+    const onSessionLost = () => {
+      // Only prompt sign-in if the user was a citizen (had local user).
+      // Pure visitors must never be forced into AuthModal by a session-lost event.
+      try {
+        const cached = JSON.parse(localStorage.getItem("junction_user") || "null");
+        if (cached?.id) setShowAuthModal(true);
+      } catch {}
+    };
     window.addEventListener("merveil:session-lost", onSessionLost);
     // Facebook-style keep-alive: every 90s while visible so the ~1h access
     // token is rotated well before expiry (and before parallel API races).
@@ -29501,9 +29644,11 @@ function AppInner() {
             }
             try { sessionStorage.setItem("junction_entered", "1"); } catch {}
             setPhase("main");
-            if (sessionReady && !currentUser) setShowAuthModal(true);
-            else if (!sessionReady) {
-              refreshSession().then((u) => { if (!u) setShowAuthModal(true); });
+            // Visitor mode is valid — do NOT force the auth modal on enter.
+            // Auth only appears when a citizen-gated action calls requireSignIn().
+            // Soft restore: if a session exists, refreshSession fills currentUser.
+            if (!currentUser) {
+              refreshSession().catch(() => {});
             }
           }}
         />
@@ -31464,7 +31609,10 @@ function AdminAlertsPanel() {
 
   const sendMessage = async ({ type = "text", text, mediaUrl, mediaMeta } = {}) => {
     if (isAiThread) return sendToAi();
-    if (!currentUser?.id || !otherUserId) return;
+    // Allow send with conversation id even if participant list is still
+    // hydrating (Pulse/World open race). Missing otherUserId used to clear
+    // the draft with nothing on screen — "hello disappears".
+    if (!currentUser?.id || !activeId) return;
     const nowIso = new Date().toISOString();
     const preview = type === "text" ? (text || "") : type === "image" ? "📷 Photo" : type === "voice" ? "🎤 Voice" : type === "file" ? "📎 File" : "Message";
     const localId = `local-${Date.now()}`;
@@ -32307,10 +32455,9 @@ function AdminAlertsPanel() {
         )}
 
         {!isAiThread && e2eeUi.label && (
-          <div className="mx-3 mt-1 mb-0.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold leading-tight shrink-0 text-center flex items-center justify-center gap-1"
+          <div className="mx-3 mt-0.5 mb-0 px-2 py-1 rounded-md text-[9px] leading-tight shrink-0 text-center"
             style={{
-              background: e2eeUi.verified ? "rgba(22,101,52,0.12)" : "rgba(14,154,167,0.12)",
-              border: `1px solid ${e2eeUi.verified ? "rgba(22,101,52,0.3)" : "rgba(14,154,167,0.3)"}`,
+              background: e2eeUi.verified ? "rgba(22,101,52,0.06)" : "rgba(14,154,167,0.06)",
               color: e2eeUi.verified ? "#166534" : "#0A5F68",
             }}>
             {e2eeUi.verified ? "🔒 End-to-end encrypted" : e2eeUi.enabled ? "🔐 Securing keys…" : "🔐 Secure transport"}
