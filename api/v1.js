@@ -21,6 +21,7 @@ import billing from '../server/merveil-v1/billing.js';
 import developerConfig from '../server/merveil-v1/developer/config.js';
 import developerProjects from '../server/merveil-v1/developer/projects-router.js';
 import providerCatalog from '../server/merveil-v1/developer/provider-catalog.js';
+import developerLanguages from '../server/merveil-v1/developer/languages.js';
 import { json, requestId } from '../server/merveil-v1/_lib.js';
 
 const routes = new Map([
@@ -31,7 +32,7 @@ const routes = new Map([
   ['oauth', oauth], ['webhooks', webhooks], ['apps', apps], ['usage', usage],
   ['organization', commercial], ['organizations', commercial], ['billing', billing],
   ['developer/config', developerConfig], ['developer/projects', developerProjects],
-  ['developer/provider-catalog', providerCatalog]
+  ['developer/provider-catalog', providerCatalog], ['developer/languages', developerLanguages]
 ]);
 
 function routeFromRequest(req) {
