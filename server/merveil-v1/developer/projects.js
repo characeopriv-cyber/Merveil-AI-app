@@ -1,0 +1,99 @@
+import { supabaseAdmin, json, requestId, requireUser } from '../_lib.js';
+
+async function resolveUser(req) {
+  const auth = await requireUser(req);
+  if (auth.user) return auth.user;
+  const cookie = String(req.headers.cookie || '');
+  if (!cookie) return null;
+  try {
+    const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+    const host = String(req.headers.host || '').split(',')[0];
+    const r = await fetch(`${proto}://${host}/api/auth-session?reason=developer`, { headers: { cookie }, cache: 'no-store' });
+    const body = await r.json().catch(() => null);
+    return r.ok && body?.authenticated && body?.user?.id ? body.user : null;
+  } catch { return null; }
+}
+
+const nameOk = v => typeof v === 'string' && v.trim().length >= 1 && v.trim().length <= 80;
+const slug = v => v.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'project';
+
+export default async function handler(req, res) {
+  requestId(req, res);
+  if (req.method === 'OPTIONS') return json(res, 204, {});
+  const user = await resolveUser(req);
+  if (!user) return json(res, 401, { error: 'authentication_required', request_id: req._merveilRequestId });
+  const route = String(req.query?.route || '').replace(/^\/+|\/+$/g, '');
+  const parts = route.split('/').filter(Boolean);
+  const action = parts[0] || 'projects';
+  const projectId = String(req.query?.project_id || parts[1] || '').trim();
+  try {
+    if (action === 'projects' && req.method === 'GET') {
+      const { data, error } = await supabaseAdmin.from('developer_projects').select('*').eq('owner_user_id', user.id).order('created_at', { ascending: false });
+      if (error) return json(res, 500, { error: error.message });
+      return json(res, 200, { projects: data || [] });
+    }
+    if (action === 'projects' && req.method === 'POST') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      if (!nameOk(body.name)) return json(res, 400, { error: 'invalid_project_name' });
+      const runtime = ['static', 'node', 'nextjs'].includes(body.runtime) ? body.runtime : 'static';
+      const entry = typeof body.entry === 'string' && body.entry.trim() ? body.entry.trim() : 'index.html';
+      const { data, error } = await supabaseAdmin.from('developer_projects').insert({ owner_user_id: user.id, name: body.name.trim(), slug: slug(body.name), tagline: body.tagline || 'Merveil Developer Project', stage: 'created', status_label: 'Ready to build', momentum: 0, twin: { runtime, entry, template: body.template || 'blank' }, meta: { capabilities: Array.isArray(body.capabilities) ? body.capabilities : [] } }).select('*').single();
+      if (error) return json(res, 500, { error: error.message });
+      const starter = runtime === 'static' ? [{ path: 'index.html', content: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${body.name}</title></head><body><main><h1>${body.name}</h1><p>Built with Merveil Developer Platform.</p></main></body></html>` }] : [];
+      if (starter.length) await supabaseAdmin.from('developer_project_files').insert(starter.map(f => ({ ...f, project_id: data.id, owner_user_id: user.id })));
+      return json(res, 201, { project: data, files: starter });
+    }
+    if (!projectId) return json(res, 400, { error: 'project_id_required' });
+    const owner = await supabaseAdmin.from('developer_projects').select('id,name,slug').eq('id', projectId).eq('owner_user_id', user.id).maybeSingle();
+    if (owner.error || !owner.data) return json(res, 404, { error: 'project_not_found' });
+
+    if (action === 'files' && req.method === 'GET') {
+      const { data, error } = await supabaseAdmin.from('developer_project_files').select('id,path,content,created_at,updated_at').eq('project_id', projectId).eq('owner_user_id', user.id).order('path');
+      if (error) return json(res, 500, { error: error.message });
+      return json(res, 200, { files: data || [] });
+    }
+    if (action === 'files' && ['POST', 'PUT'].includes(req.method)) {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      if (typeof body.path !== 'string' || !body.path.trim() || typeof body.content !== 'string') return json(res, 400, { error: 'path_and_content_required' });
+      const path = body.path.replace(/^\/+/, '');
+      if (path.includes('..') || path.length > 240) return json(res, 400, { error: 'invalid_path' });
+      const { data, error } = await supabaseAdmin.from('developer_project_files').upsert({ project_id: projectId, owner_user_id: user.id, path, content: body.content }, { onConflict: 'project_id,path' }).select('*').single();
+      if (error) return json(res, 500, { error: error.message });
+      return json(res, 200, { file: data });
+    }
+    if (action === 'build' && req.method === 'POST') {
+      const { data: files, error: fe } = await supabaseAdmin.from('developer_project_files').select('path,content').eq('project_id', projectId).eq('owner_user_id', user.id);
+      if (fe) return json(res, 500, { error: fe.message });
+      const hasEntry = (files || []).some(f => f.path === 'index.html');
+      const status = hasEntry ? 'success' : 'failed';
+      const logs = hasEntry ? 'Build validation passed: index.html found. Static project is deployable.' : 'Build validation failed: index.html is missing.';
+      const { data, error } = await supabaseAdmin.from('developer_builds').insert({ project_id: projectId, owner_user_id: user.id, status, logs, finished_at: new Date().toISOString() }).select('*').single();
+      if (error) return json(res, 500, { error: error.message });
+      await supabaseAdmin.from('developer_projects').update({ stage: status === 'success' ? 'built' : 'build_failed', status_label: status === 'success' ? 'Build passed' : 'Build failed', updated_at: new Date().toISOString() }).eq('id', projectId).eq('owner_user_id', user.id);
+      return json(res, status === 'success' ? 200 : 422, { build: data });
+    }
+    if (action === 'deploy' && req.method === 'POST') {
+      const token = process.env.VERCEL_TOKEN;
+      if (!token) return json(res, 503, { error: 'vercel_deployment_not_configured' });
+      const { data: files, error: fe } = await supabaseAdmin.from('developer_project_files').select('path,content').eq('project_id', projectId).eq('owner_user_id', user.id);
+      if (fe) return json(res, 500, { error: fe.message });
+      if (!(files || []).some(f => f.path === 'index.html')) return json(res, 422, { error: 'build_required_or_index_missing' });
+      const project = owner.data;
+      const created = await supabaseAdmin.from('developer_deployments').insert({ project_id: projectId, owner_user_id: user.id, status: 'building', provider: 'vercel', logs: 'Uploading project files to Vercel…' }).select('*').single();
+      if (created.error) return json(res, 500, { error: created.error.message });
+      const vercelFiles = files.map(f => ({ file: f.content, data: f.content, path: f.path }));
+      const vr = await fetch('https://api.vercel.com/v13/deployments', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `merveil-${project.slug}-${projectId.slice(0, 8)}`, project: `merveil-${project.slug}-${projectId.slice(0, 8)}`, files: vercelFiles, target: 'production', teamId: process.env.VERCEL_TEAM_ID }) });
+      const vb = await vr.json().catch(() => ({}));
+      if (!vr.ok) { await supabaseAdmin.from('developer_deployments').update({ status: 'error', logs: JSON.stringify(vb) }).eq('id', created.data.id); return json(res, 502, { error: 'vercel_deployment_failed', details: vb }); }
+      const url = vb.url ? `https://${vb.url}` : null;
+      const state = vb.readyState === 'READY' ? 'ready' : 'building';
+      const { data: deployment } = await supabaseAdmin.from('developer_deployments').update({ status: state, external_id: vb.id, url, logs: `Vercel deployment created: ${vb.id}`, ready_at: state === 'ready' ? new Date().toISOString() : null }).eq('id', created.data.id).select('*').single();
+      await supabaseAdmin.from('developer_projects').update({ stage: 'deployed', status_label: state === 'ready' ? 'Deployed' : 'Deploying', updated_at: new Date().toISOString() }).eq('id', projectId).eq('owner_user_id', user.id);
+      return json(res, 200, { deployment, vercel: vb });
+    }
+    return json(res, 404, { error: 'not_found' });
+  } catch (error) {
+    console.error('[developer-projects]', error);
+    return json(res, 500, { error: error.message || 'internal_error' });
+  }
+}
