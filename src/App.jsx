@@ -11465,9 +11465,10 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         )}
 
         {!isAiThread && e2eeUi.label && (
-          <div className="mx-3 mt-0.5 mb-0 px-2 py-1 rounded-md text-[9px] leading-tight shrink-0 text-center"
+          <div className="mx-3 mt-1 mb-0.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold leading-tight shrink-0 text-center flex items-center justify-center gap-1"
             style={{
-              background: e2eeUi.verified ? "rgba(22,101,52,0.06)" : "rgba(14,154,167,0.06)",
+              background: e2eeUi.verified ? "rgba(22,101,52,0.12)" : "rgba(14,154,167,0.12)",
+              border: `1px solid ${e2eeUi.verified ? "rgba(22,101,52,0.3)" : "rgba(14,154,167,0.3)"}`,
               color: e2eeUi.verified ? "#166534" : "#0A5F68",
             }}>
             {e2eeUi.verified ? "🔒 End-to-end encrypted" : e2eeUi.enabled ? "🔐 Securing keys…" : "🔐 Secure transport"}
@@ -20102,9 +20103,9 @@ function AIAssistant({ properties, threads, onOpenPost, autoQuery, currentUser, 
             width: 48,
             height: 48,
             borderRadius: 14,
-            background: "linear-gradient(160deg, rgba(255,255,255,0.96), rgba(247,245,241,0.94))",
-            border: "1px solid rgba(14,154,167,0.28)",
-            boxShadow: "0 2px 12px rgba(6,182,212,0.18), 0 0 0 1px rgba(255,255,255,0.6) inset",
+            background: "linear-gradient(160deg, #0F172A, #0B1220)",
+            border: "1px solid rgba(6,182,212,0.55)",
+            boxShadow: "0 4px 16px rgba(6,182,212,0.35), 0 0 0 1px rgba(6,182,212,0.15) inset",
           }}
         >
           <MerveilLogoMark size={28} glow animate={!open} />
@@ -23661,7 +23662,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: "#F7F5F1", color: "#12161C" }}>
+    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: "radial-gradient(ellipse 70% 40% at 50% 0%, rgba(14,165,233,0.10), transparent 60%), #070B12", color: "#F8FAFC" }}>
       {/* Sticky top bar */}
       <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 pointer-events-none"
         style={{ paddingTop: "calc(8px + var(--safe-top))" }}>
@@ -23691,7 +23692,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             ) : (
               <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#0F172A 0%,#1E293B 50%,#0B0E14 100%)" }} />
             )}
-            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(247,245,241,0.92) 100%)" }} />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(7,11,18,0.94) 100%)" }} />
             {coverUrl && (
               <button type="button" aria-label="Toggle cover sound"
                 onClick={(e) => {
@@ -23724,21 +23725,21 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
 
           {/* Identity — dark ink on light surface (readable) */}
           <div className="px-5 pb-3 flex flex-col items-center text-center -mt-12 relative z-10">
-            <div className="rounded-full p-1" style={{ background: "#F7F5F1", boxShadow: "0 0 0 3px #0E9AA7" }}>
+            <div className="rounded-full p-1" style={{ background: "#0B0E14", boxShadow: "0 0 0 3px #0E9AA7" }}>
               <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={92} />
             </div>
-            <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: "#12161C" }}>{profile.name || "Merveil Citizen"}</div>
+            <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: "#F8FAFC" }}>{profile.name || "Merveil Citizen"}</div>
             {(profile.profession || profile.city) && (
-              <div className="text-xs mt-1" style={{ color: "#625D56" }}>
+              <div className="text-xs mt-1" style={{ color: "rgba(148,163,184,0.9)" }}>
                 {[profile.profession, profile.city || profile.country].filter(Boolean).join(" · ")}
               </div>
             )}
-            {profile.bio && <p className="text-xs mt-2 max-w-sm line-clamp-3" style={{ color: "#4B5563" }}>{profile.bio}</p>}
+            {profile.bio && <p className="text-xs mt-2 max-w-sm line-clamp-3" style={{ color: "rgba(203,213,225,0.85)" }}>{profile.bio}</p>}
 
             {/* Feeling / thought */}
             {(feeling || thought || isSelf) && (
-              <div className="mt-3 w-full max-w-sm rounded-2xl px-3 py-2.5 text-left" style={{ background: "#EAE4DB", border: "1px solid #C4BAAC" }}>
-                <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "#625D56" }}>What I'm feeling</div>
+              <div className="mt-3 w-full max-w-sm rounded-2xl px-3 py-2.5 text-left" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(148,163,184,0.25)" }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "rgba(148,163,184,0.85)" }}>What I'm feeling</div>
                 {isSelf ? (
                   <>
                     <div className="flex flex-wrap gap-1.5 mb-2">
@@ -23746,16 +23747,16 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         <button key={f} type="button" onClick={() => setFeeling(f)}
                           className="text-[10px] font-semibold px-2 py-1 rounded-full"
                           style={{
-                            background: feeling === f ? "rgba(14,154,167,0.2)" : "#F7F5F1",
-                            color: feeling === f ? "#0A5F68" : "#252321",
-                            border: feeling === f ? "1px solid #0E9AA7" : "1px solid #C4BAAC",
+                            background: feeling === f ? "rgba(14,154,167,0.25)" : "rgba(255,255,255,0.06)",
+                            color: feeling === f ? "#5EEAD4" : "#E2E8F0",
+                            border: feeling === f ? "1px solid #0E9AA7" : "1px solid rgba(148,163,184,0.3)",
                           }}>{f}</button>
                       ))}
                     </div>
                     <input value={thought} onChange={(e) => setThought(e.target.value.slice(0, 120))}
                       placeholder="My thought — e.g. Building something meaningful today."
                       className="w-full text-xs px-2.5 py-2 rounded-xl outline-none"
-                      style={{ border: "1px solid #C4BAAC", color: "#12161C", background: "#F7F5F1" }} />
+                      style={{ border: "1px solid rgba(148,163,184,0.3)", color: "#F1F5F9", background: "rgba(255,255,255,0.05)" }} />
                     <button type="button" disabled={savingMood}
                       onClick={async () => {
                         setSavingMood(true);
@@ -23775,10 +23776,10 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                     </button>
                   </>
                 ) : (
-                  <div className="text-xs" style={{ color: "#12161C" }}>
+                  <div className="text-xs" style={{ color: "#F1F5F9" }}>
                     {feeling && <span className="font-semibold">{feeling}</span>}
                     {feeling && thought ? " · " : null}
-                    {thought && <span style={{ color: "#625D56" }}>{thought}</span>}
+                    {thought && <span style={{ color: "rgba(148,163,184,0.85)" }}>{thought}</span>}
                   </div>
                 )}
               </div>
@@ -23794,35 +23795,35 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               ].map(([label, val, onTap]) => (
                 <button key={label} type="button" onClick={onTap || undefined}
                   className="rounded-xl py-2.5"
-                  style={{ background: onTap && showVisitors ? "rgba(14,154,167,0.15)" : "#EAE4DB", border: "1px solid #C4BAAC" }}>
-                  <div className="text-base font-bold" style={{ color: "#12161C" }}>{Number(val).toLocaleString()}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "#625D56" }}>{label}{onTap ? " ▾" : ""}</div>
+                  style={{ background: onTap && showVisitors ? "rgba(14,154,167,0.18)" : "rgba(255,255,255,0.05)", border: "1px solid rgba(148,163,184,0.25)" }}>
+                  <div className="text-base font-bold" style={{ color: "#F8FAFC" }}>{Number(val).toLocaleString()}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "rgba(148,163,184,0.85)" }}>{label}{onTap ? " ▾" : ""}</div>
                 </button>
               ))}
             </div>
 
             {/* Visitors list (self only) */}
             {isSelf && showVisitors && (
-              <div className="mt-3 w-full max-w-sm rounded-2xl overflow-hidden text-left" style={{ background: "#F7F5F1", border: "1px solid #C4BAAC" }}>
-                <div className="px-3 py-2 flex items-center justify-between border-b" style={{ borderColor: "#C4BAAC" }}>
-                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#625D56" }}>
+              <div className="mt-3 w-full max-w-sm rounded-2xl overflow-hidden text-left" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(148,163,184,0.25)" }}>
+                <div className="px-3 py-2 flex items-center justify-between border-b" style={{ borderColor: "rgba(148,163,184,0.2)" }}>
+                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "rgba(148,163,184,0.85)" }}>
                     Profile visitors · {visitors.totalCount || 0}
                   </span>
                   <button type="button" onClick={() => setShowVisitors(false)} className="text-[10px]" style={{ color: "#0E9AA7" }}>Close</button>
                 </div>
                 <div className="max-h-48 overflow-y-auto">
                   {(visitors.views || []).length === 0 ? (
-                    <div className="px-3 py-4 text-xs text-center" style={{ color: "#625D56" }}>No visitors yet — share your reels.</div>
+                    <div className="px-3 py-4 text-xs text-center" style={{ color: "rgba(148,163,184,0.75)" }}>No visitors yet — share your reels.</div>
                   ) : (
                     (visitors.views || []).slice(0, 40).map((v, i) => {
                       const name = v.viewer?.name || (v.viewer ? "Citizen" : "Anonymous");
                       const when = v.createdAt ? new Date(v.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
                       return (
-                        <div key={i} className="flex items-center gap-2.5 px-3 py-2 border-b" style={{ borderColor: "rgba(37,35,33,0.08)" }}>
+                        <div key={i} className="flex items-center gap-2.5 px-3 py-2 border-b" style={{ borderColor: "rgba(148,163,184,0.12)" }}>
                           <Avatar name={name} src={v.viewer?.avatar_url} size={32} />
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-semibold truncate" style={{ color: "#12161C" }}>{name}</div>
-                            <div className="text-[10px]" style={{ color: "#625D56" }}>{[v.country, when].filter(Boolean).join(" · ")}</div>
+                            <div className="text-xs font-semibold truncate" style={{ color: "#F1F5F9" }}>{name}</div>
+                            <div className="text-[10px]" style={{ color: "rgba(148,163,184,0.75)" }}>{[v.country, when].filter(Boolean).join(" · ")}</div>
                           </div>
                         </div>
                       );
@@ -23847,7 +23848,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                 )}
                 {!isSelf && (
                   <button type="button" onClick={() => onChat?.(userId)}
-                    className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "#EAE4DB", color: "#12161C", border: "1px solid #C4BAAC" }}>
+                    className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "rgba(255,255,255,0.08)", color: "#F1F5F9", border: "1px solid rgba(148,163,184,0.3)" }}>
                     Message
                   </button>
                 )}
@@ -23869,7 +23870,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
 
           {/* Reels as circles */}
           <div className="px-4 pt-2 pb-1 flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#6B7280" }}>
+            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "rgba(148,163,184,0.85)" }}>
               Reels · {worldPosts.length}
             </span>
           </div>
@@ -23880,7 +23881,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
           )}
           <div className="px-3 pb-6">
             {worldPosts.length === 0 ? (
-              <div className="text-xs text-center py-12" style={{ color: "#5C6779" }}>No World reels yet.</div>
+              <div className="text-xs text-center py-12" style={{ color: "rgba(148,163,184,0.7)" }}>No World reels yet.</div>
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 {worldPosts.map((p) => (
@@ -24800,41 +24801,41 @@ function AuthModal({ onClose, onAuthed }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(37,35,33,0.32)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(3,6,10,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
       <div className="w-full max-w-sm rounded-[22px] p-6 relative overflow-hidden" style={{
-        background: "linear-gradient(165deg, #EAE4DB 0%, #D8D0C4 100%)",
-        border: "1px solid rgba(37,35,33,0.10)",
-        boxShadow: "0 24px 64px rgba(37,35,33,0.14), 0 1px 0 rgba(255,255,255,0.55) inset",
+        background: "radial-gradient(ellipse 100% 60% at 50% 0%, rgba(14,165,233,0.16), transparent 65%), linear-gradient(165deg, #0F172A 0%, #070B12 100%)",
+        border: "1px solid rgba(14,165,233,0.25)",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset",
       }}>
-        <div className="pointer-events-none absolute -top-16 -right-10 w-40 h-40 rounded-full" style={{ background: "radial-gradient(circle, rgba(14,154,167,0.08), transparent 70%)" }} />
+        <div className="pointer-events-none absolute -top-16 -right-10 w-40 h-40 rounded-full" style={{ background: "radial-gradient(circle, rgba(14,165,233,0.18), transparent 70%)" }} />
         <div className="flex items-center justify-between mb-5 relative">
           <div>
-            <div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: T.signal, fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div>
-            <h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: T.ink, letterSpacing: "-0.02em" }}>Enter as a citizen</h2>
+            <div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: "rgba(14,165,233,0.85)", fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div>
+            <h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: "#F8FAFC", letterSpacing: "-0.02em" }}>Enter as a citizen</h2>
           </div>
-          <button type="button" onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.04)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Close">
-            <X size={16} color={T.sub} />
+          <button type="button" onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(148,163,184,0.25)" }} aria-label="Close">
+            <X size={16} color="rgba(203,213,225,0.9)" />
           </button>
         </div>
 
-        <p className="text-sm mb-5 leading-relaxed relative" style={{ color: T.sub }}>
+        <p className="text-sm mb-5 leading-relaxed relative" style={{ color: "rgba(148,163,184,0.9)" }}>
           One foundation for identity, connection, and opportunity. Sign in to keep your Passport, messages, and LifeLink across devices.
         </p>
 
         <button type="button" onClick={continueWithGoogle} disabled={busy}
           className="w-full py-3.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 relative"
           style={{
-            background: busy ? "rgba(14,154,167,0.55)" : "linear-gradient(135deg, #0E9AA7 0%, #0A7A85 100%)",
-            color: "#FFFFFF",
-            boxShadow: "0 8px 24px rgba(14,154,167,0.28)",
+            background: busy ? "rgba(14,165,233,0.55)" : "linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%)",
+            color: "#04111F",
+            boxShadow: "0 8px 24px rgba(14,165,233,0.35)",
             opacity: busy ? 0.85 : 1,
           }}>
           {busy ? "Opening Google…" : "Continue with Google"}
         </button>
 
-        {error && <div className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ color: "#991B1B", background: "#FEF2F2", border: "1px solid #FECACA" }}>{error}</div>}
+        {error && <div className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ color: "#FCA5A5", background: "rgba(153,27,27,0.18)", border: "1px solid rgba(248,113,113,0.35)" }}>{error}</div>}
 
-        <button type="button" onClick={onClose} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: T.sub }}>
+        <button type="button" onClick={onClose} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: "rgba(148,163,184,0.85)" }}>
           Continue as visitor
         </button>
       </div>
@@ -32306,9 +32307,10 @@ function AdminAlertsPanel() {
         )}
 
         {!isAiThread && e2eeUi.label && (
-          <div className="mx-3 mt-0.5 mb-0 px-2 py-1 rounded-md text-[9px] leading-tight shrink-0 text-center"
+          <div className="mx-3 mt-1 mb-0.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold leading-tight shrink-0 text-center flex items-center justify-center gap-1"
             style={{
-              background: e2eeUi.verified ? "rgba(22,101,52,0.06)" : "rgba(14,154,167,0.06)",
+              background: e2eeUi.verified ? "rgba(22,101,52,0.12)" : "rgba(14,154,167,0.12)",
+              border: `1px solid ${e2eeUi.verified ? "rgba(22,101,52,0.3)" : "rgba(14,154,167,0.3)"}`,
               color: e2eeUi.verified ? "#166534" : "#0A5F68",
             }}>
             {e2eeUi.verified ? "🔒 End-to-end encrypted" : e2eeUi.enabled ? "🔐 Securing keys…" : "🔐 Secure transport"}
