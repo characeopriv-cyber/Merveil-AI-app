@@ -18,37 +18,66 @@ const styles=`.mcon{min-height:100dvh;background:#f7f5f1;color:#18202a;font-fami
 
 export default function MerveilConnect({citizens=null,onOpenProfile=()=>{},onMessage=()=>{},onCall=()=>{},e2eeVerified=false}){
  const [tab,setTab]=useState("Citizens"),[query,setQuery]=useState(""),[list,setList]=useState(Array.isArray(citizens)?citizens.map(normalizePerson):null),[messages,setMessages]=useState([]),[offset,setOffset]=useState(0),[hasMore,setHasMore]=useState(false),[state,setState]=useState(Array.isArray(citizens)?"ready":"loading"),[notice,setNotice]=useState(""),[locale,setLocale]=useState(lang());
- const realtimeRef=useRef(null),loadingRef=useRef(false),presenceRef=useRef(new Map()),noticeTimer=useRef(null),listRef=useRef([]),reloadQueuedRef=useRef(false),reloadTimerRef=useRef(null);
+ const realtimeRef=useRef(null),loadingRef=useRef(false),presenceRef=useRef(new Map()),noticeTimer=useRef(null),listRef=useRef([]),reloadQueuedRef=useRef(false),reloadTimerRef=useRef(null),propsSeededRef=useRef(false),loadSeqRef=useRef(0);
  useEffect(()=>{listRef.current=list||[]},[list]);
  useEffect(()=>{const update=()=>setLocale(lang());window.addEventListener("languagechange",update);const mo=new MutationObserver(update);mo.observe(document.documentElement,{attributes:true,attributeFilter:["lang","dir"]});return()=>{window.removeEventListener("languagechange",update);mo.disconnect()}},[]);
  const load=useCallback(async(nextOffset=0,append=false)=>{
   if(loadingRef.current){reloadQueuedRef.current=true;return;}
+  const seq=++loadSeqRef.current;
   loadingRef.current=true;
   try{
    const r=await fetch(`/api/connect-session?offset=${nextOffset}&limit=100`,{credentials:"include",cache:"no-store",headers:{"Cache-Control":"no-cache"}});
    const b=await r.json().catch(()=>({}));
+   if(seq!==loadSeqRef.current)return;
    if(!r.ok){setState(b?.error==="Authentication required"?"auth":"error");return}
    const incoming=Array.isArray(b.citizens)?b.citizens.map(normalizePerson):[];
    setList(prev=>append?[...(prev||[]),...incoming]:incoming);
    setMessages(Array.isArray(b.messages)?b.messages:[]);
    setOffset(nextOffset);setHasMore(Boolean(b.has_more));setState("ready");
-  }catch{setState("error");}
-  finally{loadingRef.current=false;if(reloadQueuedRef.current){reloadQueuedRef.current=false;setTimeout(()=>load(0,false),0)}}
+  }catch{if(seq===loadSeqRef.current)setState("error");}
+  finally{if(seq===loadSeqRef.current)loadingRef.current=false;if(seq===loadSeqRef.current&&reloadQueuedRef.current){reloadQueuedRef.current=false;setTimeout(()=>load(0,false),0)}}
  },[]);
  const scheduleReload=useCallback(()=>{
   reloadQueuedRef.current=true;
   clearTimeout(reloadTimerRef.current);
   reloadTimerRef.current=setTimeout(()=>{reloadQueuedRef.current=false;load(0,false)},250);
  },[load]);
- useEffect(()=>{if(!Array.isArray(citizens))load(0,false);else setList(citizens.map(normalizePerson))},[citizens,load]);
  useEffect(()=>{
-  let alive=true;let channel=null;let retryTimer=null;
-  const connect=async()=>{
+  if(!Array.isArray(citizens)){
+   load(0,false);
+   return;
+  }
+  if(!propsSeededRef.current){
+   propsSeededRef.current=true;
+   setList(citizens.map(normalizePerson));
+   setState("ready");
+  }
+ },[citizens,load]);
+ useEffect(()=>{
+  let alive=true;let channel=null;let retryTimer=null;let authTimer=null;let healthTimer=null;
+  const clearChannel=async()=>{if(channel){try{await supabase.removeChannel(channel)}catch{}channel=null}realtimeRef.current=null};
+  const refreshAuth=async()=>{
+   if(!alive)return false;
    try{
     const r=await fetch("/api/realtime-token",{credentials:"include",cache:"no-store",headers:{"Cache-Control":"no-cache"}}),b=await r.json().catch(()=>({}));
-    if(!alive||!r.ok||!b.access_token)return;
+    if(!alive||!r.ok||!b.access_token)return false;
     await supabase.realtime.setAuth(b.access_token);
-    channel=supabase.channel(`merveil-live-${b.user_id}-${Date.now()}`);
+    return true;
+   }catch{return false}
+  };
+  const scheduleAuthRefresh=()=>{
+   clearTimeout(authTimer);
+   authTimer=setTimeout(async()=>{if(!alive)return;const ok=await refreshAuth();if(!ok){clearTimeout(retryTimer);retryTimer=setTimeout(connect,1500)}else scheduleAuthRefresh()},45000);
+  };
+  const connect=async()=>{
+   if(!alive)return;
+   try{
+    clearTimeout(retryTimer);
+    await clearChannel();
+    const r=await fetch("/api/realtime-token",{credentials:"include",cache:"no-store",headers:{"Cache-Control":"no-cache"}}),b=await r.json().catch(()=>({}));
+    if(!alive||!r.ok||!b.access_token){if(alive){retryTimer=setTimeout(connect,3000)}return;}
+    await supabase.realtime.setAuth(b.access_token);
+    channel=supabase.channel(`merveil-live-${b.user_id}`);
     channel.on("postgres_changes",{event:"*",schema:"public",table:"messages"},()=>scheduleReload());
     channel.on("postgres_changes",{event:"*",schema:"public",table:"conversations"},()=>scheduleReload());
     channel.on("postgres_changes",{event:"*",schema:"public",table:"connections"},()=>scheduleReload());
@@ -65,19 +94,20 @@ export default function MerveilConnect({citizens=null,onOpenProfile=()=>{},onMes
       }
     });
     channel.subscribe(status=>{
-      if(status==="SUBSCRIBED")scheduleReload();
+      if(status==="SUBSCRIBED"){scheduleReload();scheduleAuthRefresh()}
       if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){
-       scheduleReload();clearTimeout(retryTimer);retryTimer=setTimeout(()=>{if(alive){if(channel)supabase.removeChannel(channel);channel=null;connect()}},2500);
+       scheduleReload();clearTimeout(authTimer);clearTimeout(retryTimer);retryTimer=setTimeout(()=>{if(alive)connect()},1500);
       }
     });
     realtimeRef.current=channel;
    }catch{if(alive){clearTimeout(retryTimer);retryTimer=setTimeout(connect,3000)}}
   };
   connect();
-  const refresh=()=>load(0,false);
-  const onVisibility=()=>{if(document.visibilityState==="visible")refresh()};
+  healthTimer=setInterval(()=>{if(alive&&document.visibilityState==="visible"){refreshAuth().then(ok=>{if(!ok)connect()})}},60000);
+  const refresh=()=>{if(document.visibilityState!=="hidden")load(0,false);if(document.visibilityState!=="hidden")refreshAuth()};
+  const onVisibility=()=>{if(document.visibilityState==="visible"){refresh();scheduleReload()}};
   window.addEventListener("focus",refresh);window.addEventListener("online",refresh);document.addEventListener("visibilitychange",onVisibility);
-  return()=>{alive=false;clearTimeout(noticeTimer.current);clearTimeout(retryTimer);clearTimeout(reloadTimerRef.current);window.removeEventListener("focus",refresh);window.removeEventListener("online",refresh);document.removeEventListener("visibilitychange",onVisibility);if(channel)supabase.removeChannel(channel);realtimeRef.current=null};
+  return()=>{alive=false;clearTimeout(noticeTimer.current);clearTimeout(retryTimer);clearTimeout(authTimer);clearInterval(healthTimer);clearTimeout(reloadTimerRef.current);window.removeEventListener("focus",refresh);window.removeEventListener("online",refresh);document.removeEventListener("visibilitychange",onVisibility);if(channel)supabase.removeChannel(channel);realtimeRef.current=null};
  },[load,scheduleReload]);
  const filtered=useMemo(()=>{const q=query.trim().toLowerCase();return Array.isArray(list)?list.filter(p=>!q||`${p.name} ${p.role} ${p.location} ${p.profession} ${p.country}`.toLowerCase().includes(q)):[]},[list,query]);
  const visible=useMemo(()=>tab==="My Circle"?filtered.filter(p=>p.connected):filtered,[filtered,tab]);
