@@ -9104,7 +9104,7 @@ function ReelsView({ properties, liveViews, onChat, currentUserId, onRequireSign
       const res = await merveilFetch("/api/calls?action=create", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ calleeId: ownerId, mode: "voice" }),
+        body: JSON.stringify({ receiverId: ownerId, type: "voice" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { alert(data?.error || "Couldn't start the call."); return; }
