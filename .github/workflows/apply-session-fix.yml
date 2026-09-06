@@ -1,0 +1,65 @@
+name: Apply session truth fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-session-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Remove stale-JWT session masking
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('api/router.js')
+          s = p.read_text(encoding='utf-8')
+          old = '''      if (sub === "session" && method === "GET") {
+        // Prefer full session; if refresh race left us without a live token,
+        // still restore the UI from jwtSub via service role so the citizen
+        // is not bounced to "Sign in" every few minutes.
+        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "");
+        if (!uid) return sendJson(res, 200, { user: null });
+        let profile = null;
+        if (user && token) {
+          const { data } = await sb.from("profiles").select("*").eq("id", uid).maybeSingle();
+          profile = data;
+        }
+        if (!profile) {
+          try {
+            const svc = adminClient();
+            const { data } = await svc.from("profiles").select("*").eq("id", uid).maybeSingle();
+            profile = data;
+          } catch { /* no service role */ }
+        }
+        return sendJson(res, 200, { user: profile ? mapAuthUser(profile) : null });
+      }'''
+          new = '''      if (sub === "session" && method === "GET") {
+        // Session truth must come from a live Supabase-authenticated user.
+        // Never resurrect a dead session from an unsigned/stale JWT subject
+        // or a service-role profile lookup; that masks expired/revoked auth.
+        if (!user?.id || !token) return sendJson(res, 200, { user: null });
+        const uid = user.id;
+        const { data: profile } = await sb.from("profiles").select("*").eq("id", uid).maybeSingle();
+        return sendJson(res, 200, { user: profile ? mapAuthUser(profile) : null });
+      }'''
+          if old not in s:
+              raise SystemExit('SESSION_MASKING_BLOCK_NOT_FOUND')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          print('SESSION_MASKING_FIXED')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name 'Merveil CI'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/router.js
+          git commit -m 'fix(auth): stop masking dead sessions' || exit 0
+          git push
