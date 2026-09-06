@@ -11012,12 +11012,18 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="text-[10px] font-bold tracking-[0.2em] uppercase" style={{ color: "rgba(6,182,212,0.95)", fontFamily: "IBM Plex Mono,monospace" }}>
-                Network
+                {t("nav.connect")}
               </div>
               <h2 className="text-xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: CT.ink, letterSpacing: "-0.02em" }}>
-                Connect
+                {t("nav.connect")}
               </h2>
-              <p className="text-[11px] mt-0.5" style={{ color: CT.sub }}>People · presence · trusted conversations</p>
+              <p className="text-[11px] mt-0.5" style={{ color: CT.sub }}>
+                {document.documentElement.getAttribute("lang") === "fr"
+                  ? "Personnes · présence · conversations de confiance"
+                  : document.documentElement.getAttribute("lang") === "ar"
+                    ? "أشخاص · حضور · محادثات موثوقة"
+                    : "People · presence · trusted conversations"}
+              </p>
             </div>
             <button
               onClick={() => setShowNewChat(true)}
@@ -11632,29 +11638,29 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             {e2eeUi.verified ? "🔒 End-to-end encrypted" : e2eeUi.enabled ? "🔐 Securing keys…" : "🔐 Secure transport"}
           </div>
         )}
-        {!isAiThread && (
-          <div className="px-3 pt-2 pb-1 flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
-            {[
-              { label: "Summarize", prompt: "Summarize this conversation briefly." },
-              { label: "Translate", prompt: "Translate my next message to English and Arabic." },
-              { label: "Reply idea", prompt: "Suggest a polite, professional reply." },
-              { label: "Meeting", prompt: "Draft a short message to propose a meeting time in Dubai." },
-            ].map((chip) => (
-              <button
-                key={chip.label}
-                type="button"
-                onClick={() => {
-                  try { window.dispatchEvent(new CustomEvent("merveil:open-ai", { detail: { prompt: chip.prompt } })); } catch {}
-                  setDraft((d) => d || "");
-                }}
-                className="text-[11px] font-bold px-3 py-1.5 rounded-full shrink-0"
-                style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff", border: "none", boxShadow: "0 2px 8px rgba(14,154,167,0.28)" }}
-              >
-                ✦ {chip.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* AI assistant tools — always visible in human chats (and AI thread) */}
+        <div className="px-3 pt-2 pb-1 flex gap-1.5 overflow-x-auto shrink-0" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
+          {[
+            { label: t("messages.summarize"), prompt: "Summarize this conversation briefly." },
+            { label: t("messages.translate"), prompt: "Translate my next message to English and Arabic." },
+            { label: t("messages.replyIdea"), prompt: "Suggest a polite, professional reply." },
+            { label: t("messages.meeting"), prompt: "Draft a short message to propose a meeting time in Dubai." },
+          ].map((chip) => (
+            <button
+              key={chip.label}
+              type="button"
+              onClick={() => {
+                // Put the prompt in the composer so the citizen sees it and can send
+                setDraft(chip.prompt);
+                try { window.dispatchEvent(new CustomEvent("merveil:open-ai", { detail: { prompt: chip.prompt } })); } catch {}
+              }}
+              className="text-[11px] font-bold px-3 py-1.5 rounded-full shrink-0"
+              style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff", border: "none", boxShadow: "0 2px 8px rgba(14,154,167,0.28)" }}
+            >
+              ✦ {chip.label}
+            </button>
+          ))}
+        </div>
         <div
           className="px-2 py-2 border-t flex items-center gap-1.5"
           style={{
@@ -18972,7 +18978,7 @@ function SettingsView({ settings, setSettings }) {
       {cc && !ccLoading && (
         <>
           {/* 02 — YOUR INTELLIGENCE */}
-          <SectionNumber n="02" title="Your Intelligence" sub="Control how Merveil thinks, assists and communicates on your behalf." />
+          <SectionNumber n="02" title={t("settings.intelligence", settings.language) || (settings.language === "fr" ? "Votre intelligence" : settings.language === "ar" ? "ذكائك" : "Your Intelligence")} sub={settings.language === "fr" ? "Contrôlez comment Merveil pense, assiste et communique pour vous." : settings.language === "ar" ? "تحكم في كيفية تفكير ميرفيل ومساعدتك والتواصل نيابة عنك." : "Control how Merveil thinks, assists and communicates on your behalf."} />
           <Card>
             <Field label="Intelligence mode">
               <Pills
@@ -23825,8 +23831,16 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
     }
   };
 
+  // Creator page — violet foncé (dark violet) theme
+  const CREATOR_BG = "#1A0B2E";
+  const CREATOR_PANEL = "#2A1645";
+  const CREATOR_INK = "#F3E8FF";
+  const CREATOR_SUB = "#C4B5D4";
+  const CREATOR_LINE = "rgba(196,181,212,0.18)";
+  const CREATOR_ACCENT = "#A78BFA";
+
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: "#F7F5F1", color: "#12161C" }}>
+    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: CREATOR_BG, color: CREATOR_INK }}>
       {/* Sticky top bar */}
       <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 pointer-events-none"
         style={{ paddingTop: "calc(8px + var(--safe-top))" }}>
@@ -23842,9 +23856,9 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
       </div>
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center"><Loader2 size={24} className="animate-spin" color="#0EA5E9" /></div>
+        <div className="flex-1 flex items-center justify-center"><Loader2 size={24} className="animate-spin" color={CREATOR_ACCENT} /></div>
       ) : !profile ? (
-        <div className="flex-1 flex items-center justify-center text-sm" style={{ color: "#9CA3AF" }}>Citizen not found.</div>
+        <div className="flex-1 flex items-center justify-center text-sm" style={{ color: CREATOR_SUB }}>Citizen not found.</div>
       ) : (
         <div ref={pageScrollRef} className="flex-1 overflow-y-auto overscroll-contain"
           style={{ WebkitOverflowScrolling: "touch", paddingBottom: "calc(24px + var(--safe-bottom))" }}>
@@ -23854,9 +23868,9 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               <video ref={coverVideoRef} src={coverUrl} muted playsInline loop autoPlay
                 className="absolute inset-0 w-full h-full object-cover" />
             ) : (
-              <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#0F172A 0%,#1E293B 50%,#0B0E14 100%)" }} />
+              <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#2E1065 0%,#4C1D95 45%,#1A0B2E 100%)" }} />
             )}
-            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(247,245,241,0.92) 100%)" }} />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(26,11,46,0.96) 100%)" }} />
             {coverUrl && (
               <button type="button" aria-label="Toggle cover sound"
                 onClick={(e) => {
@@ -23887,23 +23901,23 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             )}
           </div>
 
-          {/* Identity — dark ink on light surface (readable) */}
+          {/* Identity — light ink on violet foncé */}
           <div className="px-5 pb-3 flex flex-col items-center text-center -mt-12 relative z-10">
-            <div className="rounded-full p-1" style={{ background: "#F7F5F1", boxShadow: "0 0 0 3px #0E9AA7" }}>
+            <div className="rounded-full p-1" style={{ background: CREATOR_BG, boxShadow: "0 0 0 3px #A78BFA" }}>
               <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={92} />
             </div>
-            <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: "#12161C" }}>{profile.name || "Merveil Citizen"}</div>
+            <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: CREATOR_INK }}>{profile.name || "Merveil Citizen"}</div>
             {(profile.profession || profile.city) && (
-              <div className="text-xs mt-1" style={{ color: "#625D56" }}>
+              <div className="text-xs mt-1" style={{ color: CREATOR_SUB }}>
                 {[profile.profession, profile.city || profile.country].filter(Boolean).join(" · ")}
               </div>
             )}
-            {profile.bio && <p className="text-xs mt-2 max-w-sm line-clamp-3" style={{ color: "#4B5563" }}>{profile.bio}</p>}
+            {profile.bio && <p className="text-xs mt-2 max-w-sm line-clamp-3" style={{ color: CREATOR_SUB }}>{profile.bio}</p>}
 
             {/* Feeling / thought */}
             {(feeling || thought || isSelf) && (
-              <div className="mt-3 w-full max-w-sm rounded-2xl px-3 py-2.5 text-left" style={{ background: "#EAE4DB", border: "1px solid #C4BAAC" }}>
-                <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "#625D56" }}>What I'm feeling</div>
+              <div className="mt-3 w-full max-w-sm rounded-2xl px-3 py-2.5 text-left" style={{ background: CREATOR_PANEL, border: `1px solid ${CREATOR_LINE}` }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: CREATOR_SUB }}>What I'm feeling</div>
                 {isSelf ? (
                   <>
                     <div className="flex flex-wrap gap-1.5 mb-2">
@@ -23911,16 +23925,16 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         <button key={f} type="button" onClick={() => setFeeling(f)}
                           className="text-[10px] font-semibold px-2 py-1 rounded-full"
                           style={{
-                            background: feeling === f ? "rgba(14,154,167,0.2)" : "#F7F5F1",
-                            color: feeling === f ? "#0A5F68" : "#252321",
-                            border: feeling === f ? "1px solid #0E9AA7" : "1px solid #C4BAAC",
+                            background: feeling === f ? "rgba(167,139,250,0.25)" : "rgba(255,255,255,0.06)",
+                            color: feeling === f ? "#E9D5FF" : CREATOR_INK,
+                            border: feeling === f ? "1px solid #A78BFA" : `1px solid ${CREATOR_LINE}`,
                           }}>{f}</button>
                       ))}
                     </div>
                     <input value={thought} onChange={(e) => setThought(e.target.value.slice(0, 120))}
                       placeholder="My thought — e.g. Building something meaningful today."
                       className="w-full text-xs px-2.5 py-2 rounded-xl outline-none"
-                      style={{ border: "1px solid #C4BAAC", color: "#12161C", background: "#F7F5F1" }} />
+                      style={{ border: `1px solid ${CREATOR_LINE}`, color: CREATOR_INK, background: "rgba(0,0,0,0.25)" }} />
                     <button type="button" disabled={savingMood}
                       onClick={async () => {
                         setSavingMood(true);
@@ -23935,15 +23949,15 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         setSavingMood(false);
                       }}
                       className="mt-2 text-[10px] font-bold px-3 py-1.5 rounded-full"
-                      style={{ background: "#0E9AA7", color: "#fff", opacity: savingMood ? 0.7 : 1 }}>
+                      style={{ background: "linear-gradient(135deg,#7C3AED,#A78BFA)", color: "#fff", opacity: savingMood ? 0.7 : 1 }}>
                       {savingMood ? "Saving…" : "Save expression"}
                     </button>
                   </>
                 ) : (
-                  <div className="text-xs" style={{ color: "#12161C" }}>
+                  <div className="text-xs" style={{ color: CREATOR_INK }}>
                     {feeling && <span className="font-semibold">{feeling}</span>}
                     {feeling && thought ? " · " : null}
-                    {thought && <span style={{ color: "#625D56" }}>{thought}</span>}
+                    {thought && <span style={{ color: CREATOR_SUB }}>{thought}</span>}
                   </div>
                 )}
               </div>
@@ -23959,35 +23973,35 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               ].map(([label, val, onTap]) => (
                 <button key={label} type="button" onClick={onTap || undefined}
                   className="rounded-xl py-2.5"
-                  style={{ background: onTap && showVisitors ? "rgba(14,154,167,0.15)" : "#EAE4DB", border: "1px solid #C4BAAC" }}>
-                  <div className="text-base font-bold" style={{ color: "#12161C" }}>{Number(val).toLocaleString()}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "#625D56" }}>{label}{onTap ? " ▾" : ""}</div>
+                  style={{ background: onTap && showVisitors ? "rgba(167,139,250,0.2)" : CREATOR_PANEL, border: `1px solid ${CREATOR_LINE}` }}>
+                  <div className="text-base font-bold" style={{ color: CREATOR_INK }}>{Number(val).toLocaleString()}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: CREATOR_SUB }}>{label}{onTap ? " ▾" : ""}</div>
                 </button>
               ))}
             </div>
 
             {/* Visitors list (self only) */}
             {isSelf && showVisitors && (
-              <div className="mt-3 w-full max-w-sm rounded-2xl overflow-hidden text-left" style={{ background: "#F7F5F1", border: "1px solid #C4BAAC" }}>
-                <div className="px-3 py-2 flex items-center justify-between border-b" style={{ borderColor: "#C4BAAC" }}>
-                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#625D56" }}>
+              <div className="mt-3 w-full max-w-sm rounded-2xl overflow-hidden text-left" style={{ background: CREATOR_PANEL, border: `1px solid ${CREATOR_LINE}` }}>
+                <div className="px-3 py-2 flex items-center justify-between border-b" style={{ borderColor: CREATOR_LINE }}>
+                  <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: CREATOR_SUB }}>
                     Profile visitors · {visitors.totalCount || 0}
                   </span>
-                  <button type="button" onClick={() => setShowVisitors(false)} className="text-[10px]" style={{ color: "#0E9AA7" }}>Close</button>
+                  <button type="button" onClick={() => setShowVisitors(false)} className="text-[10px]" style={{ color: CREATOR_ACCENT }}>Close</button>
                 </div>
                 <div className="max-h-48 overflow-y-auto">
                   {(visitors.views || []).length === 0 ? (
-                    <div className="px-3 py-4 text-xs text-center" style={{ color: "#625D56" }}>No visitors yet — share your reels.</div>
+                    <div className="px-3 py-4 text-xs text-center" style={{ color: CREATOR_SUB }}>No visitors yet — share your reels.</div>
                   ) : (
                     (visitors.views || []).slice(0, 40).map((v, i) => {
                       const name = v.viewer?.name || (v.viewer ? "Citizen" : "Anonymous");
                       const when = v.createdAt ? new Date(v.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
                       return (
-                        <div key={i} className="flex items-center gap-2.5 px-3 py-2 border-b" style={{ borderColor: "rgba(37,35,33,0.08)" }}>
+                        <div key={i} className="flex items-center gap-2.5 px-3 py-2 border-b" style={{ borderColor: CREATOR_LINE }}>
                           <Avatar name={name} src={v.viewer?.avatar_url} size={32} />
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-semibold truncate" style={{ color: "#12161C" }}>{name}</div>
-                            <div className="text-[10px]" style={{ color: "#625D56" }}>{[v.country, when].filter(Boolean).join(" · ")}</div>
+                            <div className="text-xs font-semibold truncate" style={{ color: CREATOR_INK }}>{name}</div>
+                            <div className="text-[10px]" style={{ color: CREATOR_SUB }}>{[v.country, when].filter(Boolean).join(" · ")}</div>
                           </div>
                         </div>
                       );
@@ -29051,8 +29065,20 @@ function AppInner() {
     const langInfo = LANGUAGES.find((l) => l.code === settings.language);
     document.documentElement.setAttribute("lang", settings.language || "en");
     document.documentElement.setAttribute("dir", langInfo?.rtl ? "rtl" : "ltr");
+    try { localStorage.setItem("merveil_language", settings.language || "en"); } catch {}
     return () => mq?.removeEventListener?.("change", applyTheme);
   }, [settings.theme, settings.textSize, settings.language]);
+
+  // Keep language choice stable across Settings re-renders (voiceschanged etc.)
+  useEffect(() => {
+    const onLang = (e) => {
+      const code = e?.detail?.code;
+      if (!code) return;
+      setSettings((s) => (s.language === code ? s : { ...s, language: code }));
+    };
+    window.addEventListener("merveil:language", onLang);
+    return () => window.removeEventListener("merveil:language", onLang);
+  }, []);
 
   // Skip the intro on reload within the same browser tab/session — once a
   // visitor has entered, refreshing the page keeps them in the main app
@@ -29340,19 +29366,18 @@ function AppInner() {
   const [sessionReady, setSessionReady] = useState(false);
   const refreshSession = useCallback(() => {
     // Never wipe a known-good local user on network blips or transient
-    // refresh-token races. Only clear when the server explicitly returns
-    // a successful JSON body with user: null (true signed-out state).
+    // refresh-token races. Prefer local citizen cache when server is ambiguous.
     return fetch("/api/auth/session", { credentials: "include" })
       .then(async (r) => {
         if (!r.ok) {
-          // 5xx / gateway errors — keep currentUser; do not log out
-          if (r.status >= 500) return { keep: true };
-          // 401/403 with body — try parse; otherwise keep
-          try {
-            const body = await r.json();
-            if (body && body.user === null) return { user: null };
-            if (body?.user) return { user: body.user };
-          } catch {}
+          // Any non-OK (incl. 401 mid-refresh) — keep local citizen
+          if (r.status >= 400) {
+            try {
+              const body = await r.json();
+              if (body?.user?.id) return { user: body.user };
+            } catch {}
+            return { keep: true };
+          }
           return { keep: true };
         }
         try {
@@ -29363,19 +29388,33 @@ function AppInner() {
       })
       .then((body) => {
         if (!body) return null;
-        if (body.keep) return null; // network/server hiccup — leave state alone
-        if (body.user) {
+        const readCache = () => {
+          try { return JSON.parse(localStorage.getItem("junction_user") || "null"); } catch { return null; }
+        };
+        if (body.keep) {
+          const cached = readCache();
+          return cached?.id ? cached : null;
+        }
+        if (body.user?.id) {
           syncCurrentUser(body.user);
           return body.user;
         }
-        // Explicit { user: null } from a successful response
+        // Explicit { user: null } — only clear if there is no local citizen
         if (Object.prototype.hasOwnProperty.call(body, "user") && body.user === null) {
+          const cached = readCache();
+          if (cached?.id) return cached; // keep signed-in UI; next keep-alive heals cookies
           syncCurrentUser(null);
           return null;
         }
         return null;
       })
-      .catch(() => null) // network error — never force logout
+      .catch(() => {
+        try {
+          const cached = JSON.parse(localStorage.getItem("junction_user") || "null");
+          if (cached?.id) return cached;
+        } catch {}
+        return null;
+      })
       .finally(() => setSessionReady(true));
   }, []);
 
@@ -29419,27 +29458,13 @@ function AppInner() {
   // citizen, keep them signed in — do not flash the auth modal.
   const requireSignIn = useCallback(async () => {
     const user = await refreshSession();
-    if (user) return user;
-    // Stale localStorage alone must NOT count as signed-in — that caused
-    // "already signed in" UI with 401 on every save/action.
+    if (user?.id) return user;
+    // Prefer local cache over bouncing to Google during refresh races.
     try {
       const cached = JSON.parse(localStorage.getItem("junction_user") || "null");
       if (cached?.id) {
-        const r = await fetch("/api/auth/session", { credentials: "include" });
-        if (r.ok) {
-          const body = await r.json().catch(() => null);
-          if (body?.user?.id) {
-            syncCurrentUser(body.user);
-            return body.user;
-          }
-          if (body && Object.prototype.hasOwnProperty.call(body, "user") && body.user === null) {
-            try { localStorage.removeItem("junction_user"); } catch {}
-            syncCurrentUser(null);
-          }
-        } else if (r.status >= 500) {
-          syncCurrentUser(cached);
-          return cached;
-        }
+        syncCurrentUser(cached);
+        return cached;
       }
     } catch {}
     setShowAuthModal(true);
@@ -31843,12 +31868,18 @@ function AdminAlertsPanel() {
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="text-[10px] font-bold tracking-[0.2em] uppercase" style={{ color: "rgba(6,182,212,0.95)", fontFamily: "IBM Plex Mono,monospace" }}>
-                Network
+                {t("nav.connect")}
               </div>
               <h2 className="text-xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: CT.ink, letterSpacing: "-0.02em" }}>
-                Connect
+                {t("nav.connect")}
               </h2>
-              <p className="text-[11px] mt-0.5" style={{ color: CT.sub }}>People · presence · trusted conversations</p>
+              <p className="text-[11px] mt-0.5" style={{ color: CT.sub }}>
+                {document.documentElement.getAttribute("lang") === "fr"
+                  ? "Personnes · présence · conversations de confiance"
+                  : document.documentElement.getAttribute("lang") === "ar"
+                    ? "أشخاص · حضور · محادثات موثوقة"
+                    : "People · presence · trusted conversations"}
+              </p>
             </div>
             <button
               onClick={() => setShowNewChat(true)}
