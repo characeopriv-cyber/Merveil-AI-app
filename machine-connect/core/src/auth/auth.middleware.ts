@@ -3,6 +3,11 @@ import { PrincipalRole } from './principal';
 
 type RequestLike = { headers: Record<string, string | string[] | undefined>; user?: { actorId: string; tenantId: string; roles: PrincipalRole[]; authenticated: true } };
 
+const PLATFORM_ROLES: PrincipalRole[] = [
+  'owner', 'admin', 'operator', 'viewer',
+  'security_analyst', 'land_registry_officer', 'data_scientist',
+];
+
 @Injectable()
 export class AuthMiddleware implements NestMiddleware {
   async use(req: RequestLike, _res: unknown, next: () => void) {
@@ -29,8 +34,8 @@ export class AuthMiddleware implements NestMiddleware {
     const memberships = await membershipResponse.json() as Array<{ role?: string }>;
     if (!memberships.length) throw new ForbiddenException('User is not a member of this organization');
 
-    const allowed: PrincipalRole[] = ['owner', 'admin', 'operator', 'viewer'];
-    const role = allowed.includes(memberships[0].role as PrincipalRole) ? memberships[0].role as PrincipalRole : 'viewer';
+    const rawRole = memberships[0].role?.trim() as PrincipalRole | undefined;
+    const role = rawRole && PLATFORM_ROLES.includes(rawRole) ? rawRole : 'viewer';
     req.user = { actorId: user.id, tenantId, roles: [role], authenticated: true };
     next();
   }
