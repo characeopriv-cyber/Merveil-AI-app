@@ -17,6 +17,7 @@ export interface Machine {
   firmwareVersion?: string;
   lifecycleState: MachineLifecycleState;
   connectionState: MachineConnectionState;
+  lastHeartbeatAt?: string;
   adapterId?: string;
   capabilities: string[];
   createdAt: string;
