@@ -10688,12 +10688,15 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
 
   return (
     <div
-      className="relative border-b overflow-hidden"
+      className="relative overflow-hidden"
       style={{
-        borderColor: CT.line,
         background: "linear-gradient(175deg,#0A1218 0%,#121C24 45%,#1A242E 100%)",
         minHeight: focusLayer ? 200 : 168,
         marginTop: 0,
+        paddingTop: "max(6px, env(safe-area-inset-top))",
+        /* soft bottom edge into Connect — not a hard rectangular rule */
+        borderRadius: "0 0 28px 28px",
+        boxShadow: "0 12px 28px rgba(0,0,0,0.12)",
       }}
     >
       <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 120%, rgba(255,255,255,0.06) 0%, transparent 55%)" }} />
@@ -11322,20 +11325,26 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
     { id: "nobody", label: "Only me" },
   ];
 
-  // Soft edge sheet — no hard rectangular chrome; ink on greige, accent sparingly
+  // Full-bleed top sheet — soft continuous edges (no rectangular chrome)
   return (
-    <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center" style={{ background: "rgba(18,22,28,0.55)" }} role="dialog">
+    <div
+      className="fixed inset-0 z-[140] flex flex-col"
+      style={{ background: "rgba(10,14,18,0.5)" }}
+      role="dialog"
+      aria-label="Your Status"
+    >
       <div
-        className="w-full max-w-md overflow-hidden shadow-2xl"
+        className="w-full flex-1 overflow-hidden flex flex-col"
         style={{
           background: "#F4F1EC",
-          maxHeight: "94vh",
-          borderRadius: "28px 28px 0 0",
-          clipPath: "ellipse(120% 100% at 50% 100%)",
-          borderRadius: "32px 32px 0 0",
+          /* soft top — sits under OS status bar; no hard box corners */
+          borderRadius: "0 0 40px 40px",
+          boxShadow: "0 24px 48px rgba(0,0,0,0.18)",
+          maxHeight: "100%",
+          paddingTop: "max(8px, env(safe-area-inset-top))",
         }}
       >
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+        <div className="flex items-center justify-between px-5 pt-2 pb-2 shrink-0">
           <button type="button" onClick={onClose} className="text-sm font-medium min-h-[44px] px-1" style={{ color: "#5C6570" }}>Cancel</button>
           <div className="text-[15px] font-semibold tracking-tight" style={{ color: "#12161C" }}>Your Status</div>
           <button
@@ -11347,6 +11356,7 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
               background: busy ? "#9AA3AE" : "#12161C",
               color: "#fff",
               borderRadius: 999,
+              border: "none",
             }}
           >
             {busy ? (progress || "Posting…") : "Post"}
@@ -11827,9 +11837,15 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
         .finally(() => { if (!cancelled && first) { first = false; setLoading(false); } });
     };
     load();
-    // New signups appear in Citizens within ~30s without a full reload
-    const id = setInterval(load, 30000);
-    return () => { cancelled = true; clearInterval(id); };
+    const onConn = () => load();
+    window.addEventListener("merveil:connection-changed", onConn);
+    // Directory soft refresh — presence dots are realtime; list membership every 15s
+    const id = setInterval(load, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      window.removeEventListener("merveil:connection-changed", onConn);
+    };
   }, [currentUser?.id]);
 
   // A presence event for an id we haven't fetched yet (brand-new signup)
@@ -12204,8 +12220,56 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     reloadConnections();
     const onEvt = () => reloadConnections();
     window.addEventListener("merveil:connection-changed", onEvt);
-    return () => window.removeEventListener("merveil:connection-changed", onEvt);
-  }, [reloadConnections]);
+
+    // REALTIME My Circle — exact bug was: only IncomingConnectionRequests listened,
+    // and only with filter connected_user_id=me. When a friend accepts YOUR request,
+    // the row has user_id=you → that filter never fired → Circle stayed stale until
+    // manual refresh. Subscribe BOTH directions + any status change.
+    let chA = null;
+    let chB = null;
+    const uid = currentUser?.id;
+    if (uid && supabaseBrowser?.channel) {
+      try {
+        (supabaseBrowser.getChannels?.() || []).forEach((c) => {
+          const t = String(c.topic || "");
+          if (t.includes(`connections-circle-${uid}`)) {
+            try { supabaseBrowser.removeChannel(c); } catch {}
+          }
+        });
+      } catch {}
+      const onConnChange = () => {
+        reloadConnections();
+        try { window.dispatchEvent(new CustomEvent("merveil:connection-changed")); } catch {}
+      };
+      try {
+        chA = supabaseBrowser
+          .channel(`connections-circle-${uid}-a-${Math.random().toString(36).slice(2, 7)}`)
+          .on("postgres_changes", {
+            event: "*",
+            schema: "public",
+            table: "connections",
+            filter: `user_id=eq.${uid}`,
+          }, onConnChange)
+          .subscribe();
+        chB = supabaseBrowser
+          .channel(`connections-circle-${uid}-b-${Math.random().toString(36).slice(2, 7)}`)
+          .on("postgres_changes", {
+            event: "*",
+            schema: "public",
+            table: "connections",
+            filter: `connected_user_id=eq.${uid}`,
+          }, onConnChange)
+          .subscribe();
+      } catch (e) {
+        console.warn("[My Circle realtime]", e?.message || e);
+      }
+    }
+    return () => {
+      window.removeEventListener("merveil:connection-changed", onEvt);
+      if (chA) try { supabaseBrowser.removeChannel(chA); } catch {}
+      if (chB) try { supabaseBrowser.removeChannel(chB); } catch {}
+    };
+  }, [reloadConnections, currentUser?.id]);
   const fileInputRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -31727,12 +31791,18 @@ function AppInner() {
         </div>
       )}
 
-      {/* Top bar — Quiet Signal shell */}
+      {/* Top bar — Quiet Signal shell. On Connect: collapse so 3D Status owns the top band (no Plus / Bell / MERVEIL chrome). */}
       <div
         className="relative shrink-0 z-20 m-shell-header"
         style={{
-          paddingTop: "var(--safe-top)",
+          paddingTop: tab === "messages" ? 0 : "var(--safe-top)",
+          maxHeight: tab === "messages" ? 0 : undefined,
+          overflow: tab === "messages" ? "hidden" : undefined,
+          opacity: tab === "messages" ? 0 : 1,
+          pointerEvents: tab === "messages" ? "none" : "auto",
+          transition: "opacity 0.2s ease",
         }}
+        aria-hidden={tab === "messages"}
       >
         <div className="flex items-center justify-between gap-2 px-3 md:px-6 py-3 md:max-w-7xl md:mx-auto md:w-full">
         <div className="shrink-0">
@@ -31783,35 +31853,40 @@ function AppInner() {
               {t("common.signIn", settings?.language)}
             </button>
           )}
-          {/* Plus — sits BEFORE notification so the bell stays visible */}
+          {/* Plus + Notifications — hidden on Connect so 3D Status owns the top band */}
+          {tab !== "messages" && (
           <button
             type="button"
             onClick={() => { setShowPlusMenu((s) => !s); setShowNotifications(false); }}
             title="Plus"
-            className="relative h-8 px-2.5 rounded-lg flex items-center justify-center gap-1 shrink-0"
+            className="relative h-8 px-2.5 rounded-full flex items-center justify-center gap-1 shrink-0"
             style={{
-              background: showPlusMenu ? "rgba(14,154,167,0.12)" : "rgba(18,22,28,0.04)",
-              border: showPlusMenu ? "1px solid rgba(14,154,167,0.28)" : "1px solid rgba(18,22,28,0.08)",
+              background: showPlusMenu ? "rgba(18,22,28,0.1)" : "rgba(18,22,28,0.04)",
               color: "rgba(18,22,28,0.78)",
+              boxShadow: "inset 0 0 0 1px rgba(18,22,28,0.08)",
+              border: "none",
             }}
           >
-            <Plus size={14} style={{ color: "#0E9AA7" }} />
+            <Plus size={14} style={{ color: "rgba(18,22,28,0.75)" }} />
             <span className="text-[11px] font-bold hidden xs:inline" style={{ color: "rgba(18,22,28,0.78)" }}>Plus</span>
           </button>
+          )}
+          {tab !== "messages" && (
           <button
             onClick={() => { setShowNotifications((s) => !s); setShowPlusMenu(false); }}
             title="Notifications"
-            className="relative w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-            style={{ background: "rgba(18,22,28,0.04)", border: "1px solid rgba(18,22,28,0.08)" }}
+            className="relative w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: "rgba(18,22,28,0.04)", boxShadow: "inset 0 0 0 1px rgba(18,22,28,0.08)", border: "none" }}
           >
             <Bell size={15} style={{ color: "rgba(18,22,28,0.72)" }} />
             {(unreadCount + incomingRequests.length + missedCalls.length) > 0 && (
               <span className="absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center"
-                style={{ background: "#06B6D4", color: "#fff" }}>
+                style={{ background: "#12161C", color: "#fff" }}>
                 {(unreadCount + incomingRequests.length + missedCalls.length) > 9 ? "9+" : (unreadCount + incomingRequests.length + missedCalls.length)}
               </span>
             )}
           </button>
+          )}
           {tab === "pulse" && (
             <button
               onClick={() => setShowPostModal(true)}
