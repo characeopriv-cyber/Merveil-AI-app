@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { MachineProvisioningInput } from '../domain/machine';
 import { MachineService } from './machine.service';
-import { Principal, requirePrincipal, requireRole } from '../auth/principal';
+import { Principal } from '../auth/principal';
+import { requirePermission } from '../auth/permissions';
 
 type RequestWithPrincipal = { user?: Principal };
 
@@ -11,23 +12,25 @@ export class MachineController {
 
   @Get()
   list(@Req() req: RequestWithPrincipal) {
-    return this.machines.list(requirePrincipal(req.user).tenantId);
+    const principal = requirePermission(req.user, 'device.read');
+    return this.machines.list(principal.tenantId);
   }
 
   @Get(':id')
   get(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
-    return this.machines.get(requirePrincipal(req.user).tenantId, id);
+    const principal = requirePermission(req.user, 'device.read');
+    return this.machines.get(principal.tenantId, id);
   }
 
   @Post()
   provision(@Req() req: RequestWithPrincipal, @Body() body: Omit<MachineProvisioningInput, 'tenantId'>) {
-    const principal = requireRole(req.user, 'owner', 'admin', 'operator');
+    const principal = requirePermission(req.user, 'device.control');
     return this.machines.provision({ ...body, tenantId: principal.tenantId });
   }
 
   @Post(':id/activate')
   activate(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
-    const principal = requireRole(req.user, 'owner', 'admin', 'operator');
+    const principal = requirePermission(req.user, 'device.control');
     return this.machines.activate(principal.tenantId, id);
   }
 }
