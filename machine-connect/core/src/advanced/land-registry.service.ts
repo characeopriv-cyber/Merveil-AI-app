@@ -6,9 +6,12 @@ import { ProvenanceService } from './provenance.service';
 @Injectable()
 export class LandRegistryService {
   private readonly parcels = new Map<string, LandParcel>();
-  private readonly transfers = new Map<string, LandTransferRequest & { id: string; status: 'requested' | 'approved' | 'completed' | 'rejected'; anchorHash?: string }>();
+  private readonly transfers = new Map<string, LandTransferRequest & { id: string; status: 'requested' | 'approved' | 'completed' | 'rejected' }>();
+  private anchorProvider?: LandRegistryAnchorProvider;
 
-  constructor(private readonly provenance: ProvenanceService, private readonly anchorProvider?: LandRegistryAnchorProvider) {}
+  constructor(private readonly provenance: ProvenanceService) {}
+
+  setAnchorProvider(provider: LandRegistryAnchorProvider): void { this.anchorProvider = provider; }
 
   register(parcel: Omit<LandParcel, 'id'>): LandParcel {
     if (!parcel.organizationId || !parcel.parcelId || !parcel.geoJson) throw new Error('invalid parcel');
@@ -19,17 +22,17 @@ export class LandRegistryService {
     return created;
   }
 
-  get(organizationId: string, parcelId: string) {
-    return [...this.parcels.values()].find((x) => x.organizationId === organizationId && x.parcelId === parcelId);
-  }
+  get(organizationId: string, parcelId: string) { return [...this.parcels.values()].find((x) => x.organizationId === organizationId && x.parcelId === parcelId); }
 
   requestTransfer(organizationId: string, input: LandTransferRequest) {
     const parcel = this.get(organizationId, input.parcelId);
     if (!parcel) throw new Error('parcel not found');
     if (!input.toCitizenId || !input.requestedBy || !input.reason.trim() || !input.idempotencyKey) throw new Error('invalid transfer request');
-    const id = crypto.randomUUID();
-    const request = { ...input, id, status: 'requested' as const };
-    this.transfers.set(`${organizationId}:${input.idempotencyKey}`, request);
+    const key = `${organizationId}:${input.idempotencyKey}`;
+    const existing = this.transfers.get(key);
+    if (existing) return existing;
+    const request = { ...input, id: crypto.randomUUID(), status: 'requested' as const };
+    this.transfers.set(key, request);
     return request;
   }
 
