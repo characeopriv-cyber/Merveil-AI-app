@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, Req } from '@nestjs/common';
+import { Controller, Param, Post, Req } from '@nestjs/common';
 import { MachineCredentialsService } from './machine-credentials.service';
 import { Principal } from './principal';
 import { requirePermission } from './permissions';
@@ -10,9 +10,20 @@ export class MachineCredentialsController {
   constructor(private readonly credentials: MachineCredentialsService) {}
 
   @Post(':machineId/credentials')
-  async issue(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Body() body: { tenantId?: string }) {
+  issue(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string) {
     const principal = requirePermission(req.user, 'device.control');
-    if (body.tenantId && body.tenantId !== principal.tenantId) throw new Error('Tenant mismatch');
     return this.credentials.issue(principal.tenantId, machineId);
+  }
+
+  @Post(':machineId/credentials/rotate')
+  rotate(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string) {
+    const principal = requirePermission(req.user, 'device.control');
+    return this.credentials.rotate(principal.tenantId, machineId);
+  }
+
+  @Post(':machineId/credentials/revoke')
+  revoke(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string) {
+    const principal = requirePermission(req.user, 'device.control');
+    return this.credentials.revoke(principal.tenantId, machineId);
   }
 }
