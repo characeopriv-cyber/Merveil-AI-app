@@ -10444,12 +10444,12 @@ const CT = {
 // Navigation = rotate the 3D world of citizen identity nodes.
 // Focus layer expands media while surrounding identities stay spatially present.
 // ---------------------------------------------------------------------------
-const STATUS_MAX_SEC = 40;
+const STATUS_MAX_SEC = 60;
 
 function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
   const meId = currentUser?.id ? String(currentUser.id) : null;
   const [identities, setIdentities] = useState([]);
-  const [config, setConfig] = useState({ max_video_seconds: STATUS_MAX_SEC, default_expires_hours: 24 });
+  const [config, setConfig] = useState({ max_video_seconds: 60, default_expires_hours: 24 });
   const [loading, setLoading] = useState(true);
   const [focal, setFocal] = useState(0);
   const [rot, setRot] = useState(0);
@@ -10687,11 +10687,12 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
       className="relative border-b overflow-hidden"
       style={{
         borderColor: CT.line,
-        background: "linear-gradient(168deg,#06141A 0%,#0C2832 40%,#13404C 100%)",
-        minHeight: focusLayer ? 220 : 200,
+        background: "linear-gradient(175deg,#0A1218 0%,#121C24 45%,#1A242E 100%)",
+        minHeight: focusLayer ? 210 : 188,
+        marginTop: -4,
       }}
     >
-      <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 115%, rgba(14,154,167,0.4) 0%, transparent 55%)" }} />
+      <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 120%, rgba(255,255,255,0.06) 0%, transparent 55%)" }} />
       <div className="pointer-events-none absolute inset-0 opacity-20" style={{ background: "radial-gradient(circle at 15% 25%, rgba(255,255,255,0.12), transparent 40%)" }} />
 
       {!focusLayer && (
@@ -10703,8 +10704,8 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-full min-h-[36px]"
-            style={{ background: CT.accent, color: "#fff", boxShadow: "0 4px 16px rgba(14,154,167,0.45)" }}
+            className="flex items-center gap-1.5 text-[12px] font-semibold px-3.5 py-1.5 min-h-[36px]"
+            style={{ background: "rgba(255,255,255,0.12)", color: "#F4F1EC", borderRadius: 999, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)" }}
           >
             <span className="text-base leading-none">+</span> Your Status
           </button>
@@ -10753,10 +10754,10 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
               || u.avatar_url;
             const size = focusLayer ? (isFocal ? 48 : 34) : (isFocal ? 72 : 50);
             const ring = isFocal
-              ? "3px solid #0E9AA7"
+              ? "2.5px solid rgba(255,255,255,0.92)"
               : has
-                ? "2px solid rgba(14,154,167,0.5)"
-                : "2px dashed rgba(255,255,255,0.32)";
+                ? "2px solid rgba(255,255,255,0.45)"
+                : "2px dashed rgba(255,255,255,0.28)";
             return (
               <button
                 key={idn.user_id || i}
@@ -10833,7 +10834,7 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
               aria-label={`Focus citizen ${i + 1}`}
               onClick={() => snapTo(i)}
               className="w-1.5 h-1.5 rounded-full"
-              style={{ background: i === focal ? CT.accent : "rgba(255,255,255,0.2)", transform: i === focal ? "scale(1.4)" : "scale(1)" }}
+              style={{ background: i === focal ? "#F4F1EC" : "rgba(255,255,255,0.22)", transform: i === focal ? "scale(1.4)" : "scale(1)", borderRadius: 999 }}
             />
           ))}
         </div>
@@ -10847,8 +10848,9 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
             style={{
               maxWidth: 420,
               background: "rgba(8,22,28,0.92)",
-              border: "1px solid rgba(14,154,167,0.35)",
-              boxShadow: "0 20px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04)",
+              border: "none",
+              borderRadius: 28,
+              boxShadow: "0 24px 60px rgba(0,0,0,0.5)",
             }}
           >
             <div className="flex items-center gap-2 px-3 py-2.5">
@@ -10868,7 +10870,7 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
                   type="button"
                   onClick={() => { onMessage?.(focusLayer.identity.user || { id: focusLayer.identity.user_id }); closeFocus(); }}
                   className="text-[11px] font-bold px-2.5 py-1.5 rounded-full min-h-[36px]"
-                  style={{ background: CT.accent, color: "#fff" }}
+                  style={{ background: "#F4F1EC", color: "#12161C", borderRadius: 999 }}
                 >
                   Message
                 </button>
@@ -10907,9 +10909,42 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
                 <audio key={activeItem.id} ref={mediaRef} src={activeItem.media_url} controls autoPlay className="w-full" onEnded={advanceFocus} />
               )}
             </div>
-            <div className="px-3 pb-2.5 flex items-center justify-between text-[10px]" style={{ color: "rgba(255,255,255,0.35)" }}>
-              <span>Surrounding identities stay in the ring</span>
-              <button type="button" onClick={advanceFocus} className="font-semibold px-2 py-1 rounded-md" style={{ color: CT.accent }}>Next →</button>
+            <div className="px-3 pb-3 flex flex-col gap-2">
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <button type="button" className="text-[11px] font-semibold px-3 py-2 min-h-[36px]"
+                  style={{ background: "rgba(255,255,255,0.1)", color: "#F4F1EC", borderRadius: 999 }}
+                  onClick={() => {
+                    if (!activeItem?.id) return;
+                    merveilFetch("/api/status?action=react", {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status_id: activeItem.id, reaction: "super" }),
+                    }).catch(() => {});
+                  }}>Super</button>
+                <button type="button" className="text-[11px] font-semibold px-3 py-2 min-h-[36px]"
+                  style={{ background: "rgba(255,255,255,0.1)", color: "#F4F1EC", borderRadius: 999 }}
+                  onClick={() => {
+                    if (!activeItem?.id) return;
+                    merveilFetch("/api/status?action=save", {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status_id: activeItem.id }),
+                    }).catch(() => {});
+                  }}>Save</button>
+                <button type="button" className="text-[11px] font-semibold px-3 py-2 min-h-[36px]"
+                  style={{ background: "rgba(255,255,255,0.1)", color: "#F4F1EC", borderRadius: 999 }}
+                  onClick={async () => {
+                    const url = activeItem?.media_url || window.location.href;
+                    try {
+                      if (navigator.share) await navigator.share({ title: "Merveil Status", url });
+                      else { await navigator.clipboard.writeText(url); }
+                    } catch { /* */ }
+                  }}>Share</button>
+                <button type="button" className="text-[11px] font-semibold px-3 py-2 min-h-[36px]"
+                  style={{ background: "rgba(255,255,255,0.1)", color: "#F4F1EC", borderRadius: 999 }}
+                  onClick={advanceFocus}>Next</button>
+              </div>
+              <div className="text-center text-[10px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                Views {activeItem.view_count || 0} · ring stays in space
+              </div>
             </div>
           </div>
         </div>
@@ -10944,16 +10979,26 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [duration, setDuration] = useState(null);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(null);
+  const [voiceNote, setVoiceNote] = useState(null); // overlay voice on any type
+  const [voicePreview, setVoicePreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [progress, setProgress] = useState("");
   const fileRef = useRef(null);
   const recRef = useRef(null);
+  const voiceRecRef = useRef(null);
   const [recording, setRecording] = useState(false);
+  const [recordingVoiceNote, setRecordingVoiceNote] = useState(false);
   const [recSec, setRecSec] = useState(0);
 
   useEffect(() => () => {
     if (preview && String(preview).startsWith("blob:")) URL.revokeObjectURL(preview);
-  }, [preview]);
+    if (voicePreview && String(voicePreview).startsWith("blob:")) URL.revokeObjectURL(voicePreview);
+  }, [preview, voicePreview]);
+
+  const EMOJIS = ["😀","🔥","✨","❤️","🙌","👏","💯","🎉","😊","🤩","💪","🌟","😂","🙏","👍","🫶"];
 
   const onFile = async (e) => {
     const f = e.target.files?.[0];
@@ -10972,13 +11017,25 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
         return;
       }
       const d = v.duration;
-      if (!Number.isFinite(d) || d > maxSec) {
+      if (!Number.isFinite(d)) {
         URL.revokeObjectURL(url);
-        setErr(`Video must be ${maxSec} seconds or less (yours is ${Math.round(d || 0)}s).`);
-        setFile(null); setPreview(null); setDuration(null);
+        setErr("Could not read video duration.");
+        return;
+      }
+      if (d > maxSec) {
+        // Allow select but force trim
+        setDuration(d);
+        setTrimStart(0);
+        setTrimEnd(maxSec);
+        setPreview(url);
+        setFile(f);
+        setKind("video");
+        setErr(`Video is ${Math.round(d)}s — trim to ${maxSec}s or less before posting.`);
         return;
       }
       setDuration(d);
+      setTrimStart(0);
+      setTrimEnd(d);
       setPreview(url);
       setFile(f);
       setKind("video");
@@ -10990,11 +11047,18 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
       await new Promise((res) => { a.onloadedmetadata = res; a.onerror = res; });
       const d = a.duration;
       if (Number.isFinite(d) && d > maxSec) {
-        URL.revokeObjectURL(url);
-        setErr(`Voice must be ${maxSec}s or less.`);
+        setDuration(d);
+        setTrimStart(0);
+        setTrimEnd(maxSec);
+        setPreview(url);
+        setFile(f);
+        setKind("voice");
+        setErr(`Audio is long — trim to ${maxSec}s max.`);
         return;
       }
       setDuration(Number.isFinite(d) ? d : 1);
+      setTrimStart(0);
+      setTrimEnd(Number.isFinite(d) ? d : 1);
       setPreview(url);
       setFile(f);
       setKind("voice");
@@ -11003,10 +11067,12 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
       setFile(f);
       setKind("photo");
       setDuration(null);
+      setTrimStart(0);
+      setTrimEnd(null);
     }
   };
 
-  const startVoice = async () => {
+  const startVoiceMain = async () => {
     setErr("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -11020,6 +11086,8 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
         setFile(new File([blob], "status-voice.webm", { type: "audio/webm" }));
         setPreview(url);
         setDuration(Math.max(1, recSec));
+        setTrimStart(0);
+        setTrimEnd(Math.max(1, recSec));
         setKind("voice");
         setRecording(false);
       };
@@ -11039,28 +11107,122 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
       }, 1000);
       recRef.current._tick = tick;
     } catch {
-      setErr("Microphone permission needed for voice Status.");
+      setErr("Microphone permission needed.");
     }
   };
 
-  const stopVoice = () => {
+  const stopVoiceMain = () => {
     try {
       if (recRef.current?._tick) clearInterval(recRef.current._tick);
       recRef.current?.stop();
     } catch { /* */ }
   };
 
-  const uploadMedia = async (f) => {
-    const fd = new FormData();
-    fd.append("file", f);
-    fd.append("folder", "status-media");
-    let res = await merveilFetch("/api/upload?folder=status-media", { method: "POST", body: fd }).catch(() => null);
-    if (!res || !res.ok) res = await merveilFetch("/api/world?action=upload", { method: "POST", body: fd }).catch(() => null);
-    if (res && res.ok) {
-      const data = await res.json();
-      return data.url || data.media_url || data.publicUrl || null;
+  const startVoiceNote = async () => {
+    setErr("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      const chunks = [];
+      mr.ondataavailable = (ev) => { if (ev.data.size) chunks.push(ev.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        setVoiceNote(new File([blob], "voice-note.webm", { type: "audio/webm" }));
+        setVoicePreview(url);
+        setRecordingVoiceNote(false);
+      };
+      voiceRecRef.current = mr;
+      setRecordingVoiceNote(true);
+      mr.start(200);
+      const tick = setInterval(() => {
+        // cap voice note at 60s too
+      }, 1000);
+      setTimeout(() => {
+        clearInterval(tick);
+        try { if (voiceRecRef.current?.state === "recording") voiceRecRef.current.stop(); } catch { /* */ }
+      }, maxSec * 1000);
+      voiceRecRef.current._tick = tick;
+    } catch {
+      setErr("Microphone permission needed for voice note.");
     }
-    if (f.size < 400000 && f.type.startsWith("image/")) {
+  };
+
+  const stopVoiceNote = () => {
+    try {
+      if (voiceRecRef.current?._tick) clearInterval(voiceRecRef.current._tick);
+      voiceRecRef.current?.stop();
+    } catch { /* */ }
+  };
+
+  /** Reliable upload: signed URL PUT first, then multipart fallbacks */
+  const uploadMedia = async (f) => {
+    const name = f.name || `status-${Date.now()}`;
+    // 1) Status signed URL
+    try {
+      const urlRes = await merveilFetch("/api/status?action=upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: name }),
+      });
+      const urlData = await urlRes.json().catch(() => ({}));
+      if (urlRes.ok && urlData.signedUrl && urlData.publicUrl) {
+        setProgress("Uploading…");
+        const put = await fetch(urlData.signedUrl, {
+          method: "PUT",
+          headers: { "Content-Type": f.type || "application/octet-stream" },
+          body: f,
+        });
+        if (put.ok) return urlData.publicUrl;
+      }
+    } catch (e) {
+      console.warn("status upload-url", e);
+    }
+    // 2) World video-upload-url style
+    try {
+      const urlRes = await merveilFetch("/api/world?action=video-upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: name }),
+      });
+      const urlData = await urlRes.json().catch(() => ({}));
+      if (urlRes.ok && urlData.signedUrl && urlData.publicUrl) {
+        setProgress("Uploading…");
+        const put = await fetch(urlData.signedUrl, {
+          method: "PUT",
+          headers: { "Content-Type": f.type || "application/octet-stream" },
+          body: f,
+        });
+        if (put.ok) return urlData.publicUrl;
+      }
+    } catch (e) {
+      console.warn("world signed upload", e);
+    }
+    // 3) Multipart status
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("folder", "status");
+      const res = await merveilFetch("/api/status?action=upload", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data.url || data.publicUrl)) return data.url || data.publicUrl;
+    } catch (e) {
+      console.warn("status multipart", e);
+    }
+    // 4) World multipart
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("folder", "status");
+      const res = await merveilFetch("/api/world?action=upload", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data.url || data.publicUrl)) return data.url || data.publicUrl;
+    } catch (e) {
+      console.warn("world multipart", e);
+    }
+    // 5) Tiny image data URL last resort
+    if (f.size < 500000 && f.type.startsWith("image/")) {
       return await new Promise((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result);
@@ -11068,40 +11230,79 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
         r.readAsDataURL(f);
       });
     }
-    throw new Error("Upload failed — try a smaller file or check connection.");
+    throw new Error("Upload failed — check connection or try a smaller file. Signed storage may need the uploads bucket.");
+  };
+
+  const effectiveDuration = () => {
+    if (duration == null) return null;
+    const end = trimEnd != null ? Number(trimEnd) : duration;
+    const start = Number(trimStart) || 0;
+    return Math.max(0.5, Math.min(maxSec, end - start));
   };
 
   const submit = async () => {
     setBusy(true);
     setErr("");
+    setProgress("");
     try {
+      // Trim validation for media
+      if ((kind === "video" || kind === "voice") && duration != null) {
+        const ed = effectiveDuration();
+        if (ed > maxSec) throw new Error(`Trim to ${maxSec}s or less (currently ${ed.toFixed(1)}s).`);
+      }
+
       let media_url = null;
       let media_mime = null;
-      if (file) {
+      let voice_note_url = null;
+
+      if (kind === "photo" || kind === "video" || kind === "voice") {
+        if (!file) throw new Error(kind === "voice" ? "Record or choose audio first." : "Choose media first.");
+        setProgress("Uploading media…");
         media_url = await uploadMedia(file);
         media_mime = file.type;
       }
+      if (voiceNote) {
+        setProgress("Uploading voice note…");
+        voice_note_url = await uploadMedia(voiceNote);
+      }
+
+      const caption = text.trim();
       const payload = {
         content_type: kind,
-        body_text: kind === "text" ? text.trim() : (text.trim() || null),
-        activity_label: kind === "activity" ? (activity.trim() || text.trim()) : null,
-        location_label: kind === "location" ? (locationLabel.trim() || text.trim()) : null,
+        body_text: kind === "text" ? caption : (caption || null),
+        activity_label: kind === "activity" ? (activity.trim() || caption) : null,
+        location_label: kind === "location" ? (locationLabel.trim() || caption) : null,
         media_url,
         media_mime,
-        media_duration_seconds: (kind === "video" || kind === "voice") ? duration : null,
+        media_duration_seconds: (kind === "video" || kind === "voice") ? effectiveDuration() : null,
+        thumbnail_url: null,
         visibility,
         audience: visibility === "circle" ? "circle" : "everyone",
         expires_hours: defaultExpiresHours,
+        // Extra fields stored in body_text/activity when columns missing
+        voice_note_url,
+        trim_start: trimStart,
+        trim_end: trimEnd,
       };
-      if (kind === "text" && !payload.body_text) throw new Error("Write something for your Status.");
+
+      // Persist voice note URL inside body if no column (API stores body_text)
+      if (voice_note_url && payload.body_text) {
+        payload.body_text = `${payload.body_text}\n\n[voice_note:${voice_note_url}]`;
+      } else if (voice_note_url && !payload.body_text) {
+        payload.body_text = `[voice_note:${voice_note_url}]`;
+      }
+
+      if (kind === "text" && !caption) throw new Error("Write something or add emojis for your Status.");
       if (kind === "activity" && !payload.activity_label) throw new Error("Describe your activity.");
-      if (kind === "location" && !payload.location_label) throw new Error("Add a location label.");
-      if ((kind === "photo" || kind === "video" || kind === "voice") && !media_url) throw new Error("Media required.");
+      if (kind === "location" && !payload.location_label) throw new Error("Add a location.");
+
+      setProgress("Publishing…");
       await onSubmit(payload);
     } catch (e) {
-      setErr(e.message || "Failed");
+      setErr(e.message || "Could not post Status");
     } finally {
       setBusy(false);
+      setProgress("");
     }
   };
 
@@ -11117,89 +11318,240 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
     { id: "everyone", label: "Everyone" },
     { id: "citizens", label: "Citizens" },
     { id: "circle", label: "My Circle" },
-    { id: "nobody", label: "Nobody" },
+    { id: "nobody", label: "Only me" },
   ];
 
+  // Soft edge sheet — no hard rectangular chrome; ink on greige, accent sparingly
   return (
-    <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center" style={{ background: "rgba(6,16,21,0.78)" }} role="dialog">
-      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl" style={{ background: CT.panel, maxHeight: "92vh" }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: CT.line }}>
-          <button type="button" onClick={onClose} className="text-sm font-medium min-h-[40px]" style={{ color: CT.sub }}>Cancel</button>
-          <div className="text-sm font-bold" style={{ color: CT.ink }}>Your Status</div>
-          <button type="button" disabled={busy} onClick={submit} className="text-sm font-bold min-h-[40px] px-3 rounded-full" style={{ background: CT.accent, color: "#fff", opacity: busy ? 0.6 : 1 }}>
-            {busy ? "Posting…" : "Post"}
+    <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center" style={{ background: "rgba(18,22,28,0.55)" }} role="dialog">
+      <div
+        className="w-full max-w-md overflow-hidden shadow-2xl"
+        style={{
+          background: "#F4F1EC",
+          maxHeight: "94vh",
+          borderRadius: "28px 28px 0 0",
+          clipPath: "ellipse(120% 100% at 50% 100%)",
+          borderRadius: "32px 32px 0 0",
+        }}
+      >
+        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+          <button type="button" onClick={onClose} className="text-sm font-medium min-h-[44px] px-1" style={{ color: "#5C6570" }}>Cancel</button>
+          <div className="text-[15px] font-semibold tracking-tight" style={{ color: "#12161C" }}>Your Status</div>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={submit}
+            className="text-sm font-semibold min-h-[40px] px-5"
+            style={{
+              background: busy ? "#9AA3AE" : "#12161C",
+              color: "#fff",
+              borderRadius: 999,
+            }}
+          >
+            {busy ? (progress || "Posting…") : "Post"}
           </button>
         </div>
-        <div className="px-4 py-3 flex gap-1.5 overflow-x-auto">
+
+        <div className="px-4 py-2 flex gap-1.5 overflow-x-auto no-scrollbar">
           {kinds.map((k) => (
-            <button key={k.id} type="button" onClick={() => { setKind(k.id); setErr(""); }}
-              className="shrink-0 text-[12px] font-semibold px-3 py-1.5 rounded-full min-h-[36px]"
-              style={{ background: kind === k.id ? CT.accent : CT.panelHover, color: kind === k.id ? "#fff" : CT.sub }}>
+            <button
+              key={k.id}
+              type="button"
+              onClick={() => { setKind(k.id); setErr(""); }}
+              className="shrink-0 text-[12px] font-semibold px-3.5 py-2 min-h-[36px]"
+              style={{
+                background: kind === k.id ? "#12161C" : "rgba(18,22,28,0.06)",
+                color: kind === k.id ? "#fff" : "#5C6570",
+                borderRadius: 999,
+                border: "none",
+              }}
+            >
               {k.label}
             </button>
           ))}
         </div>
+
         <div className="px-4 pb-2">
-          <div className="text-[11px] font-semibold mb-1.5" style={{ color: CT.sub }}>Who can see</div>
+          <div className="text-[11px] font-medium mb-1.5" style={{ color: "#5C6570" }}>Who can see</div>
           <div className="flex gap-1.5 flex-wrap">
             {visOptions.map((v) => (
-              <button key={v.id} type="button" onClick={() => setVisibility(v.id)}
-                className="text-[11px] font-semibold px-2.5 py-1 rounded-full min-h-[32px]"
-                style={{ background: visibility === v.id ? "rgba(14,154,167,0.15)" : CT.panelHover, color: visibility === v.id ? CT.accent : CT.sub, border: visibility === v.id ? `1px solid ${CT.accent}` : "1px solid transparent" }}>
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setVisibility(v.id)}
+                className="text-[11px] font-medium px-3 py-1.5 min-h-[32px]"
+                style={{
+                  background: visibility === v.id ? "rgba(18,22,28,0.1)" : "transparent",
+                  color: visibility === v.id ? "#12161C" : "#5C6570",
+                  borderRadius: 999,
+                  boxShadow: visibility === v.id ? "inset 0 0 0 1.5px #12161C" : "inset 0 0 0 1px rgba(18,22,28,0.12)",
+                }}
+              >
                 {v.label}
               </button>
             ))}
           </div>
         </div>
-        <div className="px-4 pb-6 overflow-y-auto" style={{ maxHeight: "52vh" }}>
-          {(kind === "text" || kind === "activity") && (
+
+        <div className="px-4 pb-8 overflow-y-auto" style={{ maxHeight: "58vh" }}>
+          {/* Caption / text for ALL types — emojis allowed */}
+          <div className="mb-3">
             <textarea
-              value={kind === "activity" ? activity : text}
-              onChange={(e) => (kind === "activity" ? setActivity(e.target.value) : setText(e.target.value))}
-              placeholder={kind === "activity" ? "What are you doing?" : "Share a moment with your network…"}
-              rows={4}
-              className="w-full rounded-2xl border px-3 py-3 text-sm outline-none resize-none"
-              style={{ borderColor: CT.line, color: CT.ink, background: "#FAFAF8" }}
+              value={kind === "activity" ? activity : kind === "location" ? locationLabel : text}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (kind === "activity") setActivity(v);
+                else if (kind === "location") setLocationLabel(v);
+                else setText(v);
+              }}
+              placeholder={
+                kind === "text" ? "Write your Status… emojis welcome"
+                  : kind === "activity" ? "What are you doing?"
+                    : kind === "location" ? "Where are you?"
+                      : "Add a caption or emojis…"
+              }
+              rows={kind === "text" || kind === "activity" ? 4 : 2}
+              className="w-full px-4 py-3 text-sm outline-none resize-none"
+              style={{
+                color: "#12161C",
+                background: "#FFFEFB",
+                borderRadius: 20,
+                boxShadow: "inset 0 0 0 1px rgba(18,22,28,0.08)",
+                border: "none",
+              }}
             />
-          )}
-          {kind === "location" && (
-            <input value={locationLabel} onChange={(e) => setLocationLabel(e.target.value)}
-              placeholder="Where are you? e.g. Dubai Marina"
-              className="w-full rounded-2xl border px-3 py-3 text-sm outline-none"
-              style={{ borderColor: CT.line, color: CT.ink, background: "#FAFAF8" }} />
-          )}
+            <div className="flex gap-1 flex-wrap mt-2">
+              {EMOJIS.map((em) => (
+                <button
+                  key={em}
+                  type="button"
+                  className="text-lg leading-none p-1 min-w-[36px] min-h-[36px]"
+                  onClick={() => {
+                    if (kind === "activity") setActivity((t) => t + em);
+                    else if (kind === "location") setLocationLabel((t) => t + em);
+                    else setText((t) => t + em);
+                  }}
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {(kind === "photo" || kind === "video") && (
-            <div>
+            <div className="mb-3">
               <input ref={fileRef} type="file" accept={kind === "video" ? "video/*" : "image/*"} className="hidden" onChange={onFile} />
-              <button type="button" onClick={() => fileRef.current?.click()}
-                className="w-full py-8 rounded-2xl border-2 border-dashed text-sm font-medium"
-                style={{ borderColor: CT.line, color: CT.sub }}>
-                {preview ? "Change media" : `Choose ${kind} (max ${maxSec}s for video)`}
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="w-full py-7 text-sm font-medium"
+                style={{
+                  color: "#5C6570",
+                  background: "#FFFEFB",
+                  borderRadius: 24,
+                  boxShadow: "inset 0 0 0 1.5px dashed rgba(18,22,28,0.15)",
+                  border: "none",
+                }}
+              >
+                {preview ? "Change media" : `Choose ${kind} (max ${maxSec}s)`}
               </button>
-              {preview && kind === "photo" && <img src={preview} alt="" className="mt-3 max-h-48 mx-auto rounded-xl" />}
-              {preview && kind === "video" && <video src={preview} controls className="mt-3 max-h-48 mx-auto rounded-xl w-full" />}
-              {duration != null && <div className="text-[11px] mt-1 text-center" style={{ color: CT.sub }}>{Number(duration).toFixed(1)}s / {maxSec}s max</div>}
+              {preview && kind === "photo" && (
+                <div className="mt-3 relative">
+                  <img src={preview} alt="" className="max-h-52 mx-auto object-contain" style={{ borderRadius: 20 }} />
+                  <p className="text-[11px] text-center mt-2" style={{ color: "#5C6570" }}>
+                    Tip: caption + voice note below. AI arrange/edit tools come next on this photo.
+                  </p>
+                </div>
+              )}
+              {preview && kind === "video" && (
+                <div className="mt-3">
+                  <video src={preview} controls className="w-full max-h-52 object-contain bg-black" style={{ borderRadius: 20 }} />
+                  {duration != null && (
+                    <div className="mt-3 px-1">
+                      <div className="text-[11px] font-medium mb-1" style={{ color: "#5C6570" }}>
+                        Trim · {(effectiveDuration() || 0).toFixed(1)}s / {maxSec}s max
+                      </div>
+                      <div className="flex gap-2 items-center text-[12px]" style={{ color: "#12161C" }}>
+                        <label className="flex-1">
+                          Start
+                          <input type="range" min={0} max={Math.max(0.1, duration - 0.5)} step={0.1}
+                            value={trimStart}
+                            onChange={(e) => setTrimStart(Number(e.target.value))}
+                            className="w-full" />
+                          <span className="tabular-nums">{Number(trimStart).toFixed(1)}s</span>
+                        </label>
+                        <label className="flex-1">
+                          End
+                          <input type="range" min={0.5} max={duration} step={0.1}
+                            value={trimEnd != null ? trimEnd : duration}
+                            onChange={(e) => setTrimEnd(Number(e.target.value))}
+                            className="w-full" />
+                          <span className="tabular-nums">{Number(trimEnd != null ? trimEnd : duration).toFixed(1)}s</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
+
           {kind === "voice" && (
-            <div className="text-center py-4">
+            <div className="text-center py-3 mb-3">
               {!recording && !preview && (
-                <button type="button" onClick={startVoice} className="px-6 py-3 rounded-full font-bold text-white" style={{ background: CT.accent }}>
+                <button type="button" onClick={startVoiceMain}
+                  className="px-6 py-3 font-semibold text-white min-h-[44px]"
+                  style={{ background: "#12161C", borderRadius: 999 }}>
                   Record voice (max {maxSec}s)
                 </button>
               )}
               {recording && (
                 <div>
-                  <div className="text-2xl font-bold tabular-nums" style={{ color: CT.ink }}>{recSec}s</div>
-                  <button type="button" onClick={stopVoice} className="mt-3 px-6 py-2 rounded-full font-bold" style={{ background: "#E0554C", color: "#fff" }}>Stop</button>
+                  <div className="text-2xl font-bold tabular-nums" style={{ color: "#12161C" }}>{recSec}s</div>
+                  <button type="button" onClick={stopVoiceMain}
+                    className="mt-3 px-6 py-2 font-semibold text-white" style={{ background: "#C23B32", borderRadius: 999 }}>Stop</button>
                 </div>
               )}
-              {preview && !recording && <audio src={preview} controls className="w-full mt-2" />}
+              {preview && !recording && (
+                <div>
+                  <audio src={preview} controls className="w-full" />
+                  {duration != null && duration > maxSec && (
+                    <p className="text-[11px] mt-1" style={{ color: "#C23B32" }}>Trim end to ≤{maxSec}s</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
-          {err && <div className="mt-3 text-[12px] font-medium" style={{ color: "#E0554C" }}>{err}</div>}
-          <p className="mt-4 text-[11px] leading-relaxed" style={{ color: CT.sub }}>
-            Circular identity on Connect. Rotate the 3D world — not a vertical feed. Video/voice max {maxSec}s. Expires in ~{defaultExpiresHours}h (server config).
+
+          {/* Voice note on any Status type */}
+          <div className="mt-2 mb-3 p-3" style={{ background: "rgba(18,22,28,0.04)", borderRadius: 20 }}>
+            <div className="text-[12px] font-semibold mb-1.5" style={{ color: "#12161C" }}>Voice note (optional)</div>
+            {!recordingVoiceNote && !voicePreview && (
+              <button type="button" onClick={startVoiceNote}
+                className="text-[12px] font-medium px-4 py-2 min-h-[40px]"
+                style={{ background: "#FFFEFB", color: "#12161C", borderRadius: 999, boxShadow: "inset 0 0 0 1px rgba(18,22,28,0.12)" }}>
+                Record voice message on this Status
+              </button>
+            )}
+            {recordingVoiceNote && (
+              <button type="button" onClick={stopVoiceNote}
+                className="text-[12px] font-semibold px-4 py-2 text-white" style={{ background: "#C23B32", borderRadius: 999 }}>
+                Stop recording
+              </button>
+            )}
+            {voicePreview && !recordingVoiceNote && (
+              <div className="flex items-center gap-2">
+                <audio src={voicePreview} controls className="flex-1" />
+                <button type="button" className="text-[11px] underline" style={{ color: "#5C6570" }}
+                  onClick={() => { setVoiceNote(null); setVoicePreview(null); }}>Remove</button>
+              </div>
+            )}
+          </div>
+
+          {err && <div className="mt-2 text-[12px] font-medium leading-snug" style={{ color: "#C23B32" }}>{err}</div>}
+          {progress && !err && <div className="mt-2 text-[12px]" style={{ color: "#5C6570" }}>{progress}</div>}
+          <p className="mt-4 text-[11px] leading-relaxed" style={{ color: "#8A929C" }}>
+            Circular identity on Connect. Rotate the spatial ring — not a vertical feed. Video & voice up to {maxSec}s. Caption + emoji + voice note on any type.
           </p>
         </div>
       </div>
