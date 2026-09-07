@@ -29,14 +29,10 @@ export class CommandController {
     const credentialHeader = req.headers?.['x-machine-credential'];
     const credential = Array.isArray(credentialHeader) ? credentialHeader[0] : credentialHeader;
     if (!credential) throw new UnauthorizedException('Missing machine credential');
-
-    // The credential is machine-bound. We derive the tenant from the authenticated
-    // human session only for this boundary; production machine-only transport should
-    // supply the tenant binding from the credential record itself.
     const principal = req.user;
-    if (!principal) throw new UnauthorizedException('Machine ACK requires tenant binding');
+    if (!principal) throw new UnauthorizedException('Machine ACK requires authenticated machine principal');
     await this.credentials.require(principal.tenantId, machineId, credential);
-    return this.commands.transition(principal.tenantId, commandId, 'acknowledged');
+    return this.commands.acknowledgeMachine(principal.tenantId, machineId, commandId);
   }
 
   @Post('commands/:commandId/ack')
