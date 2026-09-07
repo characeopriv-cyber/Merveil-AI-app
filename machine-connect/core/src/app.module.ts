@@ -10,12 +10,13 @@ import { AdvancedModule } from './advanced/advanced.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { ServiceRequestModule } from './service-request/service-request.module';
 import { AuthMiddleware } from './auth/auth.middleware';
+import { MachineCredentialsModule } from './auth/machine-credentials.module';
 import { RealtimeModule } from './persistence/realtime.module';
 import { HealthController } from './health/health.controller';
 import { AdaptersModule } from './adapters/adapters.module';
 
 @Module({
-  imports: [AdaptersModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule {
