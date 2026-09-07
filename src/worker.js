@@ -1,5 +1,4 @@
 import { Container, getContainer } from '@cloudflare/containers';
-import { env } from 'cloudflare:workers';
 
 export class MachineConnectContainer extends Container {
   defaultPort = 4100;
@@ -9,22 +8,37 @@ export class MachineConnectContainer extends Container {
   envVars = {
     NODE_ENV: 'production',
     MACHINE_CONNECT_PORT: '4100',
-    SUPABASE_URL: env.SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
   };
+}
+
+async function requiredSecret(binding, name) {
+  const value = await binding.get();
+  if (!value) throw new Error(`${name} is not configured in Cloudflare Secrets Store`);
+  return value;
 }
 
 export default {
   async fetch(request, runtimeEnv) {
     const url = new URL(request.url);
 
-    // Machine Connect is an integrated backend of the existing Developer Platform.
-    // The public prefix is kept separate so existing Developer Platform APIs remain untouched.
     if (url.pathname === '/api/machine-connect' || url.pathname.startsWith('/api/machine-connect/')) {
       const upstream = new URL(url);
       upstream.pathname = url.pathname.replace(/^\/api\/machine-connect/, '') || '/';
 
       const container = getContainer(runtimeEnv.MACHINE_CONNECT, 'core');
+
+      await container.startAndWaitForPorts({
+        startOptions: {
+          envVars: {
+            SUPABASE_URL: await requiredSecret(runtimeEnv.SUPABASE_URL_STORE, 'SUPABASE_URL'),
+            SUPABASE_SERVICE_ROLE_KEY: await requiredSecret(
+              runtimeEnv.SUPABASE_SERVICE_ROLE_KEY_STORE,
+              'SUPABASE_SERVICE_ROLE_KEY',
+            ),
+          },
+        },
+      });
+
       return container.fetch(new Request(upstream, request));
     }
 
