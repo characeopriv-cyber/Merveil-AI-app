@@ -10,9 +10,10 @@ import { AdvancedModule } from './advanced/advanced.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { ServiceRequestModule } from './service-request/service-request.module';
 import { AuthMiddleware } from './auth/auth.middleware';
+import { RealtimeModule } from './persistence/realtime.module';
 
 @Module({
-  imports: [MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule],
+  imports: [MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
