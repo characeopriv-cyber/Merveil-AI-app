@@ -1,6 +1,13 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 
-export type PrincipalRole = 'owner' | 'admin' | 'operator' | 'viewer';
+export type PrincipalRole =
+  | 'owner'
+  | 'admin'
+  | 'operator'
+  | 'viewer'
+  | 'security_analyst'
+  | 'land_registry_officer'
+  | 'data_scientist';
 
 export interface Principal {
   actorId: string;
