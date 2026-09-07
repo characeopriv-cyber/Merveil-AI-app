@@ -5,7 +5,6 @@ import { Principal } from '../auth/principal';
 import { requirePermission } from '../auth/permissions';
 
 type RequestWithPrincipal = { user?: Principal };
-
 type MachineStateBody = { state: MachineLifecycleState };
 
 @Controller('api/machines')
@@ -22,6 +21,12 @@ export class MachineController {
   get(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
     const principal = requirePermission(req.user, 'device.read');
     return this.machines.get(principal.tenantId, id);
+  }
+
+  @Get(':id/status')
+  status(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
+    const principal = requirePermission(req.user, 'device.read');
+    return this.machines.status(principal.tenantId, id);
   }
 
   @Post()
