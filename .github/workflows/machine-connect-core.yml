@@ -2,7 +2,7 @@ name: Machine Connect Core
 
 on:
   push:
-    branches: [feature/machine-connect]
+    branches: [main]
     paths:
       - 'machine-connect/core/**'
       - '.github/workflows/machine-connect-core.yml'
@@ -22,6 +22,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
+      - run: npm install --no-audit --no-fund
       - run: npm run build
       - run: npm test
