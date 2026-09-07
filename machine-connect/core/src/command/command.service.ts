@@ -32,29 +32,46 @@ export class CommandService {
     });
   }
 
+  private fromRow(row: any): MachineCommand {
+    return {
+      commandId: row.id, tenantId: row.organization_id, machineId: row.machine_id,
+      capability: row.action, parameters: row.parameters ?? {}, requestedBy: row.requested_by,
+      requestedAt: row.created_at, idempotencyKey: row.idempotency_key ?? row.id, status: row.status,
+    };
+  }
+
+  private cache(command: MachineCommand): MachineCommand {
+    this.commands.set(command.commandId, command);
+    this.idempotency.set(`${command.tenantId}:${command.idempotencyKey}`, command.commandId);
+    return command;
+  }
+
+  private async findDurable(tenantId: string, idempotencyKey: string): Promise<MachineCommand | null> {
+    if (!this.db.enabled) return null;
+    const rows = await this.db.request<any[]>(
+      `machine_connect_commands?organization_id=eq.${encodeURIComponent(tenantId)}&idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`,
+    );
+    return rows.length ? this.cache(this.fromRow(rows[0])) : null;
+  }
+
   async request(input: Omit<MachineCommand, 'commandId' | 'requestedAt' | 'status'> & { safetyClass?: 'read' | 'control' | 'critical'; capabilityKnown?: boolean }): Promise<MachineCommand> {
     const key = `${input.tenantId}:${input.idempotencyKey}`;
     const existingId = this.idempotency.get(key);
     if (existingId) return this.commands.get(existingId)!;
 
-    const machine = await this.machines.get(input.tenantId, input.machineId);
-    if (this.emergencyStop.isStopped(input.tenantId, input.machineId)) {
-      const command: MachineCommand = {
-        commandId: randomUUID(), tenantId: input.tenantId, machineId: input.machineId,
-        capability: input.capability, parameters: input.parameters, requestedBy: input.requestedBy,
-        requestedAt: new Date().toISOString(), idempotencyKey: input.idempotencyKey, status: 'rejected',
-      };
-      await this.recordEvent(command, 'command.rejected.emergency_stop');
-      this.commands.set(command.commandId, command); this.idempotency.set(key, command.commandId);
-      return command;
-    }
+    const durableExisting = await this.findDurable(input.tenantId, input.idempotencyKey);
+    if (durableExisting) return durableExisting;
 
+    const machine = await this.machines.get(input.tenantId, input.machineId);
     const capabilityKnown = machine.capabilities.includes(input.capability);
-    const decision = this.policy.evaluate({
-      lifecycleState: machine.lifecycleState,
-      capabilitySafetyClass: input.safetyClass ?? 'control', capabilityKnown,
-      actorAuthorized: Boolean(input.requestedBy),
-    });
+    const stopped = this.emergencyStop.isStopped(input.tenantId, input.machineId);
+    const decision = stopped
+      ? { allowed: false, approvalRequired: false, reason: 'Machine is emergency-stopped' }
+      : this.policy.evaluate({
+          lifecycleState: machine.lifecycleState,
+          capabilitySafetyClass: input.safetyClass ?? 'control', capabilityKnown,
+          actorAuthorized: Boolean(input.requestedBy),
+        });
     const status: CommandStatus = !decision.allowed ? 'rejected' : decision.approvalRequired ? 'approval_required' : 'authorized';
     const command: MachineCommand = {
       commandId: randomUUID(), tenantId: input.tenantId, machineId: input.machineId,
@@ -63,15 +80,25 @@ export class CommandService {
     };
 
     if (this.db.enabled) {
-      await this.db.request('machine_connect_commands', { method: 'POST', body: JSON.stringify({
-        id: command.commandId, organization_id: command.tenantId, machine_id: command.machineId,
-        action: command.capability, parameters: command.parameters, requested_by: command.requestedBy,
-        status: command.status, idempotency_key: command.idempotencyKey, created_at: command.requestedAt,
-      }) });
-      await this.recordEvent(command, 'command.requested', { safetyClass: input.safetyClass ?? 'control', capabilityKnown });
+      try {
+        await this.db.request('machine_connect_commands', { method: 'POST', body: JSON.stringify({
+          id: command.commandId, organization_id: command.tenantId, machine_id: command.machineId,
+          action: command.capability, parameters: command.parameters, requested_by: command.requestedBy,
+          status: command.status, idempotency_key: command.idempotencyKey, created_at: command.requestedAt,
+        }) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('23505') || message.includes('409') || message.includes('duplicate key')) {
+          const raced = await this.findDurable(input.tenantId, input.idempotencyKey);
+          if (raced) return raced;
+        }
+        throw error;
+      }
+      await this.recordEvent(command, stopped ? 'command.rejected.emergency_stop' : 'command.requested', {
+        safetyClass: input.safetyClass ?? 'control', capabilityKnown,
+      });
     }
-    this.commands.set(command.commandId, command); this.idempotency.set(key, command.commandId);
-    return command;
+    return this.cache(command);
   }
 
   async dispatch(tenantId: string, commandId: string, adapterId?: string): Promise<CommandDispatchResult> {
@@ -91,11 +118,12 @@ export class CommandService {
       if (!this.db.enabled) throw new BadRequestException('Command not found');
       const rows = await this.db.request<any[]>(`machine_connect_commands?id=eq.${encodeURIComponent(commandId)}&organization_id=eq.${encodeURIComponent(tenantId)}&limit=1`);
       if (!rows.length) throw new BadRequestException('Command not found');
-      const dbCommand: MachineCommand = { commandId: rows[0].id, tenantId: rows[0].organization_id, machineId: rows[0].machine_id, capability: rows[0].action, parameters: rows[0].parameters ?? {}, requestedBy: rows[0].requested_by, requestedAt: rows[0].created_at, idempotencyKey: rows[0].idempotency_key ?? commandId, status: rows[0].status };
+      const dbCommand = this.fromRow(rows[0]);
       if (!canTransition(dbCommand.status, to)) throw new BadRequestException(`Invalid command transition: ${dbCommand.status} -> ${to}`);
       await this.db.request(`machine_connect_commands?id=eq.${encodeURIComponent(commandId)}&organization_id=eq.${encodeURIComponent(tenantId)}`, { method: 'PATCH', body: JSON.stringify({ status: to, completed_at: ['acknowledged','rejected','timed_out','failed','cancelled','emergency_stopped'].includes(to) ? new Date().toISOString() : null }) });
-      await this.recordEvent({ ...dbCommand, status: to }, 'command.transitioned', { fromStatus: dbCommand.status, toStatus: to });
-      return { ...dbCommand, status: to };
+      const updated = this.cache({ ...dbCommand, status: to });
+      await this.recordEvent(updated, 'command.transitioned', { fromStatus: dbCommand.status, toStatus: to });
+      return updated;
     }
     if (!canTransition(command.status, to)) throw new BadRequestException(`Invalid command transition: ${command.status} -> ${to}`);
     const fromStatus = command.status; command.status = to;
