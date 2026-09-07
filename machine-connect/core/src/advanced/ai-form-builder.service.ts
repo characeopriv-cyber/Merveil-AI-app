@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { FormField, FormGenerationProvider, FormSchema } from './ai-form.types';
+import { FormField, FormSchema } from './ai-form.types';
+import { OpenAiFormProvider } from './openai-form-provider';
 
 @Injectable()
 export class AiFormBuilderService {
-  constructor(private readonly provider?: FormGenerationProvider) {}
+  constructor(private readonly provider: OpenAiFormProvider) {}
 
   async generate(prompt: string): Promise<FormSchema> {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt || normalizedPrompt.length > 4000) throw new Error('invalid form prompt');
-    if (!this.provider) throw new Error('AI form provider is not configured');
     return this.validate(await this.provider.generate(normalizedPrompt));
   }
 
@@ -18,7 +18,6 @@ export class AiFormBuilderService {
     const formName = typeof input.formName === 'string' ? input.formName.trim() : '';
     if (!formName || formName.length > 120) throw new Error('invalid form name');
     if (!Array.isArray(input.fields) || input.fields.length === 0 || input.fields.length > 100) throw new Error('invalid form fields');
-
     const fields = input.fields.map((raw, index) => this.validateField(raw, index));
     const names = new Set<string>();
     for (const field of fields) {
@@ -39,12 +38,10 @@ export class AiFormBuilderService {
     const allowed: FormField['type'][] = ['text', 'textarea', 'number', 'date', 'boolean', 'select', 'email'];
     if (!allowed.includes(type as FormField['type'])) throw new Error(`invalid field type at ${index}`);
     if (typeof field.required !== 'boolean') throw new Error(`invalid required flag at ${index}`);
-    let options: string[] | undefined;
-    if (type === 'select') {
-      if (!Array.isArray(field.options) || field.options.length === 0 || field.options.length > 100) throw new Error(`select options required at ${index}`);
-      options = field.options.map((x) => String(x).trim()).filter(Boolean).slice(0, 100);
-      if (!options.length) throw new Error(`empty select options at ${index}`);
-    }
-    return { name, label, type: type as FormField['type'], required: field.required as boolean, ...(options ? { options } : {}) };
+    if (type !== 'select') return { name, label, type: type as FormField['type'], required: field.required as boolean };
+    if (!Array.isArray(field.options) || field.options.length === 0 || field.options.length > 100) throw new Error(`select options required at ${index}`);
+    const options = field.options.map((x) => String(x).trim()).filter(Boolean).slice(0, 100);
+    if (!options.length) throw new Error(`empty select options at ${index}`);
+    return { name, label, type: 'select', required: field.required as boolean, options };
   }
 }
