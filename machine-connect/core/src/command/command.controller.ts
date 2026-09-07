@@ -1,15 +1,16 @@
-import { Body, Controller, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
 import { CommandStatus } from '../domain/command';
 import { CommandService } from './command.service';
 import { Principal } from '../auth/principal';
 import { requirePermission } from '../auth/permissions';
+import { MachineCredentialsService } from '../auth/machine-credentials.service';
 
-type RequestWithPrincipal = { user?: Principal };
+type RequestWithPrincipal = { user?: Principal; headers?: Record<string, string | string[] | undefined> };
 type CommandBody = { capability: string; parameters?: Record<string, unknown>; idempotencyKey: string; safetyClass?: 'control' | 'critical' };
 
 @Controller('api/machines')
 export class CommandController {
-  constructor(private readonly commands: CommandService) {}
+  constructor(private readonly commands: CommandService, private readonly credentials: MachineCredentialsService) {}
 
   @Post(':machineId/commands')
   request(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Body() body: CommandBody) {
@@ -21,6 +22,21 @@ export class CommandController {
   dispatch(@Req() req: RequestWithPrincipal, @Param('commandId') commandId: string, @Body() body: { adapterId?: string }) {
     const principal = requirePermission(req.user, 'device.control');
     return this.commands.dispatch(principal.tenantId, commandId, body.adapterId);
+  }
+
+  @Post(':machineId/commands/:commandId/ack')
+  async acknowledgeMachine(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Param('commandId') commandId: string) {
+    const credentialHeader = req.headers?.['x-machine-credential'];
+    const credential = Array.isArray(credentialHeader) ? credentialHeader[0] : credentialHeader;
+    if (!credential) throw new UnauthorizedException('Missing machine credential');
+
+    // The credential is machine-bound. We derive the tenant from the authenticated
+    // human session only for this boundary; production machine-only transport should
+    // supply the tenant binding from the credential record itself.
+    const principal = req.user;
+    if (!principal) throw new UnauthorizedException('Machine ACK requires tenant binding');
+    await this.credentials.require(principal.tenantId, machineId, credential);
+    return this.commands.transition(principal.tenantId, commandId, 'acknowledged');
   }
 
   @Post('commands/:commandId/ack')
