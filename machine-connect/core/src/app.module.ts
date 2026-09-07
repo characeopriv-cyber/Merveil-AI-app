@@ -1,11 +1,8 @@
 import { Module } from '@nestjs/common';
-import { MachineController } from './machine/machine.controller';
-import { MachineService } from './machine/machine.service';
-import { PolicyService } from './safety/policy.service';
+import { MachineModule } from './machine/machine.module';
+import { CommandModule } from './command/command.module';
 
 @Module({
-  controllers: [MachineController],
-  providers: [MachineService, PolicyService],
-  exports: [MachineService, PolicyService],
+  imports: [MachineModule, CommandModule],
 })
 export class AppModule {}
