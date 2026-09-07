@@ -29630,18 +29630,6 @@ function AppInner() {
     return () => clearInterval(id);
   }, [tab, marketSubTab]);
 
-  // Pulse / World badge totals from local catalogs (newer than last visit)
-  useEffect(() => {
-    const feedItems = (properties || []).filter((p) => p && p.visibility !== "investor");
-    const reelItems = feedItems.filter((p) => p.video_url || p.media_type === "video" || p.isLive);
-    const pulseFeed = tab === "pulse" && pulseSubTab !== "reels" ? 0 : MerveilSeen.countNewer("pulse_feed", feedItems, (p) => p.created_at || p.updated_at);
-    const pulseReels = tab === "pulse" && pulseSubTab === "reels" ? 0 : MerveilSeen.countNewer("pulse_reels", reelItems, (p) => p.created_at || p.updated_at);
-    setTabCounts((prev) => {
-      if (prev.pulseFeed === pulseFeed && prev.pulseReels === pulseReels) return prev;
-      return { ...prev, pulseFeed, pulseReels };
-    });
-  }, [properties, tab, pulseSubTab]);
-
   useEffect(() => {
     const onWorldCatalog = (e) => {
       const items = e?.detail?.items || [];
@@ -29670,6 +29658,19 @@ function AppInner() {
   const [services, setServices] = useState([]); // real data only — no demo seed
   // Investor Zone access now comes from currentUser.passportTier (see hasAccess), not local state.
   const [loadError, setLoadError] = useState(null);
+
+  // Pulse badge totals — MUST sit after `properties` is declared (TDZ crash otherwise:
+  // "Cannot access 'K' before initialization" in production minified builds).
+  useEffect(() => {
+    const feedItems = (properties || []).filter((p) => p && p.visibility !== "investor");
+    const reelItems = feedItems.filter((p) => p.video_url || p.media_type === "video" || p.isLive);
+    const pulseFeed = tab === "pulse" && pulseSubTab !== "reels" ? 0 : MerveilSeen.countNewer("pulse_feed", feedItems, (p) => p.created_at || p.updated_at);
+    const pulseReels = tab === "pulse" && pulseSubTab === "reels" ? 0 : MerveilSeen.countNewer("pulse_reels", reelItems, (p) => p.created_at || p.updated_at);
+    setTabCounts((prev) => {
+      if (prev.pulseFeed === pulseFeed && prev.pulseReels === pulseReels) return prev;
+      return { ...prev, pulseFeed, pulseReels };
+    });
+  }, [properties, tab, pulseSubTab]);
 
   // Pull real, database-backed properties on load and merge them in ahead
   // of the mock set. Any failure is now surfaced via loadError instead of
