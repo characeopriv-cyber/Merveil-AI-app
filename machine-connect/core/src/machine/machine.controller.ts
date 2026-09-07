@@ -1,33 +1,32 @@
-import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { MachineProvisioningInput } from '../domain/machine';
 import { MachineService } from './machine.service';
+import { Principal, requirePrincipal } from '../auth/principal';
+
+type RequestWithPrincipal = { user?: Principal };
 
 @Controller('api/machines')
 export class MachineController {
   constructor(private readonly machines: MachineService) {}
 
   @Get()
-  list(@Headers('x-tenant-id') tenantId: string) {
-    return this.machines.list(this.requireTenant(tenantId));
+  list(@Req() req: RequestWithPrincipal) {
+    return this.machines.list(requirePrincipal(req.user).tenantId);
   }
 
   @Get(':id')
-  get(@Headers('x-tenant-id') tenantId: string, @Param('id') id: string) {
-    return this.machines.get(this.requireTenant(tenantId), id);
+  get(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
+    return this.machines.get(requirePrincipal(req.user).tenantId, id);
   }
 
   @Post()
-  provision(@Headers('x-tenant-id') tenantId: string, @Body() body: Omit<MachineProvisioningInput, 'tenantId'>) {
-    return this.machines.provision({ ...body, tenantId: this.requireTenant(tenantId) });
+  provision(@Req() req: RequestWithPrincipal, @Body() body: Omit<MachineProvisioningInput, 'tenantId'>) {
+    const principal = requirePrincipal(req.user);
+    return this.machines.provision({ ...body, tenantId: principal.tenantId });
   }
 
   @Post(':id/activate')
-  activate(@Headers('x-tenant-id') tenantId: string, @Param('id') id: string) {
-    return this.machines.activate(this.requireTenant(tenantId), id);
-  }
-
-  private requireTenant(value?: string): string {
-    if (!value?.trim()) throw new Error('Tenant context is required');
-    return value.trim();
+  activate(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
+    return this.machines.activate(requirePrincipal(req.user).tenantId, id);
   }
 }
