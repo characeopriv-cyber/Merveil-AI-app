@@ -32,12 +32,18 @@
       "new_sqlite_classes": ["MachineConnectContainer"]
     }
   ],
-  "secrets": {
-    "required": [
-      "SUPABASE_URL",
-      "SUPABASE_SERVICE_ROLE_KEY"
-    ]
-  },
+  "secrets_store_secrets": [
+    {
+      "binding": "SUPABASE_URL_STORE",
+      "store_id": "a9deef751d4e4aa38932ec3cc66c9bad",
+      "secret_name": "SUPABASE_URL"
+    },
+    {
+      "binding": "SUPABASE_SERVICE_ROLE_KEY_STORE",
+      "store_id": "a9deef751d4e4aa38932ec3cc66c9bad",
+      "secret_name": "SUPABASE_SERVICE_ROLE_KEY"
+    }
+  ],
   "observability": {
     "enabled": true
   }
