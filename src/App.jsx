@@ -1627,6 +1627,30 @@ const UI_STRINGS = {
     "nav.pulse": "Pulse",
     "nav.passport": "Passport",
     "nav.more": "More",
+    "nav.invest": "Invest",
+    "nav.marketplace": "Marketplace",
+    "common.signOut": "Sign out",
+    "common.signIn": "Sign In",
+    "common.appSettings": "App settings",
+    "common.queued": "queued — will send when you're back online",
+    "common.message": "message",
+    "common.messages": "messages",
+    "connect.tabCitizens": "Citizens",
+    "connect.tabCircle": "My Circle",
+    "connect.tabMessages": "Messages",
+    "connect.searchPeople": "Search people",
+    "connect.newChat": "New chat",
+    "passport.identity": "Identity",
+    "passport.capabilities": "Capabilities",
+    "passport.activity": "Activity",
+    "world.post": "Post",
+    "world.reels": "Reels",
+    "pulse.reels": "Reels",
+    "pulse.feed": "Feed",
+    "market.all": "All",
+    "market.jobs": "Jobs",
+    "market.services": "Services",
+    "auth.welcome": "Welcome",
     "nav.world": "World",
     "nav.arena": "Arena",
     "nav.market": "Market",
@@ -1699,6 +1723,23 @@ const UI_STRINGS = {
     "messages.translate": "Translate",
     "messages.replyIdea": "Reply idea",
     "messages.meeting": "Meeting",
+    "connect.online": "Live now",
+    "connect.away": "Away",
+    "connect.inContact": "In contact",
+    "connect.scanning": "Scanning citizens…",
+    "connect.noMatch": "No citizens match that search.",
+    "connect.emptyCircleBody": "Connect with citizens to build a trusted network. Accepted connections land here.",
+    "world.title": "World",
+    "world.empty": "No reels yet — be the first to post.",
+    "passport.title": "Passport",
+    "passport.settings": "Settings",
+    "passport.wallet": "Wallet",
+    "passport.verify": "Verify",
+    "common.search": "Search",
+    "common.refresh": "Refresh",
+    "common.online": "Online",
+    "common.offline": "Offline",
+    "common.busy": "Busy",
   },
   fr: {
     "nav.home": "Accueil",
@@ -1706,6 +1747,30 @@ const UI_STRINGS = {
     "nav.pulse": "Pulse",
     "nav.passport": "Passeport",
     "nav.more": "Plus",
+    "nav.invest": "Investir",
+    "nav.marketplace": "Marché",
+    "common.signOut": "Déconnexion",
+    "common.signIn": "Connexion",
+    "common.appSettings": "Réglages de l'app",
+    "common.queued": "en file — envoi dès que vous êtes en ligne",
+    "common.message": "message",
+    "common.messages": "messages",
+    "connect.tabCitizens": "Citoyens",
+    "connect.tabCircle": "Mon cercle",
+    "connect.tabMessages": "Messages",
+    "connect.searchPeople": "Rechercher des personnes",
+    "connect.newChat": "Nouveau chat",
+    "passport.identity": "Identité",
+    "passport.capabilities": "Capacités",
+    "passport.activity": "Activité",
+    "world.post": "Publier",
+    "world.reels": "Reels",
+    "pulse.reels": "Reels",
+    "pulse.feed": "Fil",
+    "market.all": "Tout",
+    "market.jobs": "Emplois",
+    "market.services": "Services",
+    "auth.welcome": "Bienvenue",
     "nav.world": "World",
     "nav.arena": "Arena",
     "nav.market": "Marché",
@@ -1778,6 +1843,23 @@ const UI_STRINGS = {
     "messages.translate": "Traduire",
     "messages.replyIdea": "Idée de réponse",
     "messages.meeting": "Réunion",
+    "connect.online": "En direct",
+    "connect.away": "Absent",
+    "connect.inContact": "En contact",
+    "connect.scanning": "Scan des citoyens…",
+    "connect.noMatch": "Aucun citoyen ne correspond.",
+    "connect.emptyCircleBody": "Connectez-vous pour construire un réseau de confiance. Les connexions acceptées apparaissent ici.",
+    "world.title": "World",
+    "world.empty": "Aucune bobine pour l’instant — soyez le premier.",
+    "passport.title": "Passeport",
+    "passport.settings": "Réglages",
+    "passport.wallet": "Portefeuille",
+    "passport.verify": "Vérifier",
+    "common.search": "Rechercher",
+    "common.refresh": "Actualiser",
+    "common.online": "En ligne",
+    "common.offline": "Hors ligne",
+    "common.busy": "Occupé",
   },
   ar: {
     "nav.home": "الرئيسية",
@@ -1785,6 +1867,30 @@ const UI_STRINGS = {
     "nav.pulse": "بولس",
     "nav.passport": "الجواز",
     "nav.more": "المزيد",
+    "nav.invest": "استثمار",
+    "nav.marketplace": "السوق",
+    "common.signOut": "تسجيل الخروج",
+    "common.signIn": "تسجيل الدخول",
+    "common.appSettings": "إعدادات التطبيق",
+    "common.queued": "في الانتظار — ستُرسل عند عودة الاتصال",
+    "common.message": "رسالة",
+    "common.messages": "رسائل",
+    "connect.tabCitizens": "المواطنون",
+    "connect.tabCircle": "دائرتي",
+    "connect.tabMessages": "الرسائل",
+    "connect.searchPeople": "البحث عن أشخاص",
+    "connect.newChat": "محادثة جديدة",
+    "passport.identity": "الهوية",
+    "passport.capabilities": "القدرات",
+    "passport.activity": "النشاط",
+    "world.post": "نشر",
+    "world.reels": "ريلز",
+    "pulse.reels": "ريلز",
+    "pulse.feed": "الموجز",
+    "market.all": "الكل",
+    "market.jobs": "وظائف",
+    "market.services": "خدمات",
+    "auth.welcome": "مرحباً",
     "nav.world": "العالم",
     "nav.arena": "الساحة",
     "nav.market": "السوق",
@@ -1857,6 +1963,23 @@ const UI_STRINGS = {
     "messages.translate": "ترجمة",
     "messages.replyIdea": "فكرة رد",
     "messages.meeting": "اجتماع",
+    "connect.online": "مباشر الآن",
+    "connect.away": "بعيد",
+    "connect.inContact": "على تواصل",
+    "connect.scanning": "جارٍ مسح المواطنين…",
+    "connect.noMatch": "لا يوجد مواطنون مطابقون.",
+    "connect.emptyCircleBody": "تواصل مع المواطنين لبناء شبكة موثوقة. تظهر الاتصالات المقبولة هنا.",
+    "world.title": "العالم",
+    "world.empty": "لا توجد ريلز بعد — كن أول من ينشر.",
+    "passport.title": "جواز السفر",
+    "passport.settings": "الإعدادات",
+    "passport.wallet": "المحفظة",
+    "passport.verify": "التحقق",
+    "common.search": "بحث",
+    "common.refresh": "تحديث",
+    "common.online": "متصل",
+    "common.offline": "غير متصل",
+    "common.busy": "مشغول",
   },
 };
 
@@ -1865,6 +1988,49 @@ function t(key, lang) {
   const pack = UI_STRINGS[code] || UI_STRINGS.en;
   return pack[key] || UI_STRINGS.en[key] || key;
 }
+
+/** Stable list merge: keep previous object refs when fields are unchanged so React
+ *  does not tear down rows every poll. Returns `prev` if ids+order+fields match. */
+function stableMergeById(prev, next, idKey = "id") {
+  if (!Array.isArray(next)) return Array.isArray(prev) ? prev : [];
+  if (!Array.isArray(prev) || prev.length === 0) return next;
+  const prevMap = new Map(prev.map((x) => [String(x?.[idKey]), x]));
+  let changed = prev.length !== next.length;
+  const out = next.map((n) => {
+    const id = String(n?.[idKey]);
+    const p = prevMap.get(id);
+    if (!p) { changed = true; return n; }
+    let same = true;
+    for (const k of Object.keys(n)) {
+      if (p[k] !== n[k]) { same = false; break; }
+    }
+    if (same) {
+      for (const k of Object.keys(p)) {
+        if (!(k in n) && p[k] !== undefined) { same = false; break; }
+      }
+    }
+    if (!same) changed = true;
+    return same ? p : { ...p, ...n };
+  });
+  if (!changed) {
+    for (let i = 0; i < out.length; i++) {
+      if (String(prev[i]?.[idKey]) !== String(out[i]?.[idKey])) { changed = true; break; }
+    }
+  }
+  return changed ? out : prev;
+}
+
+/** Shallow field equality for a single record (used by catalog merges). */
+function shallowSameRecord(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+}
+
 
 // ---------------------------------------------------------------
 // MERVEIL WORK — Job listings and job seekers
@@ -5826,15 +5992,18 @@ function InvestorZone({ liveViews, properties, currentUser, onUpgrade, onPropert
     }
   };
 
-  const load = () => {
-    setLoading(true);
+  const load = (silent = false) => {
+    if (!silent) setLoading(true);
     fetch("/api/invest")
       .then((r) => (r.ok ? r.json() : { posts: [] }))
-      .then((d) => setPosts(d.posts || []))
-      .catch(() => setPosts([]))
-      .finally(() => setLoading(false));
+      .then((d) => {
+        const next = d.posts || [];
+        setPosts((prev) => (silent ? stableMergeById(prev, next) : next));
+      })
+      .catch(() => { if (!silent) setPosts([]); })
+      .finally(() => { if (!silent) setLoading(false); });
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(false); }, []);
   useEffect(() => {
     if (!currentUser?.id) { setLikedIds([]); return; }
     fetch("/api/invest?action=likes", { credentials: "include" })
@@ -9166,9 +9335,15 @@ function ReelsView({ properties, liveViews, onChat, currentUserId, onRequireSign
   };
 
   // Pulse = real estate ecosystem only. Never mix World / services / jobs.
+  // Rank only when the catalog signature changes — not on every parent re-render.
+  const pulseCatalogSig = useMemo(() => {
+    const list = properties || [];
+    return list.map((p) => `${p.id}:${p.likesCount || 0}:${p.superCount || 0}:${p.views || 0}:${p.isLive ? 1 : 0}`).join("|");
+  }, [properties]);
   const ranked = useMemo(
     () => rankPulseReels(properties || [], currentUserId),
-    [properties, currentUserId]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pulseCatalogSig, currentUserId]
   );
   const merged = ranked.map((p) => ({
     kind: "property",
@@ -9649,10 +9824,20 @@ const MERVEIL_AI_THREAD_ID = "junction-ai";
 
 function useOutbox() {
   const [outbox, setOutbox] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("junction_outbox") || "[]"); } catch { return []; }
+    try {
+      const raw = JSON.parse(localStorage.getItem("junction_outbox") || localStorage.getItem("merveil_outbox") || "[]");
+      if (!Array.isArray(raw)) return [];
+      // Drop ancient entries (>7 days) so a stuck queue cannot grow forever
+      const maxAge = 7 * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      return raw.filter((item) => item && item.conversationId && item.payload && (now - (item.queuedAt || now)) < maxAge);
+    } catch { return []; }
   });
   useEffect(() => {
-    try { localStorage.setItem("junction_outbox", JSON.stringify(outbox)); } catch {}
+    try {
+      localStorage.setItem("junction_outbox", JSON.stringify(outbox));
+      localStorage.setItem("merveil_outbox", JSON.stringify(outbox));
+    } catch {}
   }, [outbox]);
   return [outbox, setOutbox];
 }
@@ -10160,16 +10345,17 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
+    let first = true;
     const load = () => {
       merveilFetch(`/api/conversations?action=directory`)
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (cancelled || !data?.users) return;
-          setCitizens(data.users);
+          setCitizens((prev) => stableMergeById(prev, data.users));
           knownIdsRef.current = new Set(data.users.map((u) => String(u.id)));
         })
         .catch(() => {})
-        .finally(() => { if (!cancelled) setLoading(false); });
+        .finally(() => { if (!cancelled && first) { first = false; setLoading(false); } });
     };
     load();
     // New signups appear in Citizens within ~15s without a full reload
@@ -10237,8 +10423,8 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
         />
       </div>
       <div className="overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: "calc(var(--nav-h) + var(--safe-bottom) + 24px)" }}>
-        {loading && <div className="px-4 py-6 text-xs" style={{ color: CT.sub }}>Scanning citizens…</div>}
-        {!loading && rows.length === 0 && <div className="px-4 py-6 text-xs text-center" style={{ color: CT.sub }}>No citizens match that search.</div>}
+        {loading && <div className="px-4 py-6 text-xs" style={{ color: CT.sub }}>{t("connect.scanning")}</div>}
+        {!loading && rows.length === 0 && <div className="px-4 py-6 text-xs text-center" style={{ color: CT.sub }}>{t("connect.noMatch")}</div>}
         {(() => {
           const connected = rows.filter((r) => (r.contactRank || 0) > 0);
           const restOnline = online.filter((r) => !(r.contactRank > 0));
@@ -10254,7 +10440,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
             <>
               {connected.length > 0 && (
                 <>
-                  <Section label="In contact" count={connected.length} accent="#06B6D4" />
+                  <Section label={t("connect.inContact")} count={connected.length} accent="#06B6D4" />
                   {connected.map((u) => (
                     <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
                   ))}
@@ -10262,7 +10448,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
               )}
               {restOnline.length > 0 && (
                 <>
-                  <Section label="Live now" count={restOnline.length} accent={CT.online} />
+                  <Section label={t("connect.online")} count={restOnline.length} accent={CT.online} />
                   {restOnline.map((u) => (
                     <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
                   ))}
@@ -10270,7 +10456,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
               )}
               {restOffline.length > 0 && (
                 <>
-                  <Section label="Away" count={restOffline.length} />
+                  <Section label={t("connect.away")} count={restOffline.length} />
                   {restOffline.map((u) => (
                     <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
                   ))}
@@ -10349,6 +10535,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const [activeId, setActiveId] = useState(null);
   const [aiMessages, setAiMessages] = useState([{ from: "them", text: "Hi! I'm Merveil AI — ask me anything about listings, areas, or how the app works." }]);
   const [threadMessages, setThreadMessages] = useState([]);
+  const activeThreadIdRef = useRef(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [mobileView, setMobileView] = useState("list");
@@ -10485,16 +10672,28 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
-    const load = () => {
-      setDirectoryLoading(true);
-      merveilFetch(`/api/conversations?action=directory&q=${encodeURIComponent(directoryQuery.trim())}`)
+    let first = true;
+    const q = directoryQuery.trim();
+    const load = (isPoll = false) => {
+      // Only flash loading on first load or when the search query changes — never on the 15s poll.
+      if (!isPoll) setDirectoryLoading(true);
+      merveilFetch(`/api/conversations?action=directory&q=${encodeURIComponent(q)}`)
         .then((r) => (r.ok ? r.json() : null))
-        .then((data) => { if (!cancelled && data?.users) setDirectory(data.users); })
+        .then((data) => {
+          if (cancelled) return;
+          const users = data?.users || [];
+          setDirectory((prev) => (q ? users : stableMergeById(prev, users)));
+        })
         .catch(() => {})
-        .finally(() => { if (!cancelled) setDirectoryLoading(false); });
+        .finally(() => {
+          if (!cancelled && (!isPoll || first)) {
+            first = false;
+            setDirectoryLoading(false);
+          }
+        });
     };
-    const t = setTimeout(load, showNewChat ? 200 : 0);
-    const id = setInterval(load, 15000);
+    const t = setTimeout(() => load(false), showNewChat ? 200 : 0);
+    const id = setInterval(() => load(true), 15000);
     return () => { cancelled = true; clearTimeout(t); clearInterval(id); };
   }, [showNewChat, directoryQuery, currentUser?.id]);
 
@@ -10503,8 +10702,11 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const reloadConnections = useCallback(() => {
     if (!currentUser?.id) return;
     merveilFetch("/api/connections?action=list&kind=accepted")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setConnectionPeople((d.connections || []).map((c) => c.person).filter((p) => p?.id)); })
+      .then((r) => (r.ok ? r.json() : { connections: [] }))
+      .then((d) => {
+        const people = (d.connections || []).map((c) => c.person).filter((p) => p?.id);
+        setConnectionPeople((prev) => stableMergeById(prev, people));
+      })
       .catch(() => {});
   }, [currentUser?.id]);
   useEffect(() => {
@@ -10609,6 +10811,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
   // Load real conversations — slower poll under load; new activity still
   // sorts to top via last_message_at from the optimized batch endpoint.
+  // stableMergeById keeps row identity so the list does not flash every 2.5s.
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
@@ -10623,21 +10826,26 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             const tb = new Date(b.last_message_at || b.updated_at || b.created_at || 0).getTime();
             return tb - ta;
           });
-          setThreads(sorted);
+          setThreads((prev) => stableMergeById(prev, sorted));
         })
         .catch(() => {});
     };
     load();
-    const interval = setInterval(load, 2500);
+    // Realtime is primary; poll is a slow safety net (was 2.5s — too chatty).
+    const interval = setInterval(load, 8000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [currentUser?.id]);
 
-  // Load messages for the active human conversation. Realtime + fast poll
+  // Load messages for the active human conversation. Realtime + slow poll
   // so both sides see messages even when Realtime publication is incomplete.
   useEffect(() => {
     if (isAiThread || !activeId) return;
     let cancelled = false;
-    setThreadMessages([]); // clear while switching threads
+    // Only clear when the open thread actually changes — never on poll re-runs.
+    if (activeThreadIdRef.current !== activeId) {
+      activeThreadIdRef.current = activeId;
+      setThreadMessages([]);
+    }
     // Opening a thread always marks it read so the global badge clears
     if (currentUser?.id) {
       merveilFetch(`/api/conversations/${activeId}/messages`, {
@@ -10669,7 +10877,14 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                 || (m.media_url && s.media_url === m.media_url)
               );
             });
-            return [...msgs, ...locals];
+            const merged = stableMergeById(prev.filter((m) => {
+              const id = String(m.id || "");
+              return !id.startsWith("local-") && !id.startsWith("err-");
+            }), msgs);
+            const next = [...merged, ...locals];
+            // If nothing meaningful changed, keep previous array ref
+            if (next.length === prev.length && next.every((m, i) => m === prev[i])) return prev;
+            return next;
           });
         })
         .catch(() => {});
@@ -10696,13 +10911,22 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             // Refresh thread list so last_body updates for the other side
             fetch(`/api/conversations?userId=${currentUser?.id}`, { credentials: "include" })
               .then((r) => (r.ok ? r.json() : null))
-              .then((data) => { if (!cancelled && data?.conversations) setThreads(data.conversations); })
+              .then((data) => {
+                if (cancelled || !data?.conversations) return;
+                const sorted = [...data.conversations].sort((a, b) => {
+                  const ta = new Date(a.last_message_at || a.updated_at || a.created_at || 0).getTime();
+                  const tb = new Date(b.last_message_at || b.updated_at || b.created_at || 0).getTime();
+                  return tb - ta;
+                });
+                setThreads((prev) => stableMergeById(prev, sorted));
+              })
               .catch(() => {});
           }
         )
         .subscribe();
     } catch {}
-    const interval = setInterval(load, 1500);
+    // Realtime INSERT is primary; 4s poll heals missed events without bubble flicker.
+    const interval = setInterval(load, 4000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -10762,26 +10986,42 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     } catch {}
   };
 
-  // Offline detection + auto-flush queued messages on reconnect.
+  // Offline detection + auto-flush queued messages on reconnect / mount.
   useEffect(() => {
     const goOnline = () => { setIsOnline(true); flushOutbox(); };
     const goOffline = () => setIsOnline(false);
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
+    // Resume any persisted queue from a previous session
+    if (typeof navigator !== "undefined" && navigator.onLine && outbox.length > 0) {
+      flushOutbox();
+    }
     return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outbox]);
+  }, [outbox.length]);
 
   const flushOutbox = async () => {
     if (outbox.length === 0) return;
     const remaining = [];
+    const seen = new Set();
     for (const item of outbox) {
+      const dedupeKey = `${item.conversationId}:${item.payload?.client_id || item.payload?.body || ""}:${item.queuedAt || 0}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      const attempts = (item.attempts || 0) + 1;
       try {
-        const res = await fetch(`/api/conversations/${item.conversationId}/messages`, {
-          method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item.payload),
+        const res = await merveilFetch(`/api/conversations/${item.conversationId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(item.payload),
         });
-        if (!res.ok) remaining.push(item);
-      } catch { remaining.push(item); }
+        if (!res.ok) {
+          // Cap retries so a permanently failing message does not block the queue forever
+          if (attempts < 8) remaining.push({ ...item, attempts });
+        }
+      } catch {
+        if (attempts < 8) remaining.push({ ...item, attempts });
+      }
     }
     setOutbox(remaining);
   };
@@ -11189,7 +11429,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         <>
         {!isOnline && outbox.length > 0 && (
           <div className="px-3 py-2 text-[11px] font-semibold" style={{ background: "#FDF3E2", color: "#9A6B17" }}>
-            {outbox.length} message{outbox.length > 1 ? "s" : ""} queued — will send when you're back online.
+            {outbox.length} {outbox.length > 1 ? t("common.messages") : t("common.message")} {t("common.queued")}
           </div>
         )}
 
@@ -17822,12 +18062,44 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         const list = data.posts || [];
         // Empty live feed → hydrate with AI seeds so engagement state is mutable
         if (!list.length) {
-          setPosts(rankWorldReels(MERVEIL_AI_SEED_REELS.map((s) => ({ ...s })), {
-            userId: currentUser?.id,
-            affinity: readWorldAffinity(),
-          }));
-          setHasMoreWorld(false);
-          worldNextBeforeRef.current = null;
+          setPosts((prev) => {
+            // Silent refresh: never wipe a non-empty feed with seeds
+            if (silent && prev.length) return prev;
+            return rankWorldReels(MERVEIL_AI_SEED_REELS.map((s) => ({ ...s })), {
+              userId: currentUser?.id,
+              affinity: readWorldAffinity(),
+            });
+          });
+          if (!silent) {
+            setHasMoreWorld(false);
+            worldNextBeforeRef.current = null;
+          }
+        } else if (silent) {
+          // Soft refresh: update counts/fields in place — do NOT re-rank or jump index mid-swipe
+          setPosts((prev) => {
+            if (!prev.length) {
+              return rankWorldReels(list, { userId: currentUser?.id, affinity: readWorldAffinity() });
+            }
+            const byId = new Map(list.map((p) => [String(p.id), p]));
+            let changed = false;
+            const next = prev.map((p) => {
+              const n = byId.get(String(p.id));
+              if (!n) return p;
+              const merged = { ...p, ...n };
+              if (!shallowSameRecord(p, merged)) changed = true;
+              return shallowSameRecord(p, merged) ? p : merged;
+            });
+            // Append brand-new posts at the end (no mid-feed insert)
+            const seen = new Set(prev.map((p) => String(p.id)));
+            const fresh = list.filter((p) => !seen.has(String(p.id)));
+            if (fresh.length) {
+              changed = true;
+              return [...next, ...fresh];
+            }
+            return changed ? next : prev;
+          });
+          setHasMoreWorld(!!data.hasMore);
+          worldNextBeforeRef.current = data.nextBefore || worldNextBeforeRef.current;
         } else {
           // Rank once on batch load — avoids mid-swipe reshuffle
           setPosts(rankWorldReels(list, {
@@ -19009,8 +19281,9 @@ function SettingsView({ settings, setSettings }) {
             className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border outline-none max-w-[180px]"
             style={{ borderColor: "var(--mv-border)", color: T.ink, background: "var(--mv-surface-raised)", borderRadius: 12, height: 36 }}
           >
-            {LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>{l.native}{["en","fr","ar"].includes(l.code) ? " · UI" : ""}</option>
+            {/* UI packs are en/fr/ar only — other Passport languages stay for AI voice, not chrome */}
+            {LANGUAGES.filter((l) => ["en", "fr", "ar"].includes(l.code)).map((l) => (
+              <option key={l.code} value={l.code}>{l.native}</option>
             ))}
           </select>
         </Row>
@@ -25091,7 +25364,7 @@ function ProfileView({ currentUser, properties, services, onSignOut, onSignIn, o
     if (!currentUser?.id) return;
     fetch(`/api/circles?userId=${currentUser.id}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.circles) setJoinedCircles(data.circles); })
+      .then((data) => setJoinedCircles(data?.circles || []))
       .catch(() => {});
   }, [currentUser?.id]);
   const joinedCircleCodes = joinedCircles.map((c) => c.code);
@@ -25242,12 +25515,12 @@ function ProfileView({ currentUser, properties, services, onSignOut, onSignIn, o
 // Primary chrome only. Community / New to UAE / Sound / Arena / AI Call /
 // Transactions live exclusively inside Plus (see plusHub.jsx).
 const NAV = [
-  { id: "pulse", label: "Pulse", icon: LayoutGrid },
-  { id: "investor", label: "Invest", icon: TrendingUp },
-  { id: "messages", label: "Connect", icon: MessageCircle },
-  { id: "world", label: "World", icon: Globe },
-  { id: "market", label: "Marketplace", icon: Store },
-  { id: "passport", label: "Passport", icon: UserCheck },
+  { id: "pulse", labelKey: "nav.pulse", icon: LayoutGrid },
+  { id: "investor", labelKey: "nav.invest", icon: TrendingUp },
+  { id: "messages", labelKey: "nav.connect", icon: MessageCircle },
+  { id: "world", labelKey: "nav.world", icon: Globe },
+  { id: "market", labelKey: "nav.market", icon: Store },
+  { id: "passport", labelKey: "nav.passport", icon: UserCheck },
 ];
 
 // ---------------------------------------------------------------
@@ -26934,7 +27207,7 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
     if (!currentUser?.id) return;
     fetch(`/api/circles?userId=${currentUser.id}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.circles) setJoinedCircles(data.circles); })
+      .then((data) => setJoinedCircles(data?.circles || []))
       .catch(() => {});
   }, [currentUser?.id]);
 
@@ -29043,7 +29316,16 @@ function AppInner() {
           const real = (data?.properties || []).map(mapProperty);
           setProperties((prev) => {
             const localOnly = prev.filter((p) => !String(p.id).startsWith("db-"));
-            return [...real, ...localOnly];
+            const merged = stableMergeById(
+              prev.filter((p) => String(p.id).startsWith("db-")),
+              real
+            );
+            // Avoid churn when catalog is unchanged
+            if (merged === prev.filter((p) => String(p.id).startsWith("db-")) && localOnly.length === prev.filter((p) => !String(p.id).startsWith("db-")).length) {
+              const prevLocal = prev.filter((p) => !String(p.id).startsWith("db-"));
+              if (prevLocal.length === localOnly.length) return prev;
+            }
+            return [...merged, ...localOnly];
           });
           if (real.length) setLoadError(null);
         })
@@ -29064,7 +29346,14 @@ function AppInner() {
           const real = (data?.services || []).map(mapService);
           setServices((prev) => {
             const localOnly = prev.filter((s) => !String(s.id).startsWith("db-"));
-            return [...real, ...localOnly];
+            const merged = stableMergeById(
+              prev.filter((s) => String(s.id).startsWith("db-")),
+              real
+            );
+            if (merged === prev.filter((s) => String(s.id).startsWith("db-")) && localOnly.length === prev.filter((s) => !String(s.id).startsWith("db-")).length) {
+              return prev;
+            }
+            return [...merged, ...localOnly];
           });
         })
         .catch((e) => {
@@ -29087,18 +29376,20 @@ function AppInner() {
   }, []);
 
   const [settings, setSettings] = useState(() => {
+    const uiLang = (code) => (["en", "fr", "ar"].includes(String(code || "").slice(0, 2)) ? String(code).slice(0, 2) : "en");
     try {
       const saved = JSON.parse(localStorage.getItem("jx_settings") || "null");
       const langOverride = localStorage.getItem("merveil_language");
+      const detected = detectLanguage();
       if (saved) {
         return {
           ...saved,
-          language: langOverride || saved.language || detectLanguage(),
+          language: uiLang(langOverride || saved.language || detected),
         };
       }
-      return { theme: "light", notifications: true, textSize: "md", language: langOverride || detectLanguage() };
+      return { theme: "light", notifications: true, textSize: "md", language: uiLang(langOverride || detected) };
     } catch {}
-    return { theme: "light", notifications: true, textSize: "md", language: detectLanguage() };
+    return { theme: "light", notifications: true, textSize: "md", language: uiLang(detectLanguage()) };
   });
 
   useEffect(() => {
@@ -29130,8 +29421,9 @@ function AppInner() {
   // Keep language choice stable across Settings re-renders (voiceschanged etc.)
   useEffect(() => {
     const onLang = (e) => {
-      const code = e?.detail?.code;
-      if (!code) return;
+      const raw = e?.detail?.code;
+      if (!raw) return;
+      const code = ["en", "fr", "ar"].includes(String(raw).slice(0, 2)) ? String(raw).slice(0, 2) : "en";
       setSettings((s) => (s.language === code ? s : { ...s, language: code }));
     };
     window.addEventListener("merveil:language", onLang);
@@ -29458,7 +29750,23 @@ function AppInner() {
           return cached?.id ? cached : null;
         }
         if (body.user?.id) {
-          syncCurrentUser(body.user);
+          // Only replace React state when profile fields actually change —
+          // blind sync every 90s was re-rendering Passport/Connect/Pulse.
+          try {
+            const prev = JSON.parse(localStorage.getItem("junction_user") || "null");
+            const u = body.user;
+            const same = prev && String(prev.id) === String(u.id)
+              && prev.name === u.name
+              && prev.avatar_url === u.avatar_url
+              && (prev.passport_tier || prev.passportTier) === (u.passport_tier || u.passportTier)
+              && prev.email === u.email
+              && prev.profession === u.profession
+              && prev.city === u.city
+              && JSON.stringify(prev.languages || []) === JSON.stringify(u.languages || []);
+            if (!same) syncCurrentUser(u);
+          } catch {
+            syncCurrentUser(body.user);
+          }
           return body.user;
         }
         // Explicit { user: null } — only clear if there is no local citizen
@@ -29803,7 +30111,7 @@ function AppInner() {
                   borderRadius: 10,
                 }}
               >
-                <Icon size={15} aria-hidden="true" /> {n.label}
+                <Icon size={15} aria-hidden="true" /> {t(n.labelKey, settings?.language)}
               </button>
             );
           })}
@@ -29828,7 +30136,7 @@ function AppInner() {
             <button onClick={() => setShowAuthModal(true)}
               className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg shrink-0"
               style={{ background: "linear-gradient(135deg,#0E9AA7,#0A7A85)", color: "#FFFFFF", boxShadow: "0 4px 14px rgba(14,154,167,0.28)" }}>
-              Sign In
+              {t("common.signIn", settings?.language)}
             </button>
           )}
           {/* Plus — sits BEFORE notification so the bell stays visible */}
@@ -30297,7 +30605,7 @@ function AppInner() {
         <div className="flex items-center justify-between px-1.5 pt-1.5 pb-1.5 gap-0.5" style={{ background: "var(--t-nav)" }}>
           {[
             {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse"},
-            {id:"investor", icon:TrendingUp,    labelKey:"nav.home", labelFallback:"Invest"},
+            {id:"investor", icon:TrendingUp,    labelKey:"nav.invest"},
             {id:"messages", icon:MessageCircle, labelKey:"nav.connect"},
             {id:"world",    icon:Globe,         labelKey:"nav.world"},
             {id:"market",   icon:Store,         labelKey:"nav.market"},
@@ -30306,7 +30614,7 @@ function AppInner() {
             const Icon = n.icon;
             const isActive = tab === n.id;
             const lang = settings?.language || "en";
-            const label = n.labelKey === "nav.home" && n.labelFallback ? (lang === "fr" ? "Invest" : lang === "ar" ? "استثمار" : "Invest") : t(n.labelKey, lang);
+            const label = t(n.labelKey, lang);
             return (
               <button key={n.id} type="button" onClick={() => setTab(n.id)}
                 className="flex flex-col items-center gap-0.5 min-w-0 flex-1"
@@ -31477,79 +31785,108 @@ function AdminAlertsPanel() {
   const [status, setStatus] = useState(null);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
-  const load = () => adminApi("console?action=push-status").then(setStatus).catch((e) => setError(e.message));
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    adminApi("console?action=push-status")
+      .then((d) => setStatus(d))
+      .catch((e) => setError(e.message || String(e)));
+  };
   useEffect(() => { load(); }, []);
 
-  const enable = async () => {
-    setError(""); setMsg("");
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  };
+
+  const enableThisDevice = async () => {
+    setError("");
+    setMsg("");
+    setBusy(true);
     try {
       if (!("Notification" in window) || !("serviceWorker" in navigator)) {
         setError("This browser does not support push notifications.");
         return;
       }
       const perm = await Notification.requestPermission();
-      if (perm !== "granted") { setError("Notification permission denied."); return; }
+      if (perm !== "granted") {
+        setError("Notification permission denied.");
+        return;
+      }
       const reg = await navigator.serviceWorker.ready.catch(() => navigator.serviceWorker.register("/sw.js"));
       const vapid = status?.vapidPublicKey;
       if (!vapid) {
         setError("VAPID_PUBLIC_KEY is not configured on the server — set it on Vercel to enable Web Push.");
         return;
       }
-      const urlBase64ToUint8Array = (base64String) => {
-        const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-        const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-        const rawData = atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
-        return outputArray;
-      };
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapid),
       });
-      await adminApi("console?action=push-subscribe", { method: "POST", body: JSON.stringify({ subscription: sub }) });
-      setMsg("Push notifications enabled for this device.");
+      const json = sub.toJSON();
+      await fetch("/api/push?action=subscribe", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: json, endpoint: json.endpoint, keys: json.keys }),
+      });
+      setMsg("This admin device is subscribed for push alerts.");
       load();
     } catch (e) {
-      setError(e.message || "Couldn't enable push notifications.");
+      setError(e?.message || "Could not enable push on this device.");
+    } finally {
+      setBusy(false);
     }
   };
 
-  const disable = async () => {
-    setError(""); setMsg("");
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) await sub.unsubscribe();
-      await adminApi("console?action=push-unsubscribe", { method: "POST" }).catch(() => {});
-      setMsg("Push notifications disabled for this device.");
-      load();
-    } catch (e) {
-      setError(e.message || "Couldn't disable push notifications.");
-    }
-  };
+  const cfg = status?.configured || {};
+  const subs = status?.subscriptions ?? null;
 
   return (
-    <div>
-      <div className="text-sm font-semibold mb-2" style={{ color: T.ink }}>Admin push notifications</div>
+    <div className="max-w-xl">
+      <div className="text-sm font-semibold mb-1" style={{ color: T.ink }}>Push & alerts</div>
+      <p className="text-xs mb-4" style={{ color: T.sub }}>
+        Server push configuration and a quick subscribe for this admin browser.
+      </p>
       {error && <div className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</div>}
-      {msg && <div className="text-xs mb-2" style={{ color: "#16A34A" }}>{msg}</div>}
-      <div className="p-3 rounded-xl border flex items-center justify-between gap-3" style={{ borderColor: T.line, background: "#fff" }}>
-        <div className="min-w-0">
-          <div className="text-sm" style={{ color: T.ink }}>
-            {status?.vapidPublicKey ? "Web Push is configured" : "Web Push is not configured"}
-          </div>
-          <div className="text-xs mt-0.5" style={{ color: T.sub }}>
-            {status?.vapidPublicKey
-              ? `${status?.subscriberCount ?? 0} device(s) subscribed`
-              : "Set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY on Vercel to enable."}
-          </div>
+      {msg && <div className="text-xs mb-2" style={{ color: "#059669" }}>{msg}</div>}
+      <div className="rounded-xl border p-4 mb-4" style={{ borderColor: T.line, background: "#fff" }}>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: T.panel, color: T.sub }}>
+            VAPID: {cfg.vapid ? "ok" : "missing"}
+          </span>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: T.panel, color: T.sub }}>
+            FCM: {cfg.fcm ? "ok" : "off"}
+          </span>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: T.panel, color: T.sub }}>
+            Subscriptions: {subs == null ? "…" : subs}
+          </span>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <button onClick={enable} disabled={!status?.vapidPublicKey} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg" style={{ background: "rgba(6,182,212,0.12)", color: "#0891B2", opacity: status?.vapidPublicKey ? 1 : 0.5 }}>Enable on this device</button>
-          <button onClick={disable} className="text-xs font-semibold px-2.5 py-1.5 rounded-lg" style={{ background: "#FEE2E2", color: "#DC2626" }}>Disable</button>
-        </div>
+        <button
+          type="button"
+          onClick={load}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg mr-2"
+          style={{ background: T.panel, color: T.ink }}
+        >
+          Refresh status
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={enableThisDevice}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+          style={{ background: T.navy, color: "#fff", opacity: busy ? 0.7 : 1 }}
+        >
+          {busy ? "Working…" : "Enable alerts on this device"}
+        </button>
       </div>
+      <p className="text-[11px]" style={{ color: T.sub }}>
+        Citizen push uses the same VAPID keys. Missing VAPID means no Web Push until env is set.
+      </p>
     </div>
   );
 }
