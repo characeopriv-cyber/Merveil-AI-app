@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  CLOUDFLARE_WORKER_NAME: merveil-ai-app-new
+  CLOUDFLARE_WORKER_NAME: merveil-ai-app
 
 jobs:
   deploy:
@@ -32,7 +32,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Build Merveil AI
         run: npm run build
