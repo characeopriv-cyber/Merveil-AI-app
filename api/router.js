@@ -59,19 +59,13 @@ function adminClient() {
   const url = "https://dixfybqlepticyudikuz.supabase.co";
   const key =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE ||
-    // The Vercel project is Supabase-Marketplace-managed, which syncs the
-    // service-role key under SUPABASE_SECRET_KEY instead of the classic
-    // SUPABASE_SERVICE_ROLE_KEY name. Missing this was silently breaking
-    // every admin-client call (connections, directory, circles, profile
-    // enrichment, etc.) with "Server misconfiguration."
-    process.env.SUPABASE_SECRET_KEY;
+    process.env.SUPABASE_SERVICE_ROLE;
   if (!key) {
     // Fail with something a human can actually act on instead of the raw
     // Supabase SDK error ("supabaseUrl is required") that gave no clue
     // which variable was missing.
     throw new Error(
-      "Server misconfiguration: missing SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) in Vercel environment variables."
+      "Server misconfiguration: missing SUPABASE_SERVICE_ROLE_KEY in Vercel environment variables."
     );
   }
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
@@ -1059,7 +1053,7 @@ export default async function handler(req, res) {
         // Prefer full session; if refresh race left us without a live token,
         // still restore the UI from jwtSub via service role so the citizen
         // is not bounced to "Sign in" every few minutes.
-        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "");
+        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "") || decodeJwtSub(getRefreshToken(req) || "");
         if (!uid) return sendJson(res, 200, { user: null });
         let profile = null;
         if (user && token) {
@@ -10796,10 +10790,16 @@ export default async function handler(req, res) {
     // Merveil 3D Status — circular spatial identity environment (not Reels)
     // Max video 40s; visibility; multi-status per citizen; block override
     if (resource === "status") {
-      const me = String(user?.id || citizen?.id || jwtSub || "");
+      // Always prefer jwtSub — same as directory/messages — so refresh races don't 401
+      const me = String(
+        user?.id || citizen?.id || jwtSub || sessionResult?.jwtSub || decodeJwtSub(getAccessToken(req) || "") || ""
+      );
       let svc;
       try { svc = adminClient(); } catch (e) {
-        return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+        return sendJson(res, 500, {
+          error: e.message || "Server misconfiguration.",
+          hint: "Set SUPABASE_SERVICE_ROLE_KEY on Vercel (service role, not anon key).",
+        });
       }
 
       async function loadStatusConfig() {
@@ -11056,13 +11056,21 @@ export default async function handler(req, res) {
 
         const { data: created, error } = await svc.from("citizen_status").insert(insert).select("*").single();
         if (error) {
-          // Retry without new columns if migration not applied
           const legacy = { ...insert };
           delete legacy.visibility;
           delete legacy.visible_to;
           delete legacy.lifecycle;
+          delete legacy.visible_to;
           const { data: created2, error: e2 } = await svc.from("citizen_status").insert(legacy).select("*").single();
-          if (e2) return sendJson(res, 400, { error: e2.message });
+          if (e2) {
+            const msg = e2.message || error.message || "Insert failed";
+            const hint = /permission denied/i.test(msg)
+              ? "Run supabase-status-ALL-COPY.sql grants in Supabase, and confirm Vercel SUPABASE_SERVICE_ROLE_KEY is the service_role secret."
+              : /foreign key/i.test(msg)
+                ? "Your profile row is missing — open Passport once to create profiles."
+                : undefined;
+            return sendJson(res, 400, { error: msg, hint });
+          }
           return sendJson(res, 200, { status: created2 });
         }
         return sendJson(res, 200, { status: created });
