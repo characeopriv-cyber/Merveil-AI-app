@@ -5,11 +5,7 @@ import { ProvenanceService } from './provenance.service';
 
 @Controller('api/advanced')
 export class AdvancedController {
-  constructor(
-    private readonly forms: AiFormBuilderService,
-    private readonly land: LandRegistryService,
-    private readonly provenance: ProvenanceService,
-  ) {}
+  constructor(private readonly forms: AiFormBuilderService, private readonly land: LandRegistryService, private readonly provenance: ProvenanceService) {}
 
   @Post('forms/generate')
   generateForm(@Headers('x-tenant-id') tenantId: string, @Headers('x-actor-id') actorId: string, @Body() body: { prompt: string }) {
@@ -29,12 +25,11 @@ export class AdvancedController {
 
   @Post('land/:parcelId/provenance')
   landProvenance(@Headers('x-tenant-id') tenantId: string, @Param('parcelId') parcelId: string, @Body() body: Record<string, unknown>) {
-    const canonical = { tenantId, parcelId, ...body };
-    return { parcelId, hash: this.provenance.hash(canonical) };
+    return { parcelId, hash: this.provenance.hash({ tenantId, parcelId, ...body }) };
   }
 
   @Post('land/:parcelId/anchor')
-  anchorLand(@Headers('x-tenant-id') tenantId: string, @Headers('x-actor-id') actorId: string, @Param('parcelId') parcelId: string, @Body() body: { recordHash: string }) {
-    return this.land.anchor({ tenantId, actorId, parcelId, recordHash: body.recordHash });
+  anchorLand(@Headers('x-tenant-id') tenantId: string, @Param('parcelId') parcelId: string) {
+    return this.land.anchorParcel(tenantId, parcelId);
   }
 }
