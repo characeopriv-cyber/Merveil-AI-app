@@ -10137,14 +10137,32 @@ function useUnfilteredPresence(currentUser) {
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
+    // No UI time limits (no 4min/hour/day hold). While this session is open the
+    // Realtime channel stays subscribed; status is whatever the server reports.
+    // List order does NOT depend on status — only the green/grey dot does.
     const normalize = (row) => {
       if (!row?.user_id) return null;
       const st = String(row.status || "online").toLowerCase();
-      // 180s freshness — matches server cutoff (optimized heartbeats)
-      const fresh = row.updated_at && new Date(row.updated_at).getTime() > Date.now() - 180 * 1000;
+      // Trust row if it has a recent updated_at; otherwise still accept explicit status
+      // from live postgres_changes (always fresh on the wire).
       let status = "offline";
-      if (fresh && st !== "offline" && st !== "away") status = st === "busy" ? "busy" : "online";
+      if (st === "busy") status = "busy";
+      else if (st !== "offline" && st !== "away") status = "online";
+      // If updated_at is ancient (client closed long ago), force offline
+      if (row.updated_at) {
+        const age = Date.now() - new Date(row.updated_at).getTime();
+        // Server heartbeat window is the only expiry — mirrors "they're connected or not"
+        if (age > 5 * 60 * 1000) status = "offline";
+      }
       return { userId: String(row.user_id), status };
+    };
+    const patchPresence = (userId, status) => {
+      const st = String(status || "offline").toLowerCase();
+      const next = st === "busy" ? "busy" : (st === "online" ? "online" : "offline");
+      setPresenceMap((prev) => {
+        if (prev[userId] === next) return prev;
+        return { ...prev, [userId]: next };
+      });
     };
     let channel = null;
     try {
@@ -10165,11 +10183,11 @@ function useUnfilteredPresence(currentUser) {
           if (!row?.user_id) return;
           knownIdsRef.current.add(String(row.user_id));
           if (payload.eventType === "DELETE") {
-            setPresenceMap((prev) => ({ ...prev, [row.user_id]: "offline" }));
+            patchPresence(String(row.user_id), "offline");
             return;
           }
           const n = normalize(payload.new);
-          if (n) setPresenceMap((prev) => ({ ...prev, [n.userId]: n.status }));
+          if (n) patchPresence(n.userId, n.status);
         })
         .subscribe();
     } catch (e) {
@@ -10188,7 +10206,16 @@ function useUnfilteredPresence(currentUser) {
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           if (cancelled || !d?.presence) return;
-          setPresenceMap((prev) => ({ ...prev, ...d.presence }));
+          setPresenceMap((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            for (const [id, st] of Object.entries(d.presence)) {
+              const s = String(st || "offline").toLowerCase();
+              const held = s === "busy" ? "busy" : (s === "online" ? "online" : "offline");
+              if (next[id] !== held) { next[id] = held; changed = true; }
+            }
+            return changed ? next : prev;
+          });
         })
         .catch(() => {});
     };
@@ -10351,15 +10378,20 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (cancelled || !data?.users) return;
-          setCitizens((prev) => stableMergeById(prev, data.users));
-          knownIdsRef.current = new Set(data.users.map((u) => String(u.id)));
+          // Strip server status — presenceMap alone drives dots/sections (verified cause of 30s reshuffle)
+          const users = data.users.map((u) => {
+            const { status, ...rest } = u;
+            return rest;
+          });
+          setCitizens((prev) => stableMergeById(prev, users));
+          knownIdsRef.current = new Set(users.map((u) => String(u.id)));
         })
         .catch(() => {})
         .finally(() => { if (!cancelled && first) { first = false; setLoading(false); } });
     };
     load();
-    // New signups appear in Citizens within ~15s without a full reload
-    const id = setInterval(load, 15000);
+    // New signups appear in Citizens within ~30s without a full reload
+    const id = setInterval(load, 30000);
     return () => { cancelled = true; clearInterval(id); };
   }, [currentUser?.id]);
 
@@ -10388,28 +10420,45 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
       .catch(() => {});
   }, [presenceMap, currentUser?.id]);
 
+  // Forever-stable order while you are in the session: contact rank + name only.
+  // Presence never reorders the list — it only updates the status dot (Facebook-style).
+  const rowCacheRef = useRef(new Map());
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = citizens
       .filter((u) => String(u.id) !== String(currentUser?.id))
-      .map((u) => ({ ...u, status: presenceMap[u.id] || u.status || "offline" }));
+      .map((u) => {
+        const id = String(u.id);
+        const liveStatus = presenceMap[id] || presenceMap[u.id] || "offline";
+        const prev = rowCacheRef.current.get(id);
+        if (
+          prev
+          && prev.status === liveStatus
+          && prev.name === u.name
+          && prev.avatar_url === u.avatar_url
+          && (prev.contactRank || 0) === (u.contactRank || 0)
+          && (prev.lastContactAt || 0) === (u.lastContactAt || 0)
+        ) {
+          return prev;
+        }
+        const next = { ...u, status: liveStatus };
+        rowCacheRef.current.set(id, next);
+        return next;
+      });
     if (q) list = list.filter((u) => (u.name || "").toLowerCase().includes(q));
     list.sort((a, b) => {
-      // Already messaged/called first (most recent contact on top), then online, then name
       if ((b.contactRank || 0) !== (a.contactRank || 0)) return (b.contactRank || 0) - (a.contactRank || 0);
       if ((a.contactRank || 0) > 0 && (b.lastContactAt || 0) !== (a.lastContactAt || 0)) {
         return (b.lastContactAt || 0) - (a.lastContactAt || 0);
       }
-      const rank = { online: 0, busy: 1, offline: 2 };
-      const r = (rank[a.status] ?? 2) - (rank[b.status] ?? 2);
-      if (r !== 0) return r;
       return (a.name || "").localeCompare(b.name || "");
     });
     return list;
   }, [citizens, presenceMap, query, currentUser?.id]);
 
+  // Optional labels only — same order as rows (no Online/Away reshuffle)
   const online = rows.filter((r) => r.status === "online" || r.status === "busy");
-  const offline = rows.filter((r) => r.status === "offline");
+  const offline = rows.filter((r) => r.status !== "online" && r.status !== "busy");
 
   return (
     <div className="flex flex-col h-full min-h-0" style={{ background: CT.bg }}>
@@ -10427,8 +10476,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
         {!loading && rows.length === 0 && <div className="px-4 py-6 text-xs text-center" style={{ color: CT.sub }}>{t("connect.noMatch")}</div>}
         {(() => {
           const connected = rows.filter((r) => (r.contactRank || 0) > 0);
-          const restOnline = online.filter((r) => !(r.contactRank > 0));
-          const restOffline = offline.filter((r) => !(r.contactRank > 0));
+          const rest = rows.filter((r) => !(r.contactRank > 0));
           const Section = ({ label, count, accent }) => (
             <div className="px-4 pt-3 pb-1.5 flex items-center gap-2">
               <span className="text-[10px] font-bold tracking-[0.16em] uppercase" style={{ color: accent || CT.sub }}>{label}</span>
@@ -10446,18 +10494,10 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
                   ))}
                 </>
               )}
-              {restOnline.length > 0 && (
+              {rest.length > 0 && (
                 <>
-                  <Section label={t("connect.online")} count={restOnline.length} accent={CT.online} />
-                  {restOnline.map((u) => (
-                    <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
-                  ))}
-                </>
-              )}
-              {restOffline.length > 0 && (
-                <>
-                  <Section label={t("connect.away")} count={restOffline.length} />
-                  {restOffline.map((u) => (
+                  <Section label={t("connect.network") || "Network"} count={rest.length} />
+                  {rest.map((u) => (
                     <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
                   ))}
                 </>
@@ -10474,16 +10514,13 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
 // data source from Citizens (connections, not the full directory).
 function MyCircleTab({ currentUser, connectionPeople, presenceMap, onMessage, onCall, onProfile }) {
   const rows = useMemo(() => {
-    const list = connectionPeople.map((p) => ({ ...p, status: presenceMap[p.id] || "offline" }));
+    const list = connectionPeople.map((p) => {
+      const status = presenceMap[p.id] || p.status || "offline";
+      if (p.status === status) return p;
+      return { ...p, status };
+    });
     list.sort((a, b) => {
-      const rank = { online: 0, busy: 1, offline: 2 };
-      const r = (rank[a.status] ?? 2) - (rank[b.status] ?? 2);
-      if (r !== 0) return r;
-      if (a.status === "offline" && b.status === "offline") {
-        const ta = a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0;
-        const tb = b.last_seen_at ? new Date(b.last_seen_at).getTime() : 0;
-        if (tb !== ta) return tb - ta; // most recently active first
-      }
+      // Stable: name order; presence is indicator only
       return (a.name || "").localeCompare(b.name || "");
     });
     return list;
@@ -10681,7 +10718,11 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (cancelled) return;
-          const users = data?.users || [];
+          const raw = data?.users || [];
+          const users = raw.map((u) => {
+            const { status, ...rest } = u;
+            return rest;
+          });
           setDirectory((prev) => (q ? users : stableMergeById(prev, users)));
         })
         .catch(() => {})
@@ -10693,7 +10734,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         });
     };
     const t = setTimeout(() => load(false), showNewChat ? 200 : 0);
-    const id = setInterval(() => load(true), 15000);
+    const id = setInterval(() => load(true), 30000);
     return () => { cancelled = true; clearTimeout(t); clearInterval(id); };
   }, [showNewChat, directoryQuery, currentUser?.id]);
 
@@ -29316,14 +29357,10 @@ function AppInner() {
           const real = (data?.properties || []).map(mapProperty);
           setProperties((prev) => {
             const localOnly = prev.filter((p) => !String(p.id).startsWith("db-"));
-            const merged = stableMergeById(
-              prev.filter((p) => String(p.id).startsWith("db-")),
-              real
-            );
-            // Avoid churn when catalog is unchanged
-            if (merged === prev.filter((p) => String(p.id).startsWith("db-")) && localOnly.length === prev.filter((p) => !String(p.id).startsWith("db-")).length) {
-              const prevLocal = prev.filter((p) => !String(p.id).startsWith("db-"));
-              if (prevLocal.length === localOnly.length) return prev;
+            const prevDb = prev.filter((p) => String(p.id).startsWith("db-"));
+            const merged = stableMergeById(prevDb, real);
+            if (merged === prevDb && localOnly.length === prev.filter((p) => !String(p.id).startsWith("db-")).length) {
+              return prev; // identical refs — Pulse/Passport stay still
             }
             return [...merged, ...localOnly];
           });
@@ -29622,7 +29659,7 @@ function AppInner() {
     const schedule = () => {
       if (timer) clearInterval(timer);
       const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-      // Visible: 30s. Background: 90s (still refreshes before 180s server cutoff).
+      // Visible: 30s. Background: 90s (still refreshes before 300s server cutoff). Session-long.
       timer = setInterval(() => postStatus(desired()), hidden ? 90000 : 30000);
     };
     const beat = (force = false) => {
@@ -29795,7 +29832,18 @@ function AppInner() {
     window.addEventListener("focus", onFocus);
     // World Studio / guarded actions can recover session and push user here
     const onSessionUser = (ev) => {
-      if (ev?.detail?.id) syncCurrentUser(ev.detail);
+      const u = ev?.detail;
+      if (!u?.id) return;
+      try {
+        const prev = JSON.parse(localStorage.getItem("junction_user") || "null");
+        const same = prev && String(prev.id) === String(u.id)
+          && prev.name === u.name
+          && prev.avatar_url === u.avatar_url
+          && (prev.passport_tier || prev.passportTier) === (u.passport_tier || u.passportTier);
+        if (!same) syncCurrentUser(u);
+      } catch {
+        syncCurrentUser(u);
+      }
     };
     window.addEventListener("merveil:session-user", onSessionUser);
     const onSessionLost = () => {
