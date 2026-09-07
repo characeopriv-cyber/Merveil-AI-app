@@ -8619,6 +8619,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
   const [muted, setMuted] = useState(false);
   const [showMoreTools, setShowMoreTools] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [ownerPresence, setOwnerPresence] = useState("offline");
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const wheelLock = useRef(false);
@@ -8714,6 +8715,21 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
     if (ownerId && onOpenProfile) onOpenProfile(ownerId);
   };
 
+  // Creator online indicator — fetch only for the active poster (no list churn)
+  useEffect(() => {
+    if (!ownerId || isOwn) { setOwnerPresence("offline"); return; }
+    let cancelled = false;
+    fetch(`/api/conversations?action=presence&userIds=${encodeURIComponent(ownerId)}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d?.presence) return;
+        const st = d.presence[ownerId] || d.presence[String(ownerId)] || "offline";
+        setOwnerPresence(st === "busy" ? "busy" : st === "online" ? "online" : "offline");
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [ownerId, isOwn, p?.id]);
+
   return (
     <div className="relative h-full w-full overflow-hidden select-none" style={{ background: "#000" }}
       onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onWheel={onWheel}>
@@ -8725,6 +8741,8 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
             ? <img src={photo} alt="" className="w-full h-full object-cover" />
             : <div className="w-full h-full" style={{ background: `linear-gradient(160deg, ${p.grad?.[0] || "#0F172A"}, ${p.grad?.[1] || "#1E293B"})` }} />}
       </div>
+
+      <MerveilAiMiniMark aiGenerated={false} />
 
       {p.video_url && (
         <button type="button" onClick={(e) => {
@@ -8854,15 +8872,23 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
         style={{ paddingRight: 76, paddingBottom: "calc(16px + var(--safe-bottom, 0px))" }}>
         {/* Poster row — always show person, not only role */}
         <button type="button" onClick={(e) => { e.stopPropagation(); openPoster(); }}
-          className="flex items-center gap-2.5 mb-2.5 text-left w-full max-w-[calc(100%-8px)]">
-          <div className="w-11 h-11 rounded-full overflow-hidden shrink-0 ring-2 ring-white/30"
-            style={{ background: "linear-gradient(135deg,#0E9AA7,#0A7A85)" }}>
-            {ownerAvatar
-              ? <img src={ownerAvatar} alt="" className="w-full h-full object-cover" />
-              : <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white">{(displayName || "?")[0]}</div>}
+          className="flex items-center gap-2.5 mb-2.5 text-left w-full max-w-[calc(100%-8px)]" aria-label={`Open profile ${displayName}`}>
+          <div className="relative w-11 h-11 shrink-0">
+            <div className="w-11 h-11 rounded-full overflow-hidden ring-2 ring-white/30"
+              style={{ background: "linear-gradient(135deg,#0E9AA7,#0A7A85)" }}>
+              {ownerAvatar
+                ? <img src={ownerAvatar} alt="" className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white">{(displayName || "?")[0]}</div>}
+            </div>
+            {!isOwn && (ownerPresence === "online" || ownerPresence === "busy") && (
+              <span className="absolute -bottom-0.5 -right-0.5"><PresenceDot status={ownerPresence} size={11} /></span>
+            )}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-semibold text-white truncate leading-tight">{displayName}</div>
+            <div className="text-[14px] font-semibold text-white truncate leading-tight inline-flex items-center gap-1">
+              {displayName}
+              {!isOwn && isNewCitizen({ created_at: p.owner_created_at }) && <NewEmojiBadge show />}
+            </div>
             <div className="text-[11px] text-white/65 truncate">
               {[listerRole, p.area, p.emirate].filter(Boolean).join(" · ") || "Pulse listing"}
             </div>
@@ -11880,7 +11906,13 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
             return (
               <>
-              {rows.map((r) => {
+              <VirtualWindow
+                items={rows}
+                itemHeight={76}
+                overscan={12}
+                style={{ maxHeight: "min(65vh, 560px)", minHeight: 120 }}
+                getKey={(r) => r.userId}
+                renderItem={(r) => {
               const status = r.status || "offline";
               const isFav = favoriteIds.includes(r.userId);
               const displayName = r.name || profiles[r.userId]?.name || `Merveil User #${String(r.userId).slice(0, 8)}`;
@@ -11974,7 +12006,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                   </div>
                 </div>
               );
-            })}
+            }}
+              />
               {connectFilter === "all" && (
                 <button onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
                   className="w-full text-left p-3 border-t flex items-center gap-3 mt-1"
@@ -18308,6 +18341,16 @@ const MERVEIL_AI_SEED_REELS = [
 function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
   const { pushLayer, popLayer } = useAppBack();
   const [posts, setPosts] = useState([]);
+
+  const publishWorldBadge = useCallback((list) => {
+    try {
+      const items = (list || []).map((p) => ({
+        id: p.id,
+        ts: p.created_at || p.createdAt || p.updated_at || 0,
+      }));
+      window.dispatchEvent(new CustomEvent("merveil:world-catalog", { detail: { items } }));
+    } catch {}
+  }, []);
   const [likedIds, setLikedIds] = useState([]);
   const [showPost, setShowPost] = useState(false);
   // World is Reels-only (TikTok-style). Feed / Map removed.
@@ -18391,7 +18434,8 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           worldNextBeforeRef.current = data.nextBefore || worldNextBeforeRef.current;
         } else {
           // Rank once on batch load — avoids mid-swipe reshuffle
-          setPosts(rankWorldReels(list, {
+          publishWorldBadge(list);
+        setPosts(rankWorldReels(list, {
             userId: currentUser?.id,
             affinity: readWorldAffinity(),
           }));
@@ -19378,6 +19422,7 @@ function SettingsView({ settings, setSettings }) {
   const [sessions, setSessions] = useState([]);
 
   useEffect(() => {
+    try { MerveilNewFlags.dismiss("settings_control_center"); } catch {}
     fetch("/api/citizen-settings", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => {
@@ -19581,8 +19626,9 @@ function SettingsView({ settings, setSettings }) {
   const lang = settings?.language || "en";
   return (
     <div className="p-4 md:p-6 max-w-xl">
-      <h1 style={{ fontFamily: "Inter,sans-serif", color: T.ink }} className="text-2xl font-semibold mb-1">
+      <h1 style={{ fontFamily: "Inter,sans-serif", color: T.ink }} className="text-2xl font-semibold mb-1 inline-flex items-center gap-2">
         {t("settings.title", lang)}
+        <NewEmojiBadge show={MerveilNewFlags.isNew("settings_control_center", Date.parse("2026-08-01T00:00:00Z"))} />
       </h1>
       <p className="text-sm mb-2" style={{ color: T.sub }}>
         {t("settings.sub", lang)}
@@ -29597,6 +29643,16 @@ function AppInner() {
   }, [properties, tab, pulseSubTab]);
 
   useEffect(() => {
+    const onWorldCatalog = (e) => {
+      const items = e?.detail?.items || [];
+      const world = tab === "world" ? 0 : MerveilSeen.countNewer("world", items, (x) => x.ts);
+      setTabCounts((prev) => (prev.world === world ? prev : { ...prev, world }));
+    };
+    window.addEventListener("merveil:world-catalog", onWorldCatalog);
+    return () => window.removeEventListener("merveil:world-catalog", onWorldCatalog);
+  }, [tab]);
+
+  useEffect(() => {
     if (tab === "market" && marketSubTab === "work") {
       localStorage.setItem("jx_seen_jobs", String(Date.now()));
       MerveilSeen.set("market_jobs");
@@ -31013,7 +31069,9 @@ function AppInner() {
             return (
               <button key={n.id} type="button" onClick={() => setTab(n.id)}
                 className="flex flex-col items-center gap-0.5 min-w-0 flex-1"
-                style={{ minHeight: 44 }}>
+                style={{ minHeight: 44 }}
+                aria-label={label}
+                aria-current={isActive ? "page" : undefined}>
                 <div className={`flex items-center justify-center rounded-2xl relative ${isActive ? "m-nav-item-active" : ""}`}
                   style={{
                     width:40, height:34,
