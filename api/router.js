@@ -10786,6 +10786,181 @@ export default async function handler(req, res) {
       return sendJson(res, 404, { error: "Unknown AI Call action." });
     }
 
+    // ---------------------------------------------------------- /api/status
+    // Merveil Connect 3D Status World — circular identity status
+    // Max video duration 40s enforced server-side
+    if (resource === "status") {
+      const me = String(user?.id || citizen?.id || jwtSub || "");
+      let svc;
+      try { svc = adminClient(); } catch (e) {
+        return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+      }
+
+      if (method === "GET" && (!action || action === "list")) {
+        if (!me) return sendJson(res, 200, { statuses: [], mine: null });
+        const scope = String(req.query.scope || "everyone").toLowerCase();
+        const limit = Math.min(60, Math.max(1, parseInt(req.query.limit || "40", 10) || 40));
+        const nowIso = new Date().toISOString();
+
+        let circleIds = [];
+        if (scope === "circle") {
+          const { data: conns } = await svc
+            .from("connections")
+            .select("user_id, connected_user_id, status")
+            .or(`user_id.eq.${me},connected_user_id.eq.${me}`)
+            .eq("status", "accepted")
+            .limit(300);
+          for (const c of conns || []) {
+            const other = String(c.user_id) === me ? c.connected_user_id : c.user_id;
+            if (other) circleIds.push(String(other));
+          }
+        }
+
+        let q = svc
+          .from("citizen_status")
+          .select("id,user_id,content_type,body_text,media_url,media_mime,media_duration_seconds,thumbnail_url,location_label,activity_label,audience,expires_at,view_count,created_at")
+          .gt("expires_at", nowIso)
+          .order("created_at", { ascending: false })
+          .limit(limit * 2);
+
+        if (scope === "mine") {
+          q = q.eq("user_id", me);
+        } else if (scope === "circle" && circleIds.length) {
+          q = q.in("user_id", [...circleIds, me]);
+        }
+
+        const { data: rows, error } = await q;
+        if (error) return sendJson(res, 400, { error: error.message });
+
+        const circleSet = new Set(circleIds.map(String));
+        const filtered = (rows || []).filter((r) => {
+          if (String(r.user_id) === me) return true;
+          if (r.audience === "circle") return circleSet.has(String(r.user_id));
+          return true;
+        }).slice(0, limit);
+
+        const userIds = [...new Set(filtered.map((r) => r.user_id))];
+        let profiles = {};
+        if (userIds.length) {
+          const { data: profs } = await svc
+            .from("profiles")
+            .select("id,name,avatar_url,role_label,passport_tier")
+            .in("id", userIds);
+          for (const p of profs || []) profiles[p.id] = p;
+        }
+
+        const byUser = new Map();
+        for (const r of filtered) {
+          if (!byUser.has(r.user_id)) byUser.set(r.user_id, r);
+        }
+        const statuses = [...byUser.values()].map((r) => ({
+          ...r,
+          user: profiles[r.user_id] || { id: r.user_id, name: "Citizen" },
+        }));
+
+        const mine = statuses.find((s) => String(s.user_id) === me) || null;
+        return sendJson(res, 200, { statuses, mine });
+      }
+
+      if (method === "GET" && action === "get") {
+        const id = req.query.id;
+        if (!id) return sendJson(res, 400, { error: "id required" });
+        const { data: row, error } = await svc.from("citizen_status").select("*").eq("id", id).maybeSingle();
+        if (error) return sendJson(res, 400, { error: error.message });
+        if (!row) return sendJson(res, 404, { error: "Status not found" });
+        if (new Date(row.expires_at) <= new Date()) return sendJson(res, 410, { error: "Status expired" });
+        return sendJson(res, 200, { status: row });
+      }
+
+      if (method === "POST" && (!action || action === "create")) {
+        if (!me) return sendJson(res, 401, { error: "Sign in to post a Status." });
+        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+        const contentType = String(body.content_type || "").toLowerCase();
+        const allowed = ["photo", "video", "text", "voice", "location", "activity"];
+        if (!allowed.includes(contentType)) {
+          return sendJson(res, 400, { error: "content_type must be photo|video|text|voice|location|activity" });
+        }
+
+        let duration = body.media_duration_seconds != null ? Number(body.media_duration_seconds) : null;
+        if (contentType === "video" || contentType === "voice") {
+          if (duration == null || !Number.isFinite(duration) || duration <= 0) {
+            return sendJson(res, 400, { error: "media_duration_seconds required for video/voice" });
+          }
+          if (duration > 40) {
+            return sendJson(res, 400, { error: "Maximum Status duration is 40 seconds." });
+          }
+        } else {
+          duration = null;
+        }
+
+        if (contentType === "text" && !String(body.body_text || "").trim()) {
+          return sendJson(res, 400, { error: "Text Status needs body_text" });
+        }
+        if ((contentType === "photo" || contentType === "video" || contentType === "voice") && !body.media_url) {
+          return sendJson(res, 400, { error: "media_url required for this content type" });
+        }
+
+        const audience = body.audience === "circle" ? "circle" : "everyone";
+        const expiresHours = Math.min(48, Math.max(1, Number(body.expires_hours) || 24));
+        const expiresAt = new Date(Date.now() + expiresHours * 3600 * 1000).toISOString();
+
+        await svc.from("citizen_status").delete().eq("user_id", me).gt("expires_at", new Date().toISOString());
+
+        const insert = {
+          user_id: me,
+          content_type: contentType,
+          body_text: body.body_text ? String(body.body_text).slice(0, 2000) : null,
+          media_url: body.media_url || null,
+          media_mime: body.media_mime || null,
+          media_duration_seconds: duration,
+          thumbnail_url: body.thumbnail_url || null,
+          location_label: body.location_label ? String(body.location_label).slice(0, 200) : null,
+          location_lat: body.location_lat != null ? Number(body.location_lat) : null,
+          location_lng: body.location_lng != null ? Number(body.location_lng) : null,
+          activity_label: body.activity_label ? String(body.activity_label).slice(0, 120) : null,
+          audience,
+          expires_at: expiresAt,
+          view_count: 0,
+        };
+
+        const { data: created, error } = await svc.from("citizen_status").insert(insert).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { status: created });
+      }
+
+      if (method === "POST" && action === "view") {
+        if (!me) return sendJson(res, 401, { error: "Sign in required" });
+        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+        const statusId = body.status_id || body.id;
+        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
+        const { data: st } = await svc.from("citizen_status").select("id,user_id,expires_at,view_count").eq("id", statusId).maybeSingle();
+        if (!st || new Date(st.expires_at) <= new Date()) return sendJson(res, 404, { error: "Status not found" });
+        if (String(st.user_id) === me) return sendJson(res, 200, { ok: true, own: true });
+        await svc.from("status_views").upsert(
+          { status_id: statusId, viewer_id: me, viewed_at: new Date().toISOString() },
+          { onConflict: "status_id,viewer_id" }
+        );
+        await svc.from("citizen_status").update({ view_count: (st.view_count || 0) + 1 }).eq("id", statusId);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (method === "DELETE" || (method === "POST" && action === "delete")) {
+        if (!me) return sendJson(res, 401, { error: "Sign in required" });
+        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+        const statusId = body.id || req.query.id;
+        if (!statusId) {
+          await svc.from("citizen_status").delete().eq("user_id", me);
+          return sendJson(res, 200, { ok: true });
+        }
+        const { data: st } = await svc.from("citizen_status").select("id,user_id").eq("id", statusId).maybeSingle();
+        if (!st || String(st.user_id) !== me) return sendJson(res, 403, { error: "Not your Status" });
+        await svc.from("citizen_status").delete().eq("id", statusId);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      return sendJson(res, 404, { error: "Unknown status action" });
+    }
+
     return sendJson(res, 404, { error: "Unknown API route" });
   } catch (e) {
     return sendJson(res, 500, { error: e.message || "Server error" });
