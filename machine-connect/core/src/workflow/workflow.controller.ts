@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { WorkflowService } from './workflow.service';
 import { Principal } from '../auth/principal';
 import { requirePermission } from '../auth/permissions';
+import { WorkflowTaskStatus } from './workflow.types';
 
 type RequestWithPrincipal = { user?: Principal };
 
@@ -34,5 +35,11 @@ export class WorkflowController {
   @Get('instances/:instanceId/tasks')
   tasks(@Req() req: RequestWithPrincipal, @Param('instanceId') instanceId: string) {
     return this.service.listTasks(requirePermission(req.user, 'workflow.read').tenantId, instanceId);
+  }
+
+  @Post('tasks/:taskId/transition')
+  transitionTask(@Req() req: RequestWithPrincipal, @Param('taskId') taskId: string, @Body() body: { status: WorkflowTaskStatus }) {
+    const principal = requirePermission(req.user, 'workflow.execute');
+    return this.service.transitionTask(principal.tenantId, taskId, principal.actorId, body.status);
   }
 }
