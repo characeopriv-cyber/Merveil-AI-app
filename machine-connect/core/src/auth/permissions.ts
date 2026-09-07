@@ -19,6 +19,9 @@ const ROLE_PERMISSIONS: Record<PrincipalRole, readonly Permission[] | '*'> = {
   admin: '*',
   operator: ['device.read', 'device.control', 'telemetry.read', 'workflow.read', 'workflow.execute'],
   viewer: ['device.read', 'telemetry.read', 'workflow.read'],
+  security_analyst: ['security.read', 'security.scan'],
+  land_registry_officer: ['land.read', 'land.transfer'],
+  data_scientist: ['ai.read', 'ai.run'],
 };
 
 export function hasPermission(principal: Principal, permission: Permission): boolean {
