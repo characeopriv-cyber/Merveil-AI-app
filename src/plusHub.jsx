@@ -44,16 +44,16 @@ function plusDismissNew(newId) {
 }
 
 /**
- * Ecosystem rooms — same origin, same Merveil brand.
- * Citizen stays "inside" Merveil; only the room changes.
- * Admin is intentionally NOT listed.
+ * Ecosystem rooms — Developer Platform is a separate production Worker.
+ * Citizen App remains on its own origin; only the Developer Platform room
+ * crosses to its dedicated production surface.
  */
 const ECOSYSTEM_ROOMS = [
   {
     id: "developer",
     label: "Developer Platform",
     sub: "APIs · apps · build on Merveil",
-    path: "/developer",
+    path: "https://merveil-developer-platform.characeopriv.workers.dev",
     icon: Code2,
   },
   {
@@ -85,8 +85,6 @@ function findOriginalFeature(label) {
 }
 
 function hideSecondaryFeatureStrip() {
-  // Only hide residual bottom-strip clones near the orbital nav (bottom 22%).
-  // Never hide mid-page content that happens to share a label.
   const floor = window.innerHeight * 0.78;
   FEATURES.forEach(({ label }) => {
     const target = findOriginalFeature(label);
@@ -104,28 +102,10 @@ function hideSecondaryFeatureStrip() {
   });
 }
 
-function activateOriginalFeature(label, tab) {
-  const key = normalize(label);
-  let target = originalTargets.get(key);
-  if (!target || !target.isConnected) {
-    target = findOriginalFeature(label);
-    if (target) originalTargets.set(key, target);
-  }
-  if (target) {
-    target.click();
-    return;
-  }
-  if (tab) {
-    window.dispatchEvent(new CustomEvent("merveil:set-tab", { detail: { tab } }));
-  }
-}
-
 function openArenaHub() {
-  // Stay inside the citizen app — bare /arena HTML alerts without iframe session.
   window.dispatchEvent(new CustomEvent("merveil:set-tab", { detail: { tab: "arena" } }));
 }
 
-/** Beacon so Admin can count ecosystem exploration (page_visits). */
 function trackEcosystemEnter(roomId, path, source) {
   try {
     const keyName = "merveil_vid";
@@ -139,8 +119,7 @@ function trackEcosystemEnter(roomId, path, source) {
       sid = "s_" + Date.now().toString(36);
       sessionStorage.setItem("merveil_sid", sid);
     }
-    // path encodes room for filtering in Admin visits
-    const trackPath = `${path}?from=${encodeURIComponent(source || "plus")}&room=${encodeURIComponent(roomId)}`;
+    const trackPath = `${path}${path.includes("?") ? "&" : "?"}from=${encodeURIComponent(source || "plus")}&room=${encodeURIComponent(roomId)}`;
     fetch("/api/analytics?action=visit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -159,13 +138,8 @@ function trackEcosystemEnter(roomId, path, source) {
   } catch {}
 }
 
-/**
- * Same-origin room change — no external browser chrome feel.
- * Uses assign so Back can return to the citizen room.
- */
 function enterEcosystemRoom(room, source) {
   trackEcosystemEnter(room.id, room.path, source);
-  // Tiny beat so the beacon can leave before navigation
   setTimeout(() => {
     window.location.assign(room.path);
   }, 40);
@@ -189,7 +163,7 @@ function isIntroPhase() {
 function PlusHub() {
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [dragPos, setDragPos] = useState(null); // {x,y} viewport coords for movable Plus
+  const [dragPos, setDragPos] = useState(null);
   const dragRef = useRef(null);
   const movedRef = useRef(false);
 
@@ -200,14 +174,13 @@ function PlusHub() {
     observer.observe(document.body, { attributes: true, attributeFilter: ["data-merveil-phase"], childList: true, subtree: true });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-merveil-phase"] });
     const onPhase = () => sync();
-    window.addEventListener("merveil:phase", onPhase);
-    // Passport / other surfaces can open a room without Plus UI
     const onEnterRoom = (e) => {
       const id = e?.detail?.room;
       const source = e?.detail?.source || "event";
       const room = ECOSYSTEM_ROOMS.find((r) => r.id === id);
       if (room) enterEcosystemRoom(room, source);
     };
+    window.addEventListener("merveil:phase", onPhase);
     window.addEventListener("merveil:enter-ecosystem", onEnterRoom);
     return () => {
       observer.disconnect();
@@ -237,8 +210,6 @@ function PlusHub() {
 
   const activate = (label, tab) => {
     setOpen(false);
-    // Only the app tab event — never click "original" bottom-strip buttons
-    // (strip was removed; searching the DOM caused blank / static screens).
     if (label === "Arena" || tab === "arena") {
       openArenaHub();
       return;
@@ -330,7 +301,6 @@ function PlusHub() {
               ))}
             </div>
 
-            {/* Ecosystem rooms — same building, different room */}
             <div className="merveil-plus-ecosystem">
               <div className="merveil-plus-ecosystem-label">Ecosystem</div>
               <p className="merveil-plus-ecosystem-hint">Enter another Merveil room. Same identity layer — different surface.</p>
