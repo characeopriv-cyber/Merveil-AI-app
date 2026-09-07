@@ -1659,6 +1659,15 @@ const UI_STRINGS = {
     "settings.sub": "Your Merveil. Your preferences. Your control.",
     "settings.appearance": "Appearance",
     "settings.language": "Language",
+    "settings.intelligence": "Your Intelligence",
+    "settings.intelligenceSub": "Control how Merveil thinks, assists and communicates on your behalf.",
+    "settings.loadingCc": "Loading your Merveil Control Center…",
+    "common.light": "Light",
+    "common.dark": "Dark",
+    "common.system": "System",
+    "common.small": "S",
+    "common.medium": "M",
+    "common.large": "L",
     "settings.textSize": "Text size",
     "settings.notifications": "Notifications",
     "settings.experience": "Your Experience",
@@ -1779,6 +1788,15 @@ const UI_STRINGS = {
     "settings.sub": "Votre Merveil. Vos préférences. Votre contrôle.",
     "settings.appearance": "Apparence",
     "settings.language": "Langue",
+    "settings.intelligence": "Votre intelligence",
+    "settings.intelligenceSub": "Contrôlez comment Merveil pense, assiste et communique pour vous.",
+    "settings.loadingCc": "Chargement de votre centre de contrôle…",
+    "common.light": "Clair",
+    "common.dark": "Sombre",
+    "common.system": "Système",
+    "common.small": "S",
+    "common.medium": "M",
+    "common.large": "L",
     "settings.textSize": "Taille du texte",
     "settings.notifications": "Notifications",
     "settings.experience": "Votre expérience",
@@ -1899,6 +1917,15 @@ const UI_STRINGS = {
     "settings.sub": "ميرفيل خاصتك. تفضيلاتك. تحكمك.",
     "settings.appearance": "المظهر",
     "settings.language": "اللغة",
+    "settings.intelligence": "ذكائك",
+    "settings.intelligenceSub": "تحكم في كيفية تفكير ميرفيل ومساعدتك والتواصل نيابة عنك.",
+    "settings.loadingCc": "جاري تحميل مركز التحكم…",
+    "common.light": "فاتح",
+    "common.dark": "داكن",
+    "common.system": "النظام",
+    "common.small": "ص",
+    "common.medium": "م",
+    "common.large": "ك",
     "settings.textSize": "حجم النص",
     "settings.notifications": "الإشعارات",
     "settings.experience": "تجربتك",
@@ -19061,7 +19088,38 @@ function GlobalBusinessMap({ posts, onCountryClick }) {
 }
 
 function SettingsView({ settings, setSettings }) {
-  const update = (k, v) => setSettings((s) => ({ ...s, [k]: v }));
+  // Facebook-style settings: instant apply, never jump scroll to top.
+  const scrollLockRef = useRef({ y: 0, tops: [] });
+  const preserveScroll = useCallback((fn) => {
+    const y = window.scrollY || document.documentElement.scrollTop || 0;
+    const tops = [];
+    try {
+      document.querySelectorAll(".overflow-y-auto, .overflow-auto, [data-merveil-scroll]").forEach((el) => {
+        tops.push({ el, top: el.scrollTop });
+      });
+    } catch {}
+    scrollLockRef.current = { y, tops };
+    fn();
+    const restore = () => {
+      const s = scrollLockRef.current;
+      try {
+        window.scrollTo(0, s.y);
+        document.documentElement.scrollTop = s.y;
+        document.body.scrollTop = s.y;
+        (s.tops || []).forEach(({ el, top }) => { try { el.scrollTop = top; } catch {} });
+      } catch {}
+    };
+    requestAnimationFrame(() => {
+      restore();
+      requestAnimationFrame(restore);
+      setTimeout(restore, 0);
+      setTimeout(restore, 40);
+    });
+  }, []);
+
+  const update = (k, v) => {
+    preserveScroll(() => setSettings((s) => ({ ...s, [k]: v })));
+  };
 
   // Real browser voices for the "Merveil's Voice" picker below — voices
   // load asynchronously on some browsers, hence the event listener.
@@ -19101,14 +19159,31 @@ function SettingsView({ settings, setSettings }) {
   useEffect(() => {
     fetch("/api/citizen-settings", { credentials: "include" })
       .then((r) => r.json())
-      .then((d) => setCc(d.settings || {
-        ai_preferences: { mode: "smart", style: "balanced" },
-        notification_preferences: { level: "smart", categories: [] },
-        opportunity_preferences: { interests: [], geography: "uae" },
-        connection_preferences: { whoCanMessage: "everyone" },
-        call_preferences: { whoCanCall: "connections", allowVideo: true },
-        passport_visibility: { contact: "connected", investment: "connected", portfolio: "citizens", bio: "public", profession: "public", city: "public", score: "citizens", wallet: "private", listings: "citizens" },
-      }))
+      .then((d) => {
+        const s = d.settings || {
+          ai_preferences: { mode: "smart", style: "balanced" },
+          notification_preferences: { level: "smart", categories: [] },
+          opportunity_preferences: { interests: [], geography: "uae" },
+          connection_preferences: { whoCanMessage: "everyone" },
+          call_preferences: { whoCanCall: "connections", allowVideo: true },
+          passport_visibility: { contact: "connected", investment: "connected", portfolio: "citizens", bio: "public", profession: "public", city: "public", score: "citizens", wallet: "private", listings: "citizens" },
+        };
+        setCc(s);
+        const code = s.language && ["en", "fr", "ar"].includes(String(s.language).slice(0, 2))
+          ? String(s.language).slice(0, 2)
+          : null;
+        if (code) {
+          preserveScroll(() => {
+            setSettings((prev) => (prev.language === code ? prev : { ...prev, language: code }));
+            try {
+              localStorage.setItem("merveil_language", code);
+              const langInfo = LANGUAGES.find((l) => l.code === code);
+              document.documentElement.setAttribute("lang", code);
+              document.documentElement.setAttribute("dir", langInfo?.rtl ? "rtl" : "ltr");
+            } catch {}
+          });
+        }
+      })
       .catch(() => {})
       .finally(() => setCcLoading(false));
     fetch("/api/my-sessions", { credentials: "include" })
@@ -19131,7 +19206,7 @@ function SettingsView({ settings, setSettings }) {
   };
 
   const saveCC = (section, value) => {
-    setCc((prev) => ({ ...prev, [section]: value }));
+    preserveScroll(() => setCc((prev) => ({ ...prev, [section]: value })));
     fetch("/api/citizen-settings", {
       method: "POST",
       credentials: "include",
@@ -19216,7 +19291,8 @@ function SettingsView({ settings, setSettings }) {
       type="button"
       role="switch"
       aria-checked={!!on}
-      onClick={onClick}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick?.(e); }}
       className="rounded-full relative shrink-0"
       style={{ width: 42, height: 25, background: on ? T.signal : `${T.inkLine}44`, transition: "background 150ms" }}
     >
@@ -19234,7 +19310,11 @@ function SettingsView({ settings, setSettings }) {
         return (
           <button
             key={o.value}
-            onClick={() => {
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
               if (multi) {
                 const set = new Set(value || []);
                 set.has(o.value) ? set.delete(o.value) : set.add(o.value);
@@ -19261,7 +19341,8 @@ function SettingsView({ settings, setSettings }) {
         <button
           key={o.value}
           type="button"
-          onClick={() => onChange(o.value)}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onChange(o.value); }}
           className="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
           style={{
             background: value === o.value ? T.signal : "transparent",
@@ -19305,17 +19386,25 @@ function SettingsView({ settings, setSettings }) {
             value={settings.language || "en"}
             onChange={(e) => {
               e.stopPropagation();
-              const code = e.target.value;
+              const code = ["en", "fr", "ar"].includes(e.target.value) ? e.target.value : "en";
+              // update() already preserveScrolls
               update("language", code);
               try {
                 localStorage.setItem("merveil_language", code);
                 const prev = JSON.parse(localStorage.getItem("jx_settings") || "{}") || {};
                 localStorage.setItem("jx_settings", JSON.stringify({ ...prev, language: code }));
                 const langInfo = LANGUAGES.find((l) => l.code === code);
-                document.documentElement.setAttribute("lang", code || "en");
+                document.documentElement.setAttribute("lang", code);
                 document.documentElement.setAttribute("dir", langInfo?.rtl ? "rtl" : "ltr");
                 window.dispatchEvent(new CustomEvent("merveil:language", { detail: { code } }));
               } catch {}
+              // Backend persist — all devices / reloads keep the same language
+              fetch("/api/citizen-settings", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ language: code }),
+              }).catch(() => {});
             }}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
@@ -19341,12 +19430,12 @@ function SettingsView({ settings, setSettings }) {
         </Row>
       </Card>
 
-      {ccLoading && <div className="text-sm mt-8" style={{ color: T.sub }}>Loading your Merveil Control Center…</div>}
+      {ccLoading && <div className="text-sm mt-8" style={{ color: T.sub }}>{t("settings.loadingCc", settings?.language || "en")}</div>}
 
       {cc && !ccLoading && (
         <>
           {/* 02 — YOUR INTELLIGENCE */}
-          <SectionNumber n="02" title={t("settings.intelligence", settings.language) || (settings.language === "fr" ? "Votre intelligence" : settings.language === "ar" ? "ذكائك" : "Your Intelligence")} sub={settings.language === "fr" ? "Contrôlez comment Merveil pense, assiste et communique pour vous." : settings.language === "ar" ? "تحكم في كيفية تفكير ميرفيل ومساعدتك والتواصل نيابة عنك." : "Control how Merveil thinks, assists and communicates on your behalf."} />
+          <SectionNumber n="02" title={t("settings.intelligence", settings.language)} sub={t("settings.intelligenceSub", settings.language)} />
           <Card>
             <Field label="Intelligence mode">
               <Pills
@@ -29447,11 +29536,26 @@ function AppInner() {
       mq = window.matchMedia("(prefers-color-scheme: dark)");
       mq.addEventListener?.("change", applyTheme);
     }
+    const y = window.scrollY || document.documentElement.scrollTop || 0;
+    const scrollEls = [];
+    try {
+      document.querySelectorAll(".overflow-y-auto, .overflow-auto, [data-merveil-scroll]").forEach((el) => {
+        scrollEls.push({ el, top: el.scrollTop });
+      });
+    } catch {}
     document.documentElement.style.fontSize = { sm: "14px", md: "16px", lg: "18.5px" }[settings.textSize] || "16px";
     const langInfo = LANGUAGES.find((l) => l.code === settings.language);
     document.documentElement.setAttribute("lang", settings.language || "en");
     document.documentElement.setAttribute("dir", langInfo?.rtl ? "rtl" : "ltr");
     try { localStorage.setItem("merveil_language", settings.language || "en"); } catch {}
+    const pin = () => {
+      try {
+        window.scrollTo(0, y);
+        document.documentElement.scrollTop = y;
+        scrollEls.forEach(({ el, top }) => { try { el.scrollTop = top; } catch {} });
+      } catch {}
+    };
+    requestAnimationFrame(() => { pin(); requestAnimationFrame(pin); });
     return () => mq?.removeEventListener?.("change", applyTheme);
   }, [settings.theme, settings.textSize, settings.language]);
 
