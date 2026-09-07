@@ -157,40 +157,20 @@
       "has": [
         {
           "type": "host",
-          "value": "developers.merveil.ai"
+          "value": "machine.connect.junction.technology"
         }
       ],
-      "destination": "/developer-portal/console.html"
-    },
-    {
-      "source": "/onboarding",
-      "has": [
-        {
-          "type": "host",
-          "value": "developers.merveil.ai"
-        }
-      ],
-      "destination": "/developer-portal/onboarding.html"
-    },
-    {
-      "source": "/onboarding/",
-      "has": [
-        {
-          "type": "host",
-          "value": "developers.merveil.ai"
-        }
-      ],
-      "destination": "/developer-portal/onboarding.html"
+      "destination": "/machine-connect.html"
     },
     {
       "source": "/(.*)",
       "has": [
         {
           "type": "host",
-          "value": "developers.merveil.ai"
+          "value": "machine.connect.junction.technology"
         }
       ],
-      "destination": "/developer-portal/$1"
+      "destination": "/machine-connect.html"
     },
     {
       "source": "/api/(.*)",
