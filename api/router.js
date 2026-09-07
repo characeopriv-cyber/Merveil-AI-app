@@ -59,13 +59,19 @@ function adminClient() {
   const url = "https://dixfybqlepticyudikuz.supabase.co";
   const key =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE;
+    process.env.SUPABASE_SERVICE_ROLE ||
+    // The Vercel project is Supabase-Marketplace-managed, which syncs the
+    // service-role key under SUPABASE_SECRET_KEY instead of the classic
+    // SUPABASE_SERVICE_ROLE_KEY name. Missing this was silently breaking
+    // every admin-client call (connections, directory, circles, profile
+    // enrichment, etc.) with "Server misconfiguration."
+    process.env.SUPABASE_SECRET_KEY;
   if (!key) {
     // Fail with something a human can actually act on instead of the raw
     // Supabase SDK error ("supabaseUrl is required") that gave no clue
     // which variable was missing.
     throw new Error(
-      "Server misconfiguration: missing SUPABASE_SERVICE_ROLE_KEY in Vercel environment variables."
+      "Server misconfiguration: missing SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) in Vercel environment variables."
     );
   }
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
@@ -1053,7 +1059,7 @@ export default async function handler(req, res) {
         // Prefer full session; if refresh race left us without a live token,
         // still restore the UI from jwtSub via service role so the citizen
         // is not bounced to "Sign in" every few minutes.
-        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "") || decodeJwtSub(getRefreshToken(req) || "");
+        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "");
         if (!uid) return sendJson(res, 200, { user: null });
         let profile = null;
         if (user && token) {
