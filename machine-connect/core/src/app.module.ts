@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { MachineModule } from './machine/machine.module';
 import { CommandModule } from './command/command.module';
 import { TelemetryModule } from './telemetry/telemetry.module';
@@ -9,8 +9,13 @@ import { RemediationModule } from './security/remediation.module';
 import { AdvancedModule } from './advanced/advanced.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { ServiceRequestModule } from './service-request/service-request.module';
+import { AuthMiddleware } from './auth/auth.middleware';
 
 @Module({
   imports: [MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuthMiddleware).forRoutes({ path: 'api/(.*)', method: RequestMethod.ALL });
+  }
+}
