@@ -10797,7 +10797,7 @@ export default async function handler(req, res) {
       }
 
       async function loadStatusConfig() {
-        const defaults = { default_expires_hours: 24, max_video_seconds: 40, max_active_per_citizen: 5 };
+        const defaults = { default_expires_hours: 24, max_video_seconds: 60, max_active_per_citizen: 5 };
         try {
           const { data } = await svc.from("merveil_status_config").select("key,value");
           for (const row of data || []) {
@@ -11093,6 +11093,126 @@ export default async function handler(req, res) {
         );
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
+      }
+
+      // Signed upload URL for Status media (same pattern as world video-upload-url)
+
+      if (method === "POST" && action === "comment") {
+        if (!me) return sendJson(res, 401, { error: "Sign in required" });
+        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+        const statusId = body.status_id || body.id;
+        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
+        const voice_url = body.voice_url || null;
+        const body_text = body.body_text ? String(body.body_text).slice(0, 2000) : null;
+        if (!voice_url && !body_text) return sendJson(res, 400, { error: "text or voice_url required" });
+        let duration = body.media_duration_seconds != null ? Number(body.media_duration_seconds) : null;
+        if (voice_url && duration != null && duration > 60) {
+          return sendJson(res, 400, { error: "Voice comment max 60 seconds" });
+        }
+        const { data, error } = await svc.from("status_comments").insert({
+          status_id: statusId,
+          citizen_id: me,
+          body_text,
+          voice_url,
+          media_duration_seconds: duration,
+        }).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { comment: data });
+      }
+
+      if (method === "GET" && action === "comments") {
+        const statusId = req.query.status_id || req.query.id;
+        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
+        const { data, error } = await svc
+          .from("status_comments")
+          .select("id,status_id,citizen_id,body_text,voice_url,media_duration_seconds,created_at")
+          .eq("status_id", statusId)
+          .order("created_at", { ascending: true })
+          .limit(100);
+        if (error) return sendJson(res, 400, { error: error.message });
+        const ids = [...new Set((data || []).map((c) => c.citizen_id))];
+        let profiles = {};
+        if (ids.length) {
+          const { data: profs } = await svc.from("profiles").select("id,name,avatar_url").in("id", ids);
+          for (const p of profs || []) profiles[p.id] = p;
+        }
+        return sendJson(res, 200, {
+          comments: (data || []).map((c) => ({ ...c, user: profiles[c.citizen_id] || { id: c.citizen_id } })),
+        });
+      }
+
+      if (method === "POST" && action === "save") {
+        if (!me) return sendJson(res, 401, { error: "Sign in required" });
+        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+        const statusId = body.status_id || body.id;
+        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
+        const { error } = await svc.from("status_saves").upsert(
+          { status_id: statusId, citizen_id: me, created_at: new Date().toISOString() },
+          { onConflict: "status_id,citizen_id" }
+        );
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (method === "POST" && action === "upload-url") {
+        if (!me) return sendJson(res, 401, { error: "Sign in required" });
+        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+        const safeName = String(body.fileName || body.name || "status-media.bin").replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `status/${me}/${Date.now()}-${safeName}`;
+        let storageClient = sb;
+        try { storageClient = adminClient(); } catch { /* */ }
+        let bucket = "uploads";
+        let data, error;
+        ({ data, error } = await storageClient.storage.from("uploads").createSignedUploadUrl(path));
+        if (error) {
+          bucket = "media";
+          const alt = await storageClient.storage.from("media").createSignedUploadUrl(path).catch(() => null);
+          if (!alt?.data) return sendJson(res, 400, { error: error.message || "Could not prepare Status upload." });
+          data = alt.data;
+        }
+        const { data: pub } = storageClient.storage.from(bucket).getPublicUrl(path);
+        return sendJson(res, 200, {
+          signedUrl: data.signedUrl,
+          token: data.token,
+          path,
+          publicUrl: pub.publicUrl,
+          bucket,
+        });
+      }
+
+      // Multipart fallback upload for Status
+      if (method === "POST" && action === "upload") {
+        if (!me) return sendJson(res, 401, { error: "Sign in required" });
+        try {
+          const form = formidable({ maxFileSize: 80 * 1024 * 1024 });
+          const [fields, files] = await form.parse(req);
+          const file = files.file?.[0];
+          if (!file) return sendJson(res, 400, { error: "No file provided." });
+          const fs = await import("fs");
+          const buffer = fs.readFileSync(file.filepath);
+          const safeName = (file.originalFilename || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
+          const path = `status/${me}/${Date.now()}-${safeName}`;
+          let storageClient = sb;
+          try { storageClient = adminClient(); } catch { /* */ }
+          let bucket = "uploads";
+          let { error } = await storageClient.storage.from(bucket).upload(path, buffer, {
+            contentType: file.mimetype || "application/octet-stream",
+            upsert: true,
+          });
+          if (error) {
+            bucket = "media";
+            const alt = await storageClient.storage.from(bucket).upload(path, buffer, {
+              contentType: file.mimetype || "application/octet-stream",
+              upsert: true,
+            });
+            error = alt.error;
+          }
+          if (error) return sendJson(res, 400, { error: error.message || "Upload failed." });
+          const { data: pub } = storageClient.storage.from(bucket).getPublicUrl(path);
+          return sendJson(res, 200, { url: pub.publicUrl, publicUrl: pub.publicUrl, path, bucket });
+        } catch (e) {
+          return sendJson(res, 400, { error: e.message || "Upload parse failed" });
+        }
       }
 
       if (method === "DELETE" || (method === "POST" && action === "delete")) {
