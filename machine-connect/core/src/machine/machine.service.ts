@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { Machine, MachineProvisioningInput } from '../domain/machine';
+import { canTransitionMachine, Machine, MachineLifecycleState, MachineProvisioningInput } from '../domain/machine';
 import { SupabaseRest } from '../persistence/supabase-rest';
+
+const HEARTBEAT_TIMEOUT_MS = 90_000;
 
 @Injectable()
 export class MachineService {
@@ -49,24 +51,51 @@ export class MachineService {
     return machine;
   }
 
-  async activate(tenantId: string, id: string): Promise<Machine> {
+  async status(tenantId: string, id: string): Promise<Machine> {
     const machine = await this.get(tenantId, id);
-    const updatedAt = new Date().toISOString();
-    if (this.db.enabled) {
-      const rows = await this.db.request<any[]>(`machine_connect_machines?id=eq.${encodeURIComponent(id)}&organization_id=eq.${encodeURIComponent(tenantId)}`, {
-        method: 'PATCH', body: JSON.stringify({ state: 'active', updated_at: updatedAt }),
-      });
-      return this.fromRow(rows[0]);
+    if (machine.lifecycleState === 'revoked' || machine.lifecycleState === 'quarantined') {
+      machine.connectionState = 'offline';
+    } else if (machine.lastHeartbeatAt && Date.now() - Date.parse(machine.lastHeartbeatAt) > HEARTBEAT_TIMEOUT_MS) {
+      machine.connectionState = 'offline';
     }
-    machine.lifecycleState = 'active'; machine.updatedAt = updatedAt;
     return machine;
   }
 
-  private readonly fromRow = (row: any): Machine => ({
-    id: row.id, tenantId: row.organization_id, name: row.name, type: row.machine_type,
-    manufacturer: row.manufacturer, model: row.model, firmwareVersion: row.firmware_version,
-    lifecycleState: row.state, connectionState: row.last_heartbeat_at ? 'online' : 'unknown',
-    adapterId: row.adapter_id, capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
-    createdAt: row.created_at, updatedAt: row.updated_at,
-  });
+  async transition(tenantId: string, id: string, nextState: MachineLifecycleState): Promise<Machine> {
+    const machine = await this.get(tenantId, id);
+    if (!canTransitionMachine(machine.lifecycleState, nextState)) {
+      throw new BadRequestException(`Invalid machine lifecycle transition: ${machine.lifecycleState} -> ${nextState}`);
+    }
+    const updatedAt = new Date().toISOString();
+    if (this.db.enabled) {
+      const rows = await this.db.request<any[]>(`machine_connect_machines?id=eq.${encodeURIComponent(id)}&organization_id=eq.${encodeURIComponent(tenantId)}`, {
+        method: 'PATCH', body: JSON.stringify({ state: nextState, updated_at: updatedAt }),
+      });
+      if (!rows.length) throw new NotFoundException('Machine not found');
+      return this.fromRow(rows[0]);
+    }
+    machine.lifecycleState = nextState;
+    machine.updatedAt = updatedAt;
+    if (nextState === 'revoked' || nextState === 'quarantined') machine.connectionState = 'offline';
+    return machine;
+  }
+
+  async activate(tenantId: string, id: string): Promise<Machine> {
+    return this.transition(tenantId, id, 'active');
+  }
+
+  private readonly fromRow = (row: any): Machine => {
+    const lifecycleState = row.state as MachineLifecycleState;
+    const connectionState: Machine['connectionState'] = lifecycleState === 'revoked' || lifecycleState === 'quarantined'
+      ? 'offline'
+      : row.last_heartbeat_at ? 'online' : 'unknown';
+    return {
+      id: row.id, tenantId: row.organization_id, name: row.name, type: row.machine_type,
+      manufacturer: row.manufacturer, model: row.model, firmwareVersion: row.firmware_version,
+      lifecycleState, connectionState,
+      lastHeartbeatAt: row.last_heartbeat_at, adapterId: row.adapter_id,
+      capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+      createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  };
 }

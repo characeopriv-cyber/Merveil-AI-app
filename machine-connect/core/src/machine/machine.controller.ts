@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
-import { MachineProvisioningInput } from '../domain/machine';
+import { MachineLifecycleState, MachineProvisioningInput } from '../domain/machine';
 import { MachineService } from './machine.service';
 import { Principal } from '../auth/principal';
 import { requirePermission } from '../auth/permissions';
 
 type RequestWithPrincipal = { user?: Principal };
+type MachineStateBody = { state: MachineLifecycleState };
 
 @Controller('api/machines')
 export class MachineController {
@@ -22,6 +23,12 @@ export class MachineController {
     return this.machines.get(principal.tenantId, id);
   }
 
+  @Get(':id/status')
+  status(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
+    const principal = requirePermission(req.user, 'device.read');
+    return this.machines.status(principal.tenantId, id);
+  }
+
   @Post()
   provision(@Req() req: RequestWithPrincipal, @Body() body: Omit<MachineProvisioningInput, 'tenantId'>) {
     const principal = requirePermission(req.user, 'device.control');
@@ -32,5 +39,11 @@ export class MachineController {
   activate(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
     const principal = requirePermission(req.user, 'device.control');
     return this.machines.activate(principal.tenantId, id);
+  }
+
+  @Post(':id/state')
+  transition(@Req() req: RequestWithPrincipal, @Param('id') id: string, @Body() body: MachineStateBody) {
+    const principal = requirePermission(req.user, 'device.control');
+    return this.machines.transition(principal.tenantId, id, body.state);
   }
 }

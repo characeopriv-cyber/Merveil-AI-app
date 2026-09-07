@@ -33,13 +33,14 @@ export class CommandService {
     if (existingId) return this.commands.get(existingId)!;
 
     const machine = await this.machines.get(input.tenantId, input.machineId);
-    const decision = this.policy.evaluate({ lifecycleState: machine.lifecycleState, capabilitySafetyClass: input.safetyClass ?? 'control', capabilityKnown: input.capabilityKnown ?? false, actorAuthorized: Boolean(input.requestedBy) });
+    const capabilityKnown = machine.capabilities.includes(input.capability);
+    const decision = this.policy.evaluate({ lifecycleState: machine.lifecycleState, capabilitySafetyClass: input.safetyClass ?? 'control', capabilityKnown, actorAuthorized: Boolean(input.requestedBy) });
     const status: CommandStatus = !decision.allowed ? 'rejected' : decision.approvalRequired ? 'approval_required' : 'authorized';
     const command: MachineCommand = { commandId: randomUUID(), tenantId: input.tenantId, machineId: input.machineId, capability: input.capability, parameters: input.parameters, requestedBy: input.requestedBy, requestedAt: new Date().toISOString(), idempotencyKey: input.idempotencyKey, status };
 
     if (this.db.enabled) {
       await this.db.request('machine_connect_commands', { method: 'POST', body: JSON.stringify({ id: command.commandId, organization_id: command.tenantId, machine_id: command.machineId, action: command.capability, parameters: command.parameters, requested_by: command.requestedBy, status: command.status, created_at: command.requestedAt }) });
-      await this.recordEvent(command, 'command.requested', { safetyClass: input.safetyClass ?? 'control', capabilityKnown: input.capabilityKnown ?? false });
+      await this.recordEvent(command, 'command.requested', { safetyClass: input.safetyClass ?? 'control', capabilityKnown });
     }
     this.commands.set(command.commandId, command); this.idempotency.set(key, command.commandId);
     return command;

@@ -25,4 +25,10 @@ export class TelemetryController {
     const principal = requirePermission(req.user, 'telemetry.read');
     return this.telemetry.list(principal.tenantId, machineId, Number(limit ?? 100));
   }
+
+  @Post(':machineId/heartbeat')
+  heartbeat(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string) {
+    const principal = requirePermission(req.user, 'device.control');
+    return this.telemetry.heartbeat(principal.tenantId, machineId);
+  }
 }

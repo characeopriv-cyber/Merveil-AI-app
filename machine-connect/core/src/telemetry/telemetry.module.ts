@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TelemetryController } from './telemetry.controller';
 import { TelemetryService } from './telemetry.service';
 import { PersistenceModule } from '../persistence/persistence.module';
+import { MachineModule } from '../machine/machine.module';
 
-@Module({ imports: [PersistenceModule], controllers: [TelemetryController], providers: [TelemetryService], exports: [TelemetryService] })
+@Module({ imports: [PersistenceModule, MachineModule], controllers: [TelemetryController], providers: [TelemetryService], exports: [TelemetryService] })
 export class TelemetryModule {}
