@@ -1,0 +1,42 @@
+name: Machine Connect Cloudflare Validation
+
+on:
+  push:
+    branches: [feature/machine-connect]
+    paths:
+      - 'machine-connect/**'
+      - 'src/worker.js'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'vite.config.js'
+      - '.github/workflows/machine-connect-cloudflare.yml'
+  pull_request:
+    paths:
+      - 'machine-connect/**'
+      - 'src/worker.js'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'vite.config.js'
+      - '.github/workflows/machine-connect-cloudflare.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Developer Platform
+        run: npm run build
+
+      - name: Validate Cloudflare Worker bundle
+        run: npx wrangler@latest deploy --dry-run --config wrangler.jsonc --outdir .wrangler-dry-run

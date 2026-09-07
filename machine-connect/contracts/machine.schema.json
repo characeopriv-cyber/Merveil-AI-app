@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "machine-connect/machine.schema.json",
+  "title": "Machine",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tenantId", "name", "type", "lifecycleState", "createdAt", "updatedAt"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "tenantId": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "type": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "manufacturer": { "type": "string", "maxLength": 200 },
+    "model": { "type": "string", "maxLength": 200 },
+    "firmwareVersion": { "type": "string", "maxLength": 100 },
+    "lifecycleState": {
+      "type": "string",
+      "enum": ["provisioning", "active", "maintenance", "quarantined", "revoked"]
+    },
+    "connectionState": {
+      "type": "string",
+      "enum": ["unknown", "online", "offline"]
+    },
+    "adapterId": { "type": "string", "minLength": 1 },
+    "capabilities": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

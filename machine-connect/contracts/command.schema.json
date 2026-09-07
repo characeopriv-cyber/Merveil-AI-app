@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "machine-connect/command.schema.json",
+  "title": "Machine Command",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["commandId", "tenantId", "machineId", "capability", "requestedAt", "idempotencyKey"],
+  "properties": {
+    "commandId": { "type": "string", "minLength": 1 },
+    "tenantId": { "type": "string", "minLength": 1 },
+    "machineId": { "type": "string", "minLength": 1 },
+    "capability": { "type": "string", "minLength": 1 },
+    "parameters": { "type": "object" },
+    "requestedBy": { "type": "string", "minLength": 1 },
+    "requestedAt": { "type": "string", "format": "date-time" },
+    "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "status": {
+      "type": "string",
+      "enum": ["requested", "authorized", "approval_required", "approved", "dispatched", "acknowledged", "rejected", "timed_out", "failed", "cancelled", "emergency_stopped"]
+    }
+  }
+}

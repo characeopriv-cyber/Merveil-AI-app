@@ -1,0 +1,27 @@
+name: Machine Connect Core
+
+on:
+  push:
+    branches: [feature/machine-connect]
+    paths:
+      - 'machine-connect/core/**'
+      - '.github/workflows/machine-connect-core.yml'
+  pull_request:
+    paths:
+      - 'machine-connect/core/**'
+      - '.github/workflows/machine-connect-core.yml'
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: machine-connect/core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run build
+      - run: npm test
