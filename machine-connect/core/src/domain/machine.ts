@@ -33,3 +33,15 @@ export interface MachineProvisioningInput {
   adapterId?: string;
   capabilities?: string[];
 }
+
+export const MACHINE_LIFECYCLE_TRANSITIONS: Record<MachineLifecycleState, readonly MachineLifecycleState[]> = {
+  provisioning: ['active', 'quarantined', 'revoked'],
+  active: ['maintenance', 'quarantined', 'revoked'],
+  maintenance: ['active', 'quarantined', 'revoked'],
+  quarantined: ['active', 'revoked'],
+  revoked: [],
+};
+
+export function canTransitionMachine(from: MachineLifecycleState, to: MachineLifecycleState): boolean {
+  return MACHINE_LIFECYCLE_TRANSITIONS[from].includes(to);
+}
