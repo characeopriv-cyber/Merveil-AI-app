@@ -6,12 +6,19 @@ import { requirePermission } from '../auth/permissions';
 
 type RequestWithPrincipal = { user?: Principal };
 
+type CommandBody = {
+  capability: string;
+  parameters?: Record<string, unknown>;
+  idempotencyKey: string;
+  safetyClass?: 'control' | 'critical';
+};
+
 @Controller('api/machines')
 export class CommandController {
   constructor(private readonly commands: CommandService) {}
 
   @Post(':machineId/commands')
-  request(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Body() body: { capability: string; parameters?: Record<string, unknown>; idempotencyKey: string; safetyClass?: 'read' | 'control' | 'critical'; capabilityKnown?: boolean }) {
+  request(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Body() body: CommandBody) {
     const principal = requirePermission(req.user, 'device.control');
     return this.commands.request({
       tenantId: principal.tenantId,
@@ -20,8 +27,8 @@ export class CommandController {
       capability: body.capability,
       parameters: body.parameters ?? {},
       idempotencyKey: body.idempotencyKey,
-      safetyClass: body.safetyClass,
-      capabilityKnown: body.capabilityKnown,
+      safetyClass: body.safetyClass ?? 'control',
+      capabilityKnown: true,
     });
   }
 
