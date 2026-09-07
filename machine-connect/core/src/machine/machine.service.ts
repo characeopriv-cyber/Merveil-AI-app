@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { Machine, MachineProvisioningInput } from '../domain/machine';
+import { canTransitionMachine, Machine, MachineLifecycleState, MachineProvisioningInput } from '../domain/machine';
 import { SupabaseRest } from '../persistence/supabase-rest';
 
 @Injectable()
@@ -49,17 +49,27 @@ export class MachineService {
     return machine;
   }
 
-  async activate(tenantId: string, id: string): Promise<Machine> {
+  async transition(tenantId: string, id: string, nextState: MachineLifecycleState): Promise<Machine> {
     const machine = await this.get(tenantId, id);
+    if (!canTransitionMachine(machine.lifecycleState, nextState)) {
+      throw new BadRequestException(`Invalid machine lifecycle transition: ${machine.lifecycleState} -> ${nextState}`);
+    }
     const updatedAt = new Date().toISOString();
     if (this.db.enabled) {
       const rows = await this.db.request<any[]>(`machine_connect_machines?id=eq.${encodeURIComponent(id)}&organization_id=eq.${encodeURIComponent(tenantId)}`, {
-        method: 'PATCH', body: JSON.stringify({ state: 'active', updated_at: updatedAt }),
+        method: 'PATCH', body: JSON.stringify({ state: nextState, updated_at: updatedAt }),
       });
+      if (!rows.length) throw new NotFoundException('Machine not found');
       return this.fromRow(rows[0]);
     }
-    machine.lifecycleState = 'active'; machine.updatedAt = updatedAt;
+    machine.lifecycleState = nextState;
+    machine.updatedAt = updatedAt;
+    if (nextState === 'revoked' || nextState === 'quarantined') machine.connectionState = 'offline';
     return machine;
+  }
+
+  async activate(tenantId: string, id: string): Promise<Machine> {
+    return this.transition(tenantId, id, 'active');
   }
 
   private readonly fromRow = (row: any): Machine => ({
