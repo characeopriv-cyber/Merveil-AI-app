@@ -53,7 +53,9 @@ export class MachineService {
 
   async status(tenantId: string, id: string): Promise<Machine> {
     const machine = await this.get(tenantId, id);
-    if (machine.lastHeartbeatAt && Date.now() - Date.parse(machine.lastHeartbeatAt) > HEARTBEAT_TIMEOUT_MS) {
+    if (machine.lifecycleState === 'revoked' || machine.lifecycleState === 'quarantined') {
+      machine.connectionState = 'offline';
+    } else if (machine.lastHeartbeatAt && Date.now() - Date.parse(machine.lastHeartbeatAt) > HEARTBEAT_TIMEOUT_MS) {
       machine.connectionState = 'offline';
     }
     return machine;
@@ -82,12 +84,18 @@ export class MachineService {
     return this.transition(tenantId, id, 'active');
   }
 
-  private readonly fromRow = (row: any): Machine => ({
-    id: row.id, tenantId: row.organization_id, name: row.name, type: row.machine_type,
-    manufacturer: row.manufacturer, model: row.model, firmwareVersion: row.firmware_version,
-    lifecycleState: row.state, connectionState: row.last_heartbeat_at ? 'online' : 'unknown',
-    lastHeartbeatAt: row.last_heartbeat_at, adapterId: row.adapter_id,
-    capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
-    createdAt: row.created_at, updatedAt: row.updated_at,
-  });
+  private readonly fromRow = (row: any): Machine => {
+    const lifecycleState = row.state as MachineLifecycleState;
+    const connectionState: Machine['connectionState'] = lifecycleState === 'revoked' || lifecycleState === 'quarantined'
+      ? 'offline'
+      : row.last_heartbeat_at ? 'online' : 'unknown';
+    return {
+      id: row.id, tenantId: row.organization_id, name: row.name, type: row.machine_type,
+      manufacturer: row.manufacturer, model: row.model, firmwareVersion: row.firmware_version,
+      lifecycleState, connectionState,
+      lastHeartbeatAt: row.last_heartbeat_at, adapterId: row.adapter_id,
+      capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+      createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  };
 }
