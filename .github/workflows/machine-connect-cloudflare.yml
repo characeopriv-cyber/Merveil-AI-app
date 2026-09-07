@@ -2,7 +2,7 @@ name: Machine Connect Cloudflare Validation
 
 on:
   push:
-    branches: [feature/machine-connect]
+    branches: [main]
     paths:
       - 'machine-connect/**'
       - 'src/worker.js'
@@ -33,10 +33,14 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Build Developer Platform
         run: npm run build
+
+      - name: Validate Machine Connect core
+        working-directory: machine-connect/core
+        run: npm install --no-audit --no-fund && npm run build && npm test
 
       - name: Validate Cloudflare Worker bundle
         run: npx wrangler@latest deploy --dry-run --config wrangler.jsonc --outdir .wrangler-dry-run
