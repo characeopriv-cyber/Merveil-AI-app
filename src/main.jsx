@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
+import "./machine-connect.css";
 
 // PlusHub floating trigger removed — it covered the notification bell.
 // Secondary destinations (Sound, Arena, AI Call, Community, Transactions)
