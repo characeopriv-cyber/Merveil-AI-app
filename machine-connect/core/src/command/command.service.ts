@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { MachineCommand, CommandStatus, canTransition } from '../domain/command';
 import { MachineService } from '../machine/machine.service';
 import { PolicyService } from '../safety/policy.service';
+import { EmergencyStopService } from '../safety/emergency-stop.service';
 import { SupabaseRest } from '../persistence/supabase-rest';
 
 @Injectable()
@@ -10,7 +11,12 @@ export class CommandService {
   private readonly commands = new Map<string, MachineCommand>();
   private readonly idempotency = new Map<string, string>();
 
-  constructor(private readonly machines: MachineService, private readonly policy: PolicyService, private readonly db: SupabaseRest) {}
+  constructor(
+    private readonly machines: MachineService,
+    private readonly policy: PolicyService,
+    private readonly emergencyStop: EmergencyStopService,
+    private readonly db: SupabaseRest,
+  ) {}
 
   private async recordEvent(command: MachineCommand, eventType: string, extra: Record<string, unknown> = {}): Promise<void> {
     if (!this.db.enabled) return;
@@ -33,16 +39,44 @@ export class CommandService {
     if (existingId) return this.commands.get(existingId)!;
 
     const machine = await this.machines.get(input.tenantId, input.machineId);
+    if (this.emergencyStop.isStopped(input.tenantId, input.machineId)) {
+      const command: MachineCommand = {
+        commandId: randomUUID(),
+        tenantId: input.tenantId,
+        machineId: input.machineId,
+        capability: input.capability,
+        parameters: input.parameters,
+        requestedBy: input.requestedBy,
+        requestedAt: new Date().toISOString(),
+        idempotencyKey: input.idempotencyKey,
+        status: 'rejected',
+      };
+      await this.recordEvent(command, 'command.rejected.emergency_stop');
+      this.commands.set(command.commandId, command);
+      this.idempotency.set(key, command.commandId);
+      return command;
+    }
+
     const capabilityKnown = machine.capabilities.includes(input.capability);
-    const decision = this.policy.evaluate({ lifecycleState: machine.lifecycleState, capabilitySafetyClass: input.safetyClass ?? 'control', capabilityKnown, actorAuthorized: Boolean(input.requestedBy) });
+    const decision = this.policy.evaluate({
+      lifecycleState: machine.lifecycleState,
+      capabilitySafetyClass: input.safetyClass ?? 'control',
+      capabilityKnown,
+      actorAuthorized: Boolean(input.requestedBy),
+    });
     const status: CommandStatus = !decision.allowed ? 'rejected' : decision.approvalRequired ? 'approval_required' : 'authorized';
-    const command: MachineCommand = { commandId: randomUUID(), tenantId: input.tenantId, machineId: input.machineId, capability: input.capability, parameters: input.parameters, requestedBy: input.requestedBy, requestedAt: new Date().toISOString(), idempotencyKey: input.idempotencyKey, status };
+    const command: MachineCommand = {
+      commandId: randomUUID(), tenantId: input.tenantId, machineId: input.machineId,
+      capability: input.capability, parameters: input.parameters, requestedBy: input.requestedBy,
+      requestedAt: new Date().toISOString(), idempotencyKey: input.idempotencyKey, status,
+    };
 
     if (this.db.enabled) {
       await this.db.request('machine_connect_commands', { method: 'POST', body: JSON.stringify({ id: command.commandId, organization_id: command.tenantId, machine_id: command.machineId, action: command.capability, parameters: command.parameters, requested_by: command.requestedBy, status: command.status, created_at: command.requestedAt }) });
       await this.recordEvent(command, 'command.requested', { safetyClass: input.safetyClass ?? 'control', capabilityKnown });
     }
-    this.commands.set(command.commandId, command); this.idempotency.set(key, command.commandId);
+    this.commands.set(command.commandId, command);
+    this.idempotency.set(key, command.commandId);
     return command;
   }
 
