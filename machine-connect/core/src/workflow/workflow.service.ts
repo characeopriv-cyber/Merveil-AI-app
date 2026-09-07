@@ -25,8 +25,9 @@ export class WorkflowService {
     const now = new Date().toISOString();
     const instance: WorkflowInstance = { id: randomUUID(), workflowId, tenantId, requestedBy, status: 'running', currentStep: 0, createdAt: now, updatedAt: now };
     this.instances.set(instance.id, instance);
+    const taskId = randomUUID();
     const step = definition.steps[0];
-    this.tasks.set(randomUUID(), { id: randomUUID(), instanceId: instance.id, tenantId, name: step.name, status: step.requiresApproval ? 'pending' : 'in_progress', createdAt: now, updatedAt: now });
+    this.tasks.set(taskId, { id: taskId, instanceId: instance.id, tenantId, name: step.name, status: step.requiresApproval ? 'pending' : 'in_progress', createdAt: now, updatedAt: now });
     return instance;
   }
 
