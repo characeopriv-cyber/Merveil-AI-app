@@ -11,6 +11,27 @@ on conflict (id) do update set public = false;
 -- Expected object layout:
 -- machine-connect-assets/<organization_id>/<device_id>/<filename>
 
+-- Safe private helper for Storage admin checks.
+CREATE OR REPLACE FUNCTION private.has_machine_connect_asset_admin(org_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.organization_members om
+    WHERE om.organization_id = org_id
+      AND om.user_id = (SELECT auth.uid())
+      AND om.role = 'admin'
+  );
+$$;
+
+REVOKE EXECUTE ON FUNCTION private.has_machine_connect_asset_admin(uuid) FROM PUBLIC;
+GRANT USAGE ON SCHEMA private TO authenticated;
+GRANT EXECUTE ON FUNCTION private.has_machine_connect_asset_admin(uuid) TO authenticated;
+
 DROP POLICY IF EXISTS machine_connect_assets_select ON storage.objects;
 CREATE POLICY machine_connect_assets_select
 ON storage.objects FOR SELECT TO authenticated
@@ -33,7 +54,7 @@ WITH CHECK (
     FROM public.organization_members
     WHERE user_id = (select auth.uid())
   )
-  AND public.private_has_machine_connect_asset_admin((storage.foldername(name))[1]::uuid)
+  AND private.has_machine_connect_asset_admin((storage.foldername(name))[1]::uuid)
 );
 
 DROP POLICY IF EXISTS machine_connect_assets_update ON storage.objects;
@@ -61,34 +82,8 @@ CREATE POLICY machine_connect_assets_delete
 ON storage.objects FOR DELETE TO authenticated
 USING (
   bucket_id = 'machine-connect-assets'
-  AND public.private_has_machine_connect_asset_admin((storage.foldername(name))[1]::uuid)
+  AND private.has_machine_connect_asset_admin((storage.foldername(name))[1]::uuid)
 );
-
--- ---------------------------------------------------------------------------
--- Safe private helper for Storage admin checks.
--- This is intentionally in a non-exposed schema and checks auth.uid().
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION private.has_machine_connect_asset_admin(org_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.organization_members om
-    WHERE om.organization_id = org_id
-      AND om.user_id = (SELECT auth.uid())
-      AND om.role = 'admin'
-  );
-$$;
-
-REVOKE EXECUTE ON FUNCTION private.has_machine_connect_asset_admin(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION private.has_machine_connect_asset_admin(uuid) TO authenticated;
-
--- Rebind policies after helper creation (CREATE POLICY above intentionally
--- remains readable, but PostgreSQL resolves the helper at execution time).
 
 -- ---------------------------------------------------------------------------
 -- Daily telemetry rollup for dashboard/reporting workloads.
