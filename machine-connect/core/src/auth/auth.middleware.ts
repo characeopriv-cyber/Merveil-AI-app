@@ -1,7 +1,12 @@
 import { Injectable, NestMiddleware, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { PrincipalRole } from './principal';
+import { scryptSync, timingSafeEqual } from 'node:crypto';
 
-type RequestLike = { url?: string; headers: Record<string, string | string[] | undefined>; user?: { actorId: string; tenantId: string; roles: PrincipalRole[]; authenticated: true } };
+type RequestLike = {
+  url?: string;
+  headers: Record<string, string | string[] | undefined>;
+  user?: { actorId: string; tenantId: string; roles: PrincipalRole[]; authenticated: true };
+};
 
 const PLATFORM_ROLES: PrincipalRole[] = [
   'owner', 'admin', 'operator', 'viewer',
@@ -13,6 +18,41 @@ export class AuthMiddleware implements NestMiddleware {
   async use(req: RequestLike, _res: unknown, next: () => void) {
     const path = (req.url ?? '').split('?')[0];
     if (path === '/api/health' || path === '/api/ready' || path === '/health' || path === '/ready') {
+      next();
+      return;
+    }
+
+    // Machine-to-machine traffic uses a short-lived-secret-equivalent credential
+    // stored only as a salted scrypt hash. The machine id is taken from the URL,
+    // never from a caller-controlled tenant id.
+    const machineId = path.match(/^\/api\/(?:telemetry|machine-auth)\/([^/]+)/)?.[1];
+    const machineCredential = typeof req.headers['x-machine-credential'] === 'string'
+      ? req.headers['x-machine-credential'].trim()
+      : '';
+    if (machineId && machineCredential) {
+      const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '');
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!supabaseUrl || !supabaseKey) throw new UnauthorizedException('Machine authentication is not configured');
+
+      const url = new URL(`${supabaseUrl}/rest/v1/machine_connect_credentials`);
+      url.searchParams.set('select', 'organization_id,secret_hash,secret_salt');
+      url.searchParams.set('machine_id', `eq.${machineId}`);
+      url.searchParams.set('revoked_at', 'is.null');
+      url.searchParams.set('order', 'created_at.desc');
+      url.searchParams.set('limit', '1');
+      const response = await fetch(url, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } });
+      if (!response.ok) throw new UnauthorizedException('Machine credential could not be verified');
+      const rows = await response.json() as Array<{ organization_id?: string; secret_hash?: string; secret_salt?: string }>;
+      const row = rows[0];
+      if (!row?.organization_id || !row.secret_hash || !row.secret_salt) throw new UnauthorizedException('Invalid or revoked machine credential');
+
+      const supplied = scryptSync(machineCredential, Buffer.from(row.secret_salt, 'base64url'), 32);
+      const stored = Buffer.from(row.secret_hash, 'base64url');
+      if (supplied.length !== stored.length || !timingSafeEqual(supplied, stored)) {
+        throw new UnauthorizedException('Invalid or revoked machine credential');
+      }
+
+      req.user = { actorId: `machine:${machineId}`, tenantId: row.organization_id, roles: ['operator'], authenticated: true };
       next();
       return;
     }
