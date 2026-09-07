@@ -15,8 +15,7 @@
       "class_name": "MachineConnectContainer",
       "image": "./machine-connect/core/Dockerfile",
       "max_instances": 1,
-      "instance_type": "basic",
-      "sleep_after": "30m"
+      "instance_type": "basic"
     }
   ],
   "durable_objects": {
