@@ -1,23 +1,21 @@
-import { Body, Controller, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Param, Post, Req } from '@nestjs/common';
 import { CommandStatus } from '../domain/command';
 import { CommandService } from './command.service';
+import { Principal, requirePrincipal } from '../auth/principal';
+
+type RequestWithPrincipal = { user?: Principal };
 
 @Controller('api/machines')
 export class CommandController {
   constructor(private readonly commands: CommandService) {}
 
   @Post(':machineId/commands')
-  request(
-    @Headers('x-tenant-id') tenantId: string,
-    @Headers('x-actor-id') requestedBy: string,
-    @Param('machineId') machineId: string,
-    @Body() body: { capability: string; parameters?: Record<string, unknown>; idempotencyKey: string; safetyClass?: 'read' | 'control' | 'critical'; capabilityKnown?: boolean },
-  ) {
-    if (!tenantId?.trim() || !requestedBy?.trim()) throw new Error('Authenticated tenant and actor context are required');
+  request(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Body() body: { capability: string; parameters?: Record<string, unknown>; idempotencyKey: string; safetyClass?: 'read' | 'control' | 'critical'; capabilityKnown?: boolean }) {
+    const principal = requirePrincipal(req.user);
     return this.commands.request({
-      tenantId: tenantId.trim(),
+      tenantId: principal.tenantId,
       machineId,
-      requestedBy: requestedBy.trim(),
+      requestedBy: principal.actorId,
       capability: body.capability,
       parameters: body.parameters ?? {},
       idempotencyKey: body.idempotencyKey,
