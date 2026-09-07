@@ -1122,8 +1122,17 @@ video { max-width: 100%; object-fit: cover; }
   50% { transform: translateY(-8px); opacity: 1; }
 }
 
-/* Merveil AI circular 3D Mini — floating, short brand only */
-.merveil-ai-mini { filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35)); }
+/* Platform signature — 3D Mini “Merveil AI” drifts across safe zones (not stuck on poster) */
+.merveil-ai-mini {
+  position: absolute;
+  z-index: 18;
+  pointer-events: none;
+  width: 52px;
+  height: 52px;
+  filter: drop-shadow(0 4px 14px rgba(0,0,0,0.4));
+  /* Path avoids bottom-left poster and right-rail tools */
+  animation: merveil-mini-wander 28s ease-in-out infinite;
+}
 .merveil-ai-mini-orb {
   width: 52px; height: 52px; border-radius: 50%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -1133,7 +1142,7 @@ video { max-width: 100%; object-fit: cover; }
     inset 0 2px 4px rgba(255,255,255,0.35),
     inset 0 -3px 6px rgba(0,0,0,0.25),
     0 6px 16px rgba(14,154,167,0.35);
-  animation: merveil-mini-float 4.5s ease-in-out infinite;
+  animation: merveil-mini-spin 6s ease-in-out infinite;
   transform-style: preserve-3d;
 }
 .merveil-ai-mini-text {
@@ -1146,13 +1155,23 @@ video { max-width: 100%; object-fit: cover; }
   margin-top: 1px; font-size: 6px; font-weight: 700; color: rgba(255,255,255,0.9);
   letter-spacing: 0.12em;
 }
-@keyframes merveil-mini-float {
-  0%, 100% { transform: translateY(0) rotateX(0deg) rotateY(0deg); }
-  25% { transform: translateY(-5px) rotateX(6deg) rotateY(-8deg); }
-  50% { transform: translateY(-2px) rotateX(-4deg) rotateY(6deg); }
-  75% { transform: translateY(-6px) rotateX(5deg) rotateY(4deg); }
+/* Orbit corners: top-right → top-left → mid-left → mid-right → top-right
+   Stays clear of poster (bottom-left) and action rail (bottom-right) */
+@keyframes merveil-mini-wander {
+  0%, 100% { top: 14%; right: 14%; left: auto; bottom: auto; }
+  20%      { top: 18%; right: auto; left: 10%; bottom: auto; }
+  40%      { top: 42%; right: auto; left: 8%; bottom: auto; }
+  60%      { top: 38%; right: 12%; left: auto; bottom: auto; }
+  80%      { top: 22%; right: 10%; left: auto; bottom: auto; }
+}
+@keyframes merveil-mini-spin {
+  0%, 100% { transform: translateY(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+  25% { transform: translateY(-4px) rotateX(10deg) rotateY(-14deg) rotateZ(4deg); }
+  50% { transform: translateY(-1px) rotateX(-8deg) rotateY(12deg) rotateZ(-3deg); }
+  75% { transform: translateY(-5px) rotateX(8deg) rotateY(8deg) rotateZ(2deg); }
 }
 @media (prefers-reduced-motion: reduce) {
+  .merveil-ai-mini { animation: none; top: 14%; right: 14%; left: auto; bottom: auto; }
   .merveil-ai-mini-orb { animation: none; }
 }
 /* Merveil AI living watermark — continuous for full reel duration */
@@ -2244,15 +2263,10 @@ function NewEmojiBadge({ show, className = "" }) {
  * Only short brand text — no long tagline.
  */
 function MerveilAiMiniMark({ aiGenerated = false }) {
+  // Platform signature on every reel/photo — CSS wanders it around safe zones.
+  // Never sits on the poster row (bottom-left) or the tools rail (bottom-right).
   return (
-    <div
-      className="merveil-ai-mini absolute z-20 pointer-events-none"
-      style={{
-        right: "calc(12px + var(--safe-right, 0px))",
-        bottom: "calc(120px + var(--safe-bottom, 0px))",
-      }}
-      aria-hidden="true"
-    >
+    <div className="merveil-ai-mini" aria-hidden="true" title="Merveil AI">
       <div className="merveil-ai-mini-orb">
         <span className="merveil-ai-mini-text">Merveil AI</span>
         {aiGenerated && <span className="merveil-ai-mini-ai">AI</span>}
@@ -10424,6 +10438,715 @@ const CT = {
   offline: "#9AA3AE",
 };
 
+// ---------------------------------------------------------------------------
+// Connect 3D Status World — circular identity + spatial rotation (not Reels)
+// Spec: large circles, 3D rotation (no vertical feed), dual layers, max video 40s
+// ---------------------------------------------------------------------------
+const STATUS_MAX_SEC = 40;
+
+function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
+  const meId = currentUser?.id ? String(currentUser.id) : null;
+  const [statuses, setStatuses] = useState([]);
+  const [mine, setMine] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [focal, setFocal] = useState(0);
+  const [rot, setRot] = useState(0); // continuous rotation radians
+  const [dragging, setDragging] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [viewing, setViewing] = useState(null);
+  const dragRef = useRef({ x: 0, startRot: 0, moved: false });
+  const mediaRef = useRef(null);
+  const stageRef = useRef(null);
+  const rotRef = useRef(0);
+  const focalRef = useRef(0);
+
+  const load = useCallback(async () => {
+    if (!meId) { setStatuses([]); setMine(null); setLoading(false); return; }
+    try {
+      const res = await merveilFetch("/api/status?action=list&scope=everyone&limit=40");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to load Status");
+      const list = Array.isArray(data.statuses) ? data.statuses : [];
+      const sorted = [...list].sort((a, b) => {
+        const aMe = String(a.user_id) === meId ? 0 : 1;
+        const bMe = String(b.user_id) === meId ? 0 : 1;
+        if (aMe !== bMe) return aMe - bMe;
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      });
+      // Ensure "You" slot always exists as first item (placeholder if no status yet)
+      const hasMine = sorted.some((x) => String(x.user_id) === meId);
+      const slots = hasMine ? sorted : [
+        {
+          id: "__you__",
+          user_id: meId,
+          content_type: "text",
+          body_text: null,
+          media_url: null,
+          isPlaceholder: true,
+          user: {
+            id: meId,
+            name: currentUser?.name || "You",
+            avatar_url: currentUser?.avatar_url || null,
+          },
+        },
+        ...sorted,
+      ];
+      setStatuses(slots);
+      setMine(data.mine || sorted.find((x) => String(x.user_id) === meId) || null);
+    } catch (e) {
+      console.warn("Status load", e);
+      // Still show Your Status ring offline
+      if (meId) {
+        setStatuses([{
+          id: "__you__",
+          user_id: meId,
+          isPlaceholder: true,
+          content_type: "text",
+          user: { id: meId, name: currentUser?.name || "You", avatar_url: currentUser?.avatar_url },
+        }]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [meId, currentUser?.name, currentUser?.avatar_url]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!meId) return undefined;
+    const t = setInterval(load, 90000);
+    return () => clearInterval(t);
+  }, [meId, load]);
+
+  const n = Math.max(statuses.length, 1);
+  // Minimum 6 slots for a full ring feel when few statuses
+  const ringSlots = Math.max(n, 6);
+  const angleStep = (Math.PI * 2) / ringSlots;
+
+  useEffect(() => { rotRef.current = rot; }, [rot]);
+  useEffect(() => { focalRef.current = focal; }, [focal]);
+
+  const snapTo = useCallback((idx) => {
+    const i = ((idx % n) + n) % n;
+    setFocal(i);
+    setRot(-i * angleStep);
+  }, [n, angleStep]);
+
+  const onPointerDown = (e) => {
+    const x = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+    dragRef.current = { x, startRot: rotRef.current, moved: false };
+    setDragging(true);
+  };
+
+  useEffect(() => {
+    if (!dragging) return undefined;
+    const onMove = (e) => {
+      const x = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+      const dx = x - dragRef.current.x;
+      if (Math.abs(dx) > 4) dragRef.current.moved = true;
+      setRot(dragRef.current.startRot + dx * 0.012);
+    };
+    const onUp = () => {
+      setDragging(false);
+      const r = rotRef.current;
+      // Snap nearest index
+      let idx = Math.round(-r / angleStep);
+      idx = ((idx % n) + n) % n;
+      setFocal(idx);
+      setRot(-idx * angleStep);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    };
+  }, [dragging, n, angleStep]);
+
+  const openFocal = (idx) => {
+    const s = statuses[idx];
+    if (!s) return;
+    if (s.isPlaceholder || String(s.user_id) === meId && !s.media_url && !s.body_text && !s.activity_label && !s.location_label) {
+      setShowCreate(true);
+      return;
+    }
+    setViewing(s);
+    if (meId && String(s.user_id) !== meId && s.id && s.id !== "__you__") {
+      merveilFetch("/api/status?action=view", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status_id: s.id }),
+      }).catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    if (viewing || !mediaRef.current) return;
+    try {
+      mediaRef.current.pause();
+      mediaRef.current.removeAttribute("src");
+      mediaRef.current.load();
+    } catch { /* */ }
+  }, [viewing]);
+
+  const createStatus = async (payload) => {
+    const res = await merveilFetch("/api/status?action=create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Could not post Status");
+    setShowCreate(false);
+    await load();
+    setFocal(0);
+    setRot(0);
+    return data.status;
+  };
+
+  if (!meId) {
+    return (
+      <div className="px-3 py-4 text-center text-[13px]" style={{ color: CT.sub, background: "linear-gradient(180deg,#E8F4F6 0%,#F7F5F1 100%)" }}>
+        Sign in to see Status from people relevant to you.
+      </div>
+    );
+  }
+
+  // Build display list: real statuses only occupy first n positions on the ring
+  const items = statuses;
+
+  return (
+    <div
+      className="relative border-b overflow-hidden"
+      style={{
+        borderColor: CT.line,
+        background: "linear-gradient(165deg,#07161C 0%,#0E2A33 42%,#143A44 100%)",
+        minHeight: 196,
+      }}
+    >
+      {/* Atmospheric depth */}
+      <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 110%, rgba(14,154,167,0.38) 0%, transparent 58%)" }} />
+      <div className="pointer-events-none absolute inset-0 opacity-25" style={{ background: "radial-gradient(circle at 18% 28%, rgba(255,255,255,0.14), transparent 42%)" }} />
+      <div className="pointer-events-none absolute inset-0 opacity-15" style={{ background: "radial-gradient(circle at 82% 20%, rgba(6,182,212,0.2), transparent 35%)" }} />
+
+      <div className="relative px-3 pt-3 pb-1 flex items-center justify-between z-10">
+        <div>
+          <div className="text-[10px] font-bold tracking-[0.14em] uppercase" style={{ color: "rgba(255,255,255,0.5)" }}>3D Status</div>
+          <div className="text-[13px] font-semibold" style={{ color: "#E8F4F6" }}>People relevant to you</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-full min-h-[36px]"
+          style={{ background: CT.accent, color: "#fff", boxShadow: "0 4px 16px rgba(14,154,167,0.45)" }}
+        >
+          <span className="text-base leading-none">+</span> Your Status
+        </button>
+      </div>
+
+      {/* 3D circular stage */}
+      <div
+        ref={stageRef}
+        className="relative h-[132px] select-none"
+        style={{ perspective: "1100px", perspectiveOrigin: "50% 45%", cursor: dragging ? "grabbing" : "grab", touchAction: "none" }}
+        onPointerDown={onPointerDown}
+        role="list"
+        aria-label="3D Status World — drag to rotate citizens"
+      >
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center text-[12px] z-20" style={{ color: "rgba(255,255,255,0.5)" }}>Loading Status…</div>
+        )}
+
+        {/* Floor / horizon line for depth */}
+        <div className="pointer-events-none absolute left-[10%] right-[10%] bottom-3 h-px opacity-30" style={{ background: "linear-gradient(90deg,transparent,rgba(14,154,167,0.6),transparent)" }} />
+
+        <div
+          className="absolute left-1/2 top-[48%] w-0 h-0"
+          style={{
+            transformStyle: "preserve-3d",
+            transform: `translate(-50%,-50%) rotateX(8deg) rotateY(${rot}rad)`,
+            transition: dragging ? "none" : "transform 0.5s cubic-bezier(0.22,1,0.36,1)",
+          }}
+        >
+          {items.map((s, i) => {
+            const ang = i * angleStep;
+            const isFocal = i === focal;
+            const radius = 130;
+            // Secondary layer: slight downward offset when not focal (spatial depth)
+            const yLift = isFocal ? 0 : 10;
+            const u = s.user || {};
+            const isMe = String(s.user_id) === meId;
+            const thumb = s.thumbnail_url || (s.content_type === "photo" ? s.media_url : null) || u.avatar_url;
+            const hasContent = !s.isPlaceholder && !!(s.media_url || s.body_text || s.activity_label || s.location_label);
+            const ring = isFocal
+              ? "3px solid #0E9AA7"
+              : hasContent
+                ? "2px solid rgba(14,154,167,0.55)"
+                : "2px dashed rgba(255,255,255,0.35)";
+            const size = isFocal ? 70 : 52;
+            return (
+              <button
+                key={s.id || `s-${i}`}
+                type="button"
+                role="listitem"
+                className="absolute flex flex-col items-center outline-none"
+                style={{
+                  width: size + 8,
+                  transform: `rotateY(${ang}rad) translateZ(${radius}px) translateY(${yLift}px) rotateY(${-ang - rot}rad)`,
+                  marginLeft: -(size + 8) / 2,
+                  marginTop: -(size / 2 + 12),
+                  zIndex: isFocal ? 8 : 2,
+                  transition: dragging ? "none" : "transform 0.5s cubic-bezier(0.22,1,0.36,1)",
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (dragRef.current.moved) return;
+                  if (isFocal) openFocal(i);
+                  else snapTo(i);
+                }}
+                aria-label={`${isMe ? "Your" : (u.name || "Citizen")} Status`}
+              >
+                <div
+                  className="rounded-full overflow-hidden relative"
+                  style={{
+                    width: size,
+                    height: size,
+                    border: ring,
+                    boxShadow: isFocal
+                      ? "0 0 0 4px rgba(14,154,167,0.22), 0 12px 28px rgba(0,0,0,0.45)"
+                      : "0 6px 16px rgba(0,0,0,0.3)",
+                    background: "linear-gradient(145deg,#1a3a44,#0E9AA7)",
+                    opacity: isFocal ? 1 : 0.78,
+                    transform: isFocal ? "scale(1.05)" : "scale(1)",
+                    transition: "transform 0.3s ease, opacity 0.3s ease",
+                  }}
+                >
+                  {thumb ? (
+                    <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" draggable={false} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: isFocal ? 22 : 16 }}>
+                      {(u.name || "?").slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  {/* Live content pulse ring */}
+                  {hasContent && (
+                    <span
+                      className="absolute inset-0 rounded-full pointer-events-none"
+                      style={{
+                        boxShadow: isFocal ? "inset 0 0 0 2px rgba(14,154,167,0.5)" : "none",
+                        animation: isFocal ? "statusBreathe 2.4s ease-in-out infinite" : "none",
+                      }}
+                    />
+                  )}
+                  {isMe && !hasContent && (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white text-2xl font-light">+</span>
+                  )}
+                </div>
+                <span
+                  className="mt-1.5 text-[10px] font-semibold truncate text-center"
+                  style={{
+                    maxWidth: size + 12,
+                    color: isFocal ? "#fff" : "rgba(255,255,255,0.62)",
+                    textShadow: "0 1px 4px rgba(0,0,0,0.55)",
+                  }}
+                >
+                  {isMe ? "You" : (u.name || "Citizen").split(" ")[0]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Focal dots */}
+      <div className="px-3 pb-2.5 flex justify-center gap-1.5 flex-wrap">
+        {items.slice(0, 16).map((_, i) => (
+          <button
+            key={i}
+            type="button"
+            aria-label={`Go to status ${i + 1}`}
+            onClick={() => snapTo(i)}
+            className="w-1.5 h-1.5 rounded-full transition-all"
+            style={{
+              background: i === focal ? CT.accent : "rgba(255,255,255,0.22)",
+              transform: i === focal ? "scale(1.35)" : "scale(1)",
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Spatial Status viewer — environment, not conventional modal */}
+      {viewing && (
+        <div
+          className="fixed inset-0 z-[130] flex flex-col"
+          style={{ background: "radial-gradient(ellipse at 50% 40%, #0F2A32 0%, #050C10 75%)" }}
+          role="dialog"
+          aria-label="Status"
+        >
+          <div className="pointer-events-none absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 50% 85%, rgba(14,154,167,0.28), transparent 50%)" }} />
+          <div className="relative flex items-center gap-3 px-4 pt-[max(12px,env(safe-area-inset-top))] pb-2">
+            <button type="button" onClick={() => setViewing(null)} className="text-white/85 text-sm font-medium px-3 py-2 rounded-xl min-h-[40px]" style={{ background: "rgba(255,255,255,0.1)" }}>
+              Close
+            </button>
+            <button type="button" onClick={() => onOpenProfile?.(viewing.user_id)} className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-10 h-10 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: CT.accent }}>
+                {viewing.user?.avatar_url
+                  ? <img src={viewing.user.avatar_url} alt="" className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ background: CT.accent }}>{(viewing.user?.name || "?").slice(0, 1)}</div>}
+              </div>
+              <div className="min-w-0 text-left">
+                <div className="text-white font-semibold text-sm truncate">{viewing.user?.name || "Citizen"}</div>
+                <div className="text-white/45 text-[11px]">{viewing.content_type}{viewing.created_at ? ` · ${timeAgo(viewing.created_at)}` : ""}</div>
+              </div>
+            </button>
+            {String(viewing.user_id) !== meId && (
+              <button
+                type="button"
+                onClick={() => { onMessage?.(viewing.user || { id: viewing.user_id, name: viewing.user?.name }); setViewing(null); }}
+                className="text-[12px] font-bold px-3 py-2 rounded-full min-h-[36px]"
+                style={{ background: CT.accent, color: "#fff" }}
+              >
+                Message
+              </button>
+            )}
+          </div>
+          <div className="flex-1 flex items-center justify-center px-4 pb-6 min-h-0">
+            {viewing.content_type === "video" && viewing.media_url && (
+              <video
+                ref={mediaRef}
+                src={viewing.media_url}
+                controls
+                playsInline
+                autoPlay
+                className="max-h-full max-w-full rounded-2xl shadow-2xl"
+                style={{ maxHeight: "72vh" }}
+                onEnded={() => {
+                  const idx = statuses.findIndex((x) => x.id === viewing.id);
+                  if (idx < 0) return;
+                  const nextIdx = (idx + 1) % statuses.length;
+                  const next = statuses[nextIdx];
+                  if (next && !next.isPlaceholder && next.id !== viewing.id) {
+                    setFocal(nextIdx);
+                    setRot(-nextIdx * angleStep);
+                    openFocal(nextIdx);
+                  }
+                }}
+              />
+            )}
+            {viewing.content_type === "photo" && viewing.media_url && (
+              <img src={viewing.media_url} alt="" className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl" />
+            )}
+            {(viewing.content_type === "text" || viewing.content_type === "activity") && (
+              <div className="max-w-md w-full rounded-3xl p-8 text-center" style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                <p className="text-white text-xl font-medium leading-relaxed" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
+                  {viewing.body_text || viewing.activity_label}
+                </p>
+              </div>
+            )}
+            {viewing.content_type === "location" && (
+              <div className="max-w-md w-full rounded-3xl p-8 text-center" style={{ background: "rgba(255,255,255,0.07)" }}>
+                <MapPin className="mx-auto mb-3 text-teal-300" size={32} />
+                <p className="text-white text-lg font-semibold">{viewing.location_label || viewing.body_text || "Location"}</p>
+              </div>
+            )}
+            {viewing.content_type === "voice" && viewing.media_url && (
+              <audio ref={mediaRef} src={viewing.media_url} controls autoPlay className="w-full max-w-md" />
+            )}
+          </div>
+          <div className="text-center pb-[max(16px,env(safe-area-inset-bottom))] text-[11px]" style={{ color: "rgba(255,255,255,0.38)" }}>
+            Rotate · next citizen moves into focus — not a Reels feed
+          </div>
+        </div>
+      )}
+
+      {showCreate && (
+        <StatusCreateSheet
+          currentUser={currentUser}
+          onClose={() => setShowCreate(false)}
+          onSubmit={createStatus}
+        />
+      )}
+
+      <style>{`
+        @keyframes statusBreathe {
+          0%, 100% { box-shadow: inset 0 0 0 2px rgba(14,154,167,0.35); }
+          50% { box-shadow: inset 0 0 0 3px rgba(14,154,167,0.7); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
+  const [kind, setKind] = useState("text");
+  const [text, setText] = useState("");
+  const [activity, setActivity] = useState("");
+  const [locationLabel, setLocationLabel] = useState("");
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [duration, setDuration] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const fileRef = useRef(null);
+  const recRef = useRef(null);
+  const [recording, setRecording] = useState(false);
+  const [recSec, setRecSec] = useState(0);
+
+  useEffect(() => () => {
+    if (preview && String(preview).startsWith("blob:")) URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setErr("");
+    if (kind === "video" || f.type.startsWith("video/")) {
+      const url = URL.createObjectURL(f);
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.src = url;
+      try {
+        await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = rej; });
+      } catch {
+        URL.revokeObjectURL(url);
+        setErr("Could not read video.");
+        return;
+      }
+      const d = v.duration;
+      if (!Number.isFinite(d) || d > STATUS_MAX_SEC) {
+        URL.revokeObjectURL(url);
+        setErr(`Video must be ${STATUS_MAX_SEC} seconds or less (yours is ${Math.round(d || 0)}s).`);
+        setFile(null); setPreview(null); setDuration(null);
+        return;
+      }
+      setDuration(d);
+      setPreview(url);
+      setFile(f);
+      setKind("video");
+    } else if (f.type.startsWith("audio/")) {
+      const url = URL.createObjectURL(f);
+      const a = document.createElement("audio");
+      a.preload = "metadata";
+      a.src = url;
+      await new Promise((res) => { a.onloadedmetadata = res; a.onerror = res; });
+      const d = a.duration;
+      if (Number.isFinite(d) && d > STATUS_MAX_SEC) {
+        URL.revokeObjectURL(url);
+        setErr(`Voice must be ${STATUS_MAX_SEC}s or less.`);
+        return;
+      }
+      setDuration(Number.isFinite(d) ? d : 1);
+      setPreview(url);
+      setFile(f);
+      setKind("voice");
+    } else {
+      setPreview(URL.createObjectURL(f));
+      setFile(f);
+      setKind("photo");
+      setDuration(null);
+    }
+  };
+
+  const startVoice = async () => {
+    setErr("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      const chunks = [];
+      mr.ondataavailable = (ev) => { if (ev.data.size) chunks.push(ev.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        setFile(new File([blob], "status-voice.webm", { type: "audio/webm" }));
+        setPreview(url);
+        setDuration(Math.max(1, recSec));
+        setKind("voice");
+        setRecording(false);
+      };
+      recRef.current = mr;
+      setRecSec(0);
+      setRecording(true);
+      mr.start(200);
+      const tick = setInterval(() => {
+        setRecSec((sec) => {
+          if (sec + 1 >= STATUS_MAX_SEC) {
+            clearInterval(tick);
+            try { mr.stop(); } catch { /* */ }
+            return STATUS_MAX_SEC;
+          }
+          return sec + 1;
+        });
+      }, 1000);
+      recRef.current._tick = tick;
+    } catch {
+      setErr("Microphone permission needed for voice Status.");
+    }
+  };
+
+  const stopVoice = () => {
+    try {
+      if (recRef.current?._tick) clearInterval(recRef.current._tick);
+      recRef.current?.stop();
+    } catch { /* */ }
+  };
+
+  const uploadMedia = async (f) => {
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("folder", "status-media");
+    let res = await merveilFetch("/api/upload?folder=status-media", { method: "POST", body: fd }).catch(() => null);
+    if (!res || !res.ok) {
+      res = await merveilFetch("/api/world?action=upload", { method: "POST", body: fd }).catch(() => null);
+    }
+    if (res && res.ok) {
+      const data = await res.json();
+      return data.url || data.media_url || data.publicUrl || null;
+    }
+    if (f.size < 400000 && f.type.startsWith("image/")) {
+      return await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(f);
+      });
+    }
+    throw new Error("Upload failed — try a smaller file or check connection.");
+  };
+
+  const submit = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      let media_url = null;
+      let media_mime = null;
+      if (file) {
+        media_url = await uploadMedia(file);
+        media_mime = file.type;
+      }
+      const payload = {
+        content_type: kind,
+        body_text: kind === "text" ? text.trim() : (text.trim() || null),
+        activity_label: kind === "activity" ? (activity.trim() || text.trim()) : null,
+        location_label: kind === "location" ? (locationLabel.trim() || text.trim()) : null,
+        media_url,
+        media_mime,
+        media_duration_seconds: (kind === "video" || kind === "voice") ? duration : null,
+        audience: "everyone",
+      };
+      if (kind === "text" && !payload.body_text) throw new Error("Write something for your Status.");
+      if (kind === "activity" && !payload.activity_label) throw new Error("Describe your activity.");
+      if (kind === "location" && !payload.location_label) throw new Error("Add a location label.");
+      if ((kind === "photo" || kind === "video" || kind === "voice") && !media_url) throw new Error("Media required.");
+      await onSubmit(payload);
+    } catch (e) {
+      setErr(e.message || "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const kinds = [
+    { id: "text", label: "Text" },
+    { id: "photo", label: "Photo" },
+    { id: "video", label: "Video" },
+    { id: "voice", label: "Voice" },
+    { id: "location", label: "Location" },
+    { id: "activity", label: "Activity" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center" style={{ background: "rgba(6,16,21,0.75)" }} role="dialog">
+      <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl" style={{ background: CT.panel, maxHeight: "92vh" }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: CT.line }}>
+          <button type="button" onClick={onClose} className="text-sm font-medium min-h-[40px]" style={{ color: CT.sub }}>Cancel</button>
+          <div className="text-sm font-bold" style={{ color: CT.ink }}>Your Status</div>
+          <button type="button" disabled={busy} onClick={submit} className="text-sm font-bold min-h-[40px] px-3 rounded-full" style={{ background: CT.accent, color: "#fff", opacity: busy ? 0.6 : 1 }}>
+            {busy ? "Posting…" : "Post"}
+          </button>
+        </div>
+        <div className="px-4 py-3 flex gap-1.5 overflow-x-auto">
+          {kinds.map((k) => (
+            <button
+              key={k.id}
+              type="button"
+              onClick={() => { setKind(k.id); setErr(""); }}
+              className="shrink-0 text-[12px] font-semibold px-3 py-1.5 rounded-full min-h-[36px]"
+              style={{ background: kind === k.id ? CT.accent : CT.panelHover, color: kind === k.id ? "#fff" : CT.sub }}
+            >
+              {k.label}
+            </button>
+          ))}
+        </div>
+        <div className="px-4 pb-6 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+          {(kind === "text" || kind === "activity") && (
+            <textarea
+              value={kind === "activity" ? activity : text}
+              onChange={(e) => (kind === "activity" ? setActivity(e.target.value) : setText(e.target.value))}
+              placeholder={kind === "activity" ? "What are you doing?" : "Share a moment with your network…"}
+              rows={4}
+              className="w-full rounded-2xl border px-3 py-3 text-sm outline-none resize-none"
+              style={{ borderColor: CT.line, color: CT.ink, background: "#FAFAF8" }}
+            />
+          )}
+          {kind === "location" && (
+            <input
+              value={locationLabel}
+              onChange={(e) => setLocationLabel(e.target.value)}
+              placeholder="Where are you? e.g. Dubai Marina"
+              className="w-full rounded-2xl border px-3 py-3 text-sm outline-none"
+              style={{ borderColor: CT.line, color: CT.ink, background: "#FAFAF8" }}
+            />
+          )}
+          {(kind === "photo" || kind === "video") && (
+            <div>
+              <input ref={fileRef} type="file" accept={kind === "video" ? "video/*" : "image/*"} className="hidden" onChange={onFile} />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="w-full py-8 rounded-2xl border-2 border-dashed text-sm font-medium"
+                style={{ borderColor: CT.line, color: CT.sub }}
+              >
+                {preview ? "Change media" : `Choose ${kind} (max ${STATUS_MAX_SEC}s for video)`}
+              </button>
+              {preview && kind === "photo" && <img src={preview} alt="" className="mt-3 max-h-48 mx-auto rounded-xl" />}
+              {preview && kind === "video" && <video src={preview} controls className="mt-3 max-h-48 mx-auto rounded-xl w-full" />}
+              {duration != null && (
+                <div className="text-[11px] mt-1 text-center" style={{ color: CT.sub }}>{Number(duration).toFixed(1)}s / {STATUS_MAX_SEC}s max</div>
+              )}
+            </div>
+          )}
+          {kind === "voice" && (
+            <div className="text-center py-4">
+              {!recording && !preview && (
+                <button type="button" onClick={startVoice} className="px-6 py-3 rounded-full font-bold text-white" style={{ background: CT.accent }}>
+                  Record voice (max {STATUS_MAX_SEC}s)
+                </button>
+              )}
+              {recording && (
+                <div>
+                  <div className="text-2xl font-bold tabular-nums" style={{ color: CT.ink }}>{recSec}s</div>
+                  <button type="button" onClick={stopVoice} className="mt-3 px-6 py-2 rounded-full font-bold" style={{ background: "#E0554C", color: "#fff" }}>Stop</button>
+                </div>
+              )}
+              {preview && !recording && <audio src={preview} controls className="w-full mt-2" />}
+            </div>
+          )}
+          {err && <div className="mt-3 text-[12px] font-medium" style={{ color: "#E0554C" }}>{err}</div>}
+          <p className="mt-4 text-[11px] leading-relaxed" style={{ color: CT.sub }}>
+            Status appears as your circular identity on Connect. Video and voice max {STATUS_MAX_SEC}s. Spatial rotation — not a vertical Reels feed.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function connectPresenceDot(status) {
   return PRESENCE_COLORS[status] || PRESENCE_COLORS.offline;
 }
@@ -11722,6 +12445,22 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             })()}
           </div>
         </div>
+
+        {/* 3D Status World — circular identity + spatial rotation (Connect home of Status) */}
+        <StatusWorld3D
+          currentUser={currentUser}
+          onOpenProfile={(uid) => {
+            try {
+              window.dispatchEvent(new CustomEvent("merveil:open-profile", { detail: { userId: uid } }));
+            } catch {}
+          }}
+          onMessage={(u) => {
+            if (u) {
+              setConnectTab("messages");
+              startChatWith(u);
+            }
+          }}
+        />
 
         {/* CONNECT V1 — Citizens | My Circle | Messages */}
         <div
@@ -17190,10 +17929,10 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
         {muted ? <VolumeX size={18} color="#fff"/> : <Volume2 size={18} color="#fff"/>}
       </button>
       )}
-      {!compact && (
+      {!compact && (post.content_origin === "ai" || post._seed) && (
       <span className="absolute top-4 left-4 z-10 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-        style={{ background: post.content_origin === "ai" ? "#7C3AED" : "#1F2937", color: "#fff" }}>
-        {post.content_origin === "ai" ? "AI®" : "RH"}
+        style={{ background: "rgba(14,154,167,0.92)", color: "#fff", letterSpacing: "0.06em" }}>
+        AI
       </span>
       )}
 
@@ -24594,13 +25333,13 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
     }
   };
 
-  // Creator page — violet foncé (dark violet) theme
-  const CREATOR_BG = "#1A0B2E";
-  const CREATOR_PANEL = "#2A1645";
-  const CREATOR_INK = "#F3E8FF";
-  const CREATOR_SUB = "#C4B5D4";
-  const CREATOR_LINE = "rgba(196,181,212,0.18)";
-  const CREATOR_ACCENT = "#A78BFA";
+  // Creator page — black / charcoal (no violet)
+  const CREATOR_BG = "#0A0A0A";
+  const CREATOR_PANEL = "#141414";
+  const CREATOR_INK = "#F5F5F5";
+  const CREATOR_SUB = "#A3A3A3";
+  const CREATOR_LINE = "rgba(255,255,255,0.10)";
+  const CREATOR_ACCENT = "#0E9AA7";
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: CREATOR_BG, color: CREATOR_INK }}>
@@ -24631,7 +25370,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               <video ref={coverVideoRef} src={coverUrl} muted playsInline loop autoPlay
                 className="absolute inset-0 w-full h-full object-cover" />
             ) : (
-              <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#2E1065 0%,#4C1D95 45%,#1A0B2E 100%)" }} />
+              <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#1a1a1a 0%,#0d0d0d 45%,#000 100%)" }} />
             )}
             <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(26,11,46,0.96) 100%)" }} />
             {coverUrl && (
@@ -24656,7 +25395,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                 <button type="button" disabled={uploadingCover}
                   onClick={(e) => { e.stopPropagation(); coverInputRef.current?.click(); }}
                   className="text-[11px] font-bold px-3.5 py-2 rounded-full flex items-center gap-1.5 shadow-lg"
-                  style={{ background: "linear-gradient(135deg,#7C3AED,#06B6D4)", color: "#fff", opacity: uploadingCover ? 0.75 : 1 }}>
+                  style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff", opacity: uploadingCover ? 0.75 : 1 }}>
                   {uploadingCover ? <Loader2 size={13} className="animate-spin" /> : <Video size={13} />}
                   {uploadingCover ? "Uploading…" : coverUrl ? "Change cover" : "Add cover video"}
                 </button>
@@ -24712,7 +25451,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         setSavingMood(false);
                       }}
                       className="mt-2 text-[10px] font-bold px-3 py-1.5 rounded-full"
-                      style={{ background: "linear-gradient(135deg,#7C3AED,#A78BFA)", color: "#fff", opacity: savingMood ? 0.7 : 1 }}>
+                      style={{ background: "linear-gradient(135deg,#0E9AA7,#A78BFA)", color: "#fff", opacity: savingMood ? 0.7 : 1 }}>
                       {savingMood ? "Saving…" : "Save expression"}
                     </button>
                   </>
@@ -24802,7 +25541,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               {isSelf && (
                 <button type="button" onClick={() => setShowStudio(true)}
                   className="w-full text-sm font-bold py-2.5 rounded-xl"
-                  style={{ background: "linear-gradient(135deg,#7C3AED,#06B6D4)", color: "#fff" }}>
+                  style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff" }}>
                   Manage Creator Studio
                 </button>
               )}
@@ -24830,7 +25569,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                     className="relative overflow-hidden group text-left aspect-square"
                     style={{
                       borderRadius: "50%",
-                      background: "linear-gradient(160deg,#1F2937 0%,#0E9AA7 55%,#7C3AED 100%)",
+                      background: "linear-gradient(160deg,#1F2937 0%,#0E9AA7 55%,#0E9AA7 100%)",
                       boxShadow: "0 0 0 2px rgba(14,154,167,0.55), 0 6px 20px rgba(0,0,0,0.25)",
                     }}>
                     {p.photo_url ? (
