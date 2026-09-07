@@ -827,6 +827,10 @@ html, body {
 }
 
 /* —— Accessibility —— */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
 .skip-to-main {
   position: absolute;
   left: -9999px;
@@ -2138,6 +2142,31 @@ const MerveilNewFlags = {
     return Date.now() - introducedAtMs < 30 * 24 * 60 * 60 * 1000;
   },
 };
+
+/** Shipped feature updates — drive 🆕 on Settings / tools / nav until opened */
+const MERVEIL_FEATURE_UPDATES = {
+  settings_control_center: { since: "2026-09-01", label: "Control Center" },
+  settings_language: { since: "2026-09-07", label: "Language & scroll-stable settings" },
+  settings_intelligence: { since: "2026-09-01", label: "Your Intelligence" },
+  settings_calls: { since: "2026-09-01", label: "Connections & Calls" },
+  settings_passport_vis: { since: "2026-09-01", label: "Passport visibility" },
+  connect_realtime: { since: "2026-09-07", label: "Connect live presence" },
+  pulse_reels_brand: { since: "2026-09-07", label: "Pulse Reels brand & presence" },
+  world_mini_mark: { since: "2026-09-07", label: "World Merveil AI mini mark" },
+  badges_system: { since: "2026-09-07", label: "Unread badges" },
+  plus_arena: { since: "2026-08-01", label: "Arena" },
+  plus_ai_call: { since: "2026-08-15", label: "AI Call" },
+  plus_wallet: { since: "2026-09-01", label: "Wallet" },
+};
+function featureIsNew(id) {
+  const meta = MERVEIL_FEATURE_UPDATES[id];
+  if (!meta) return MerveilNewFlags.isNew(id);
+  const ms = Date.parse(meta.since + "T00:00:00Z");
+  return MerveilNewFlags.isNew(id, ms);
+}
+function featureDismiss(id) {
+  MerveilNewFlags.dismiss(id);
+}
 
 /** New citizen 🆕 for max 5 days from profile created_at / joined */
 function isNewCitizen(user, maxDays = 5) {
@@ -19496,21 +19525,29 @@ function SettingsView({ settings, setSettings }) {
   // holographic/AI-face elements. Elegant section titles, generous
   // spacing, soft rounded containers, minimal borders, subtle depth.
   // ---------------------------------------------------------------
-  const SectionNumber = ({ n, title, sub }) => (
-    <div className="mt-9 mb-3 first:mt-0">
-      <div className="flex items-baseline gap-2">
+  const SectionNumber = ({ n, title, sub, newId }) => {
+    const showNew = newId ? featureIsNew(newId) : false;
+    return (
+    <div
+      className="mt-9 mb-3 first:mt-0"
+      onMouseEnter={() => { if (newId) featureDismiss(newId); }}
+      onFocus={() => { if (newId) featureDismiss(newId); }}
+    >
+      <div className="flex items-baseline gap-2 flex-wrap">
         {n && (
           <span className="text-[11px] font-bold tracking-wider" style={{ color: T.sub, fontVariantNumeric: "tabular-nums" }}>
             {n}
           </span>
         )}
-        <span className="text-[11px] font-bold tracking-[0.14em] uppercase" style={{ color: T.sub }}>
+        <span className="text-[11px] font-bold tracking-[0.14em] uppercase inline-flex items-center gap-1.5" style={{ color: T.sub }}>
           {title}
+          <NewEmojiBadge show={showNew} />
         </span>
       </div>
       {sub && <p className="text-xs mt-1.5 max-w-md" style={{ color: T.sub }}>{sub}</p>}
     </div>
-  );
+    );
+  };
 
   const Card = ({ children }) => (
     <div
@@ -19528,7 +19565,9 @@ function SettingsView({ settings, setSettings }) {
   const Row = ({ icon: Icon, title, sub, children, last }) => (
     <div
       className="flex items-center justify-between gap-3 py-3"
-      style={{ borderBottom: last ? "none" : `1px solid ${T.inkLine}18` }}
+      style={{ borderBottom: last ? "none" : `1px solid ${T.inkLine}18`, minHeight: 44 }}
+      role="group"
+      aria-label={title}
     >
       <div className="flex items-center gap-3 min-w-0">
         {Icon && (
@@ -19635,7 +19674,7 @@ function SettingsView({ settings, setSettings }) {
       </p>
 
       {/* 01 — YOUR EXPERIENCE */}
-      <SectionNumber n="01" title={t("settings.experience", settings.language)} sub={t("settings.experienceSub", settings.language)} />
+      <SectionNumber n="01" title={t("settings.experience", settings.language)} sub={t("settings.experienceSub", settings.language)} newId="settings_language" />
       <Card>
         <Row icon={Moon} title={t("settings.appearance", settings.language)} sub="Light · Dark · System" last={false}>
           <SegmentedControl
@@ -19702,7 +19741,7 @@ function SettingsView({ settings, setSettings }) {
       {cc && !ccLoading && (
         <>
           {/* 02 — YOUR INTELLIGENCE */}
-          <SectionNumber n="02" title={t("settings.intelligence", settings.language)} sub={t("settings.intelligenceSub", settings.language)} />
+          <SectionNumber n="02" title={t("settings.intelligence", settings.language)} sub={t("settings.intelligenceSub", settings.language)} newId="settings_intelligence" />
           <Card>
             <Field label="Intelligence mode">
               <Pills
@@ -19827,7 +19866,7 @@ function SettingsView({ settings, setSettings }) {
           </Card>
 
           {/* 05 — YOUR CONNECTIONS & CALLS */}
-          <SectionNumber n="05" title="Your Connections & Calls" sub="How Merveil can reach you — calls, privacy, and intelligence." />
+          <SectionNumber n="05" title="Your Connections & Calls" sub="How Merveil can reach you — calls, privacy, and intelligence." newId="settings_calls" />
           <Card>
             <Field label="Who can message me">
               <Pills
@@ -19893,7 +19932,7 @@ function SettingsView({ settings, setSettings }) {
           </p>
 
           {/* 06 — YOUR PASSPORT */}
-          <SectionNumber n="06" title="Your Passport" sub="Your Merveil Passport gives you control over how different parts of your identity are shared. Visibility is granular, not one global switch." />
+          <SectionNumber n="06" title="Your Passport" sub="Your Merveil Passport gives you control over how different parts of your identity are shared. Visibility is granular, not one global switch." newId="settings_passport_vis" />
           <Card>
             <p className="text-[11px] px-1 pb-2" style={{ color: T.sub }}>
               Choose who can see each part of your Passport: <strong>Visitor</strong> (anyone with the link), <strong>Citizens</strong> (signed-in), <strong>Connected</strong> (accepted connections), or <strong>Private</strong> (only you — use for Wallet).
@@ -31048,7 +31087,15 @@ function AppInner() {
       )}
 
       {/* ORBITAL NAV — hidden during live call so red End stays fully visible */}
+      {/* Screen-reader live region for badge changes */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {(unreadCount > 0 ? `${unreadCount} unread messages. ` : "")
+          + ((tabCounts.pulseFeed + tabCounts.pulseReels) > 0 ? `${tabCounts.pulseFeed + tabCounts.pulseReels} new on Pulse. ` : "")
+          + (tabCounts.world > 0 ? `${tabCounts.world} new on World. ` : "")}
+      </div>
       <div className={`md:hidden fixed bottom-0 left-0 right-0 z-50 m-shell-nav ${rootLiveCall ? "hidden" : ""}`}
+        role="navigation"
+        aria-label="Main"
         style={{
           paddingBottom: "var(--safe-bottom)",
           paddingLeft: "var(--safe-left)",
@@ -31056,22 +31103,22 @@ function AppInner() {
         }}>
         <div className="flex items-center justify-between px-1.5 pt-1.5 pb-1.5 gap-0.5" style={{ background: "var(--t-nav)" }}>
           {[
-            {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse"},
+            {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse", newId: "pulse_reels_brand"},
             {id:"investor", icon:TrendingUp,    labelKey:"nav.invest"},
-            {id:"messages", icon:MessageCircle, labelKey:"nav.connect"},
-            {id:"world",    icon:Globe,         labelKey:"nav.world"},
+            {id:"messages", icon:MessageCircle, labelKey:"nav.connect", newId: "connect_realtime"},
+            {id:"world",    icon:Globe,         labelKey:"nav.world", newId: "world_mini_mark"},
             {id:"market",   icon:Store,         labelKey:"nav.market"},
-            {id:"passport", icon:UserCheck,     labelKey:"nav.passport"},
+            {id:"passport", icon:UserCheck,     labelKey:"nav.passport", newId: "settings_control_center"},
           ].map((n) => {
             const Icon = n.icon;
             const isActive = tab === n.id;
             const lang = settings?.language || "en";
             const label = t(n.labelKey, lang);
             return (
-              <button key={n.id} type="button" onClick={() => setTab(n.id)}
+              <button key={n.id} type="button" onClick={() => { if (n.newId) featureDismiss(n.newId); setTab(n.id); }}
                 className="flex flex-col items-center gap-0.5 min-w-0 flex-1"
                 style={{ minHeight: 44 }}
-                aria-label={label}
+                aria-label={n.newId && featureIsNew(n.newId) ? `${label}, new` : label}
                 aria-current={isActive ? "page" : undefined}>
                 <div className={`flex items-center justify-center rounded-2xl relative ${isActive ? "m-nav-item-active" : ""}`}
                   style={{
@@ -31079,7 +31126,10 @@ function AppInner() {
                     background: isActive ? "var(--mv-brand-soft)" : "transparent",
                     transition: "all .2s ease",
                   }}>
-                  <Icon size={17} strokeWidth={isActive ? 2.25 : 1.7} color={isActive ? "var(--mv-brand)" : "var(--mv-text-muted)"} />
+                  <Icon size={17} strokeWidth={isActive ? 2.25 : 1.7} color={isActive ? "var(--mv-brand)" : "var(--mv-text-muted)"} aria-hidden="true" />
+                  {n.newId && featureIsNew(n.newId) && tab !== n.id && (
+                    <span className="absolute -top-1 -left-1 text-[9px] leading-none" aria-hidden="true">🆕</span>
+                  )}
                   {n.id === "messages" && unreadCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5">
                       <CountBadge count={unreadCount} />
