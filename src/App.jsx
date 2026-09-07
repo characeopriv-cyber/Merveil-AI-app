@@ -10175,8 +10175,8 @@ function IncomingConnectionRequests({ currentUser, onChanged }) {
   const load = useCallback(() => {
     if (!currentUser?.id) return;
     merveilFetch("/api/connections?action=list&kind=incoming")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setRequests(d.connections || []); })
+      .then((r) => (r.ok ? r.json() : { connections: [] }))
+      .then((d) => setRequests(d.connections || []))
       .catch(() => {});
   }, [currentUser?.id]);
 
@@ -10362,8 +10362,8 @@ function MyConnectionsPresence({ currentUser, onOpenChat }) {
     let cancelled = false;
     const load = () => {
       merveilFetch("/api/connections?action=list&kind=accepted")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (!cancelled && d) setPeople((d.connections || []).map((c) => c.person).filter((p) => p?.id)); })
+        .then((r) => (r.ok ? r.json() : { connections: [] }))
+        .then((d) => { if (!cancelled) setPeople((d.connections || []).map((c) => c.person).filter((p) => p?.id)); })
         .catch(() => {})
         .finally(() => { if (!cancelled) setLoading(false); });
     };
@@ -10537,7 +10537,7 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
   // Soft realtime — status state only, not full Connect reload
   useEffect(() => {
     if (!meId) return undefined;
-    const t = setInterval(() => load(true), 45000);
+    const t = setInterval(() => load(true), 12000);
     return () => clearInterval(t);
   }, [meId, load]);
 
@@ -10653,13 +10653,17 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
   };
 
   const createStatus = async (payload) => {
+    try { await fetch("/api/auth/session", { credentials: "include" }); } catch { /* */ }
     const res = await merveilFetch("/api/status?action=create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || "Could not post Status");
+    if (!res.ok) {
+      const parts = [data?.error || "Could not post Status", data?.hint].filter(Boolean);
+      throw new Error(parts.join(" — "));
+    }
     setShowCreate(false);
     await load(false);
     setFocal(0);
@@ -10688,18 +10692,18 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
       style={{
         borderColor: CT.line,
         background: "linear-gradient(175deg,#0A1218 0%,#121C24 45%,#1A242E 100%)",
-        minHeight: focusLayer ? 210 : 188,
-        marginTop: -4,
+        minHeight: focusLayer ? 200 : 168,
+        marginTop: 0,
       }}
     >
       <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 120%, rgba(255,255,255,0.06) 0%, transparent 55%)" }} />
       <div className="pointer-events-none absolute inset-0 opacity-20" style={{ background: "radial-gradient(circle at 15% 25%, rgba(255,255,255,0.12), transparent 40%)" }} />
 
       {!focusLayer && (
-        <div className="relative px-3 pt-3 pb-1 flex items-center justify-between z-10">
+        <div className="relative px-3 pt-1.5 pb-0.5 flex items-center justify-between z-10">
           <div>
             <div className="text-[10px] font-bold tracking-[0.14em] uppercase" style={{ color: "rgba(255,255,255,0.48)" }}>3D Status</div>
-            <div className="text-[13px] font-semibold" style={{ color: "#E8F4F6" }}>People relevant to you</div>
+            <div className="text-[12px] font-semibold" style={{ color: "#E8F4F6" }}>People relevant to you</div>
           </div>
           <button
             type="button"
@@ -10716,7 +10720,7 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
       <div
         className="relative select-none"
         style={{
-          height: focusLayer ? 88 : 136,
+          height: focusLayer ? 80 : 120,
           perspective: "1200px",
           perspectiveOrigin: "50% 40%",
           cursor: focusLayer ? "default" : (dragging ? "grabbing" : "grab"),
@@ -11156,73 +11160,55 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
     } catch { /* */ }
   };
 
-  /** Reliable upload: signed URL PUT first, then multipart fallbacks */
+  /** Reliable upload — session restore first, then signed PUT + multipart + people (known-good) */
   const uploadMedia = async (f) => {
     const name = f.name || `status-${Date.now()}`;
-    // 1) Status signed URL
     try {
-      const urlRes = await merveilFetch("/api/status?action=upload-url", {
+      await fetch("/api/auth/session", { credentials: "include" });
+    } catch { /* */ }
+
+    const trySigned = async (endpoint) => {
+      const urlRes = await merveilFetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName: name }),
       });
       const urlData = await urlRes.json().catch(() => ({}));
-      if (urlRes.ok && urlData.signedUrl && urlData.publicUrl) {
-        setProgress("Uploading…");
-        const put = await fetch(urlData.signedUrl, {
-          method: "PUT",
-          headers: { "Content-Type": f.type || "application/octet-stream" },
-          body: f,
-        });
-        if (put.ok) return urlData.publicUrl;
-      }
-    } catch (e) {
-      console.warn("status upload-url", e);
-    }
-    // 2) World video-upload-url style
-    try {
-      const urlRes = await merveilFetch("/api/world?action=video-upload-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: name }),
+      if (!urlRes.ok || !urlData.signedUrl || !urlData.publicUrl) return null;
+      setProgress("Uploading…");
+      const put = await fetch(urlData.signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": f.type || "application/octet-stream" },
+        body: f,
       });
-      const urlData = await urlRes.json().catch(() => ({}));
-      if (urlRes.ok && urlData.signedUrl && urlData.publicUrl) {
-        setProgress("Uploading…");
-        const put = await fetch(urlData.signedUrl, {
-          method: "PUT",
-          headers: { "Content-Type": f.type || "application/octet-stream" },
-          body: f,
-        });
-        if (put.ok) return urlData.publicUrl;
-      }
-    } catch (e) {
-      console.warn("world signed upload", e);
-    }
-    // 3) Multipart status
-    try {
+      return put.ok ? urlData.publicUrl : null;
+    };
+
+    const tryMultipart = async (endpoint) => {
       const fd = new FormData();
       fd.append("file", f);
       fd.append("folder", "status");
-      const res = await merveilFetch("/api/status?action=upload", { method: "POST", body: fd });
+      const res = await merveilFetch(endpoint, { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
       if (res.ok && (data.url || data.publicUrl)) return data.url || data.publicUrl;
-    } catch (e) {
-      console.warn("status multipart", e);
-    }
-    // 4) World multipart
-    try {
-      const fd = new FormData();
-      fd.append("file", f);
-      fd.append("folder", "status");
-      const res = await merveilFetch("/api/world?action=upload", { method: "POST", body: fd });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && (data.url || data.publicUrl)) return data.url || data.publicUrl;
-    } catch (e) {
-      console.warn("world multipart", e);
-    }
-    // 5) Tiny image data URL last resort
-    if (f.size < 500000 && f.type.startsWith("image/")) {
+      return null;
+    };
+
+    let url =
+      (await trySigned("/api/status?action=upload-url").catch(() => null)) ||
+      (await trySigned("/api/world?action=video-upload-url").catch(() => null)) ||
+      (await trySigned("/api/people?action=video-upload-url").catch(() => null));
+    if (url) return url;
+
+    url =
+      (await tryMultipart("/api/status?action=upload").catch(() => null)) ||
+      (await tryMultipart("/api/world?action=upload").catch(() => null)) ||
+      (await tryMultipart("/api/people?action=upload").catch(() => null));
+    if (url) return url;
+
+    // Small files: data URL (text/photo/short voice) so Status still posts
+    if (f.size < 900000) {
+      setProgress("Encoding…");
       return await new Promise((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result);
@@ -11230,7 +11216,7 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
         r.readAsDataURL(f);
       });
     }
-    throw new Error("Upload failed — check connection or try a smaller file. Signed storage may need the uploads bucket.");
+    throw new Error("Upload failed — create storage bucket `uploads` in Supabase (public read) or try a smaller file.");
   };
 
   const effectiveDuration = () => {
@@ -11245,6 +11231,20 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
     setErr("");
     setProgress("");
     try {
+      // Rehydrate session so create never gets empty jwtSub
+      try {
+        const sess = await fetch("/api/auth/session", { credentials: "include" });
+        if (sess.ok) {
+          const body = await sess.json().catch(() => null);
+          if (body?.user?.id) {
+            try {
+              localStorage.setItem("junction_user", JSON.stringify(body.user));
+              window.dispatchEvent(new CustomEvent("merveil:session-user", { detail: body.user }));
+            } catch { /* */ }
+          }
+        }
+      } catch { /* */ }
+
       // Trim validation for media
       if ((kind === "video" || kind === "voice") && duration != null) {
         const ed = effectiveDuration();
@@ -11299,7 +11299,8 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
       setProgress("Publishing…");
       await onSubmit(payload);
     } catch (e) {
-      setErr(e.message || "Could not post Status");
+      const msg = e.message || "Could not post Status";
+      setErr(msg);
     } finally {
       setBusy(false);
       setProgress("");
@@ -12166,7 +12167,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       merveilFetch(`/api/conversations?action=directory&q=${encodeURIComponent(q)}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          if (cancelled || !data) return;
+          if (cancelled) return;
           const raw = data?.users || [];
           const users = raw.map((u) => {
             const { status, ...rest } = u;
@@ -12192,9 +12193,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const reloadConnections = useCallback(() => {
     if (!currentUser?.id) return;
     merveilFetch("/api/connections?action=list&kind=accepted")
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? r.json() : { connections: [] }))
       .then((d) => {
-        if (!d) return;
         const people = (d.connections || []).map((c) => c.person).filter((p) => p?.id);
         setConnectionPeople((prev) => stableMergeById(prev, people));
       })
@@ -12780,12 +12780,29 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         role="navigation"
         aria-label="Connect lists"
       >
-        {/* Connect power header — presence network */}
+        {/* 3D Status World — circular identity + spatial rotation (Connect home of Status) */}
+        <StatusWorld3D
+          currentUser={currentUser}
+          onOpenProfile={(uid) => {
+            try {
+              window.dispatchEvent(new CustomEvent("merveil:open-profile", { detail: { userId: uid } }));
+            } catch {}
+          }}
+          onMessage={(u) => {
+            if (u) {
+              setConnectTab("messages");
+              startChatWith(u);
+            }
+          }}
+        />
+
+
+        {/* Connect compact bar — Status is primary atmospheric layer above */}
         <div
-          className="px-4 pt-4 pb-3 border-b"
+          className="px-3 pt-1.5 pb-1.5 border-b"
           style={{
             borderColor: CT.line,
-            background: "radial-gradient(ellipse 80% 120% at 0% 0%, rgba(6,182,212,0.12), transparent 55%), #FFFFFF",
+            background: "#FFFFFF",
           }}
         >
           <div className="flex items-start justify-between gap-2">
@@ -12858,22 +12875,6 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             })()}
           </div>
         </div>
-
-        {/* 3D Status World — circular identity + spatial rotation (Connect home of Status) */}
-        <StatusWorld3D
-          currentUser={currentUser}
-          onOpenProfile={(uid) => {
-            try {
-              window.dispatchEvent(new CustomEvent("merveil:open-profile", { detail: { userId: uid } }));
-            } catch {}
-          }}
-          onMessage={(u) => {
-            if (u) {
-              setConnectTab("messages");
-              startChatWith(u);
-            }
-          }}
-        />
 
         {/* CONNECT V1 — Citizens | My Circle | Messages */}
         <div
@@ -26952,7 +26953,7 @@ function ProfileView({ currentUser, properties, services, onSignOut, onSignIn, o
     if (!currentUser?.id) return;
     fetch(`/api/circles?userId=${currentUser.id}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.circles) setJoinedCircles(data.circles); })
+      .then((data) => setJoinedCircles(data?.circles || []))
       .catch(() => {});
   }, [currentUser?.id]);
   const joinedCircleCodes = joinedCircles.map((c) => c.code);
@@ -28795,7 +28796,7 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
     if (!currentUser?.id) return;
     fetch(`/api/circles?userId=${currentUser.id}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.circles) setJoinedCircles(data.circles); })
+      .then((data) => setJoinedCircles(data?.circles || []))
       .catch(() => {});
   }, [currentUser?.id]);
 
