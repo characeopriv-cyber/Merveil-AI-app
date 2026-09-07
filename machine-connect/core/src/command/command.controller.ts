@@ -1,7 +1,7 @@
 import { Body, Controller, Param, Post, Req } from '@nestjs/common';
 import { CommandStatus } from '../domain/command';
 import { CommandService } from './command.service';
-import { Principal, requirePrincipal } from '../auth/principal';
+import { Principal, requirePrincipal, requireRole } from '../auth/principal';
 
 type RequestWithPrincipal = { user?: Principal };
 
@@ -11,7 +11,7 @@ export class CommandController {
 
   @Post(':machineId/commands')
   request(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Body() body: { capability: string; parameters?: Record<string, unknown>; idempotencyKey: string; safetyClass?: 'read' | 'control' | 'critical'; capabilityKnown?: boolean }) {
-    const principal = requirePrincipal(req.user);
+    const principal = requireRole(req.user, 'owner', 'admin', 'operator');
     return this.commands.request({
       tenantId: principal.tenantId,
       machineId,
@@ -25,7 +25,8 @@ export class CommandController {
   }
 
   @Post('commands/:commandId/transition')
-  transition(@Param('commandId') commandId: string, @Body() body: { status: CommandStatus }) {
-    return this.commands.transition(commandId, body.status);
+  transition(@Req() req: RequestWithPrincipal, @Param('commandId') commandId: string, @Body() body: { status: CommandStatus }) {
+    const principal = requireRole(req.user, 'owner', 'admin', 'operator');
+    return this.commands.transition(principal.tenantId, commandId, body.status);
   }
 }
