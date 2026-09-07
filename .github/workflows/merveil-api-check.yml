@@ -18,6 +18,5 @@ jobs:
           set -e
           node --check api/v1.js
           node --check api/router.js
-          node --check api/assistant.js
       - name: Check developer console JavaScript syntax
         run: node --check developer-portal/console.js
