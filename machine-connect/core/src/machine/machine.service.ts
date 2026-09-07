@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { canTransitionMachine, Machine, MachineLifecycleState, MachineProvisioningInput } from '../domain/machine';
 import { SupabaseRest } from '../persistence/supabase-rest';
 
+const HEARTBEAT_TIMEOUT_MS = 90_000;
+
 @Injectable()
 export class MachineService {
   private readonly machines = new Map<string, Machine>();
@@ -49,6 +51,14 @@ export class MachineService {
     return machine;
   }
 
+  async status(tenantId: string, id: string): Promise<Machine> {
+    const machine = await this.get(tenantId, id);
+    if (machine.lastHeartbeatAt && Date.now() - Date.parse(machine.lastHeartbeatAt) > HEARTBEAT_TIMEOUT_MS) {
+      machine.connectionState = 'offline';
+    }
+    return machine;
+  }
+
   async transition(tenantId: string, id: string, nextState: MachineLifecycleState): Promise<Machine> {
     const machine = await this.get(tenantId, id);
     if (!canTransitionMachine(machine.lifecycleState, nextState)) {
@@ -76,7 +86,8 @@ export class MachineService {
     id: row.id, tenantId: row.organization_id, name: row.name, type: row.machine_type,
     manufacturer: row.manufacturer, model: row.model, firmwareVersion: row.firmware_version,
     lifecycleState: row.state, connectionState: row.last_heartbeat_at ? 'online' : 'unknown',
-    adapterId: row.adapter_id, capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+    lastHeartbeatAt: row.last_heartbeat_at, adapterId: row.adapter_id,
+    capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
     createdAt: row.created_at, updatedAt: row.updated_at,
   });
 }
