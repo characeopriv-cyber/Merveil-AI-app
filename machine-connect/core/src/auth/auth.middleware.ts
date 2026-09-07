@@ -1,14 +1,13 @@
 import { Injectable, NestMiddleware, UnauthorizedException, ForbiddenException } from '@nestjs/common';
-import type { Request, Response, NextFunction } from 'express';
 import { PrincipalRole } from './principal';
 
-type AuthenticatedRequest = Request & { user?: { actorId: string; tenantId: string; roles: PrincipalRole[]; authenticated: true } };
+type RequestLike = { headers: Record<string, string | string[] | undefined>; user?: { actorId: string; tenantId: string; roles: PrincipalRole[]; authenticated: true } };
 
 @Injectable()
 export class AuthMiddleware implements NestMiddleware {
-  async use(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
+  async use(req: RequestLike, _res: unknown, next: () => void) {
     const authorization = req.headers.authorization;
-    const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+    const token = typeof authorization === 'string' && authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
     const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '');
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const tenantId = typeof req.headers['x-tenant-id'] === 'string' ? req.headers['x-tenant-id'].trim() : '';
