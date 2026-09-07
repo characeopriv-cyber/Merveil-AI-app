@@ -2003,7 +2003,7 @@ export default async function handler(req, res) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         const { data: people, error } = await svcDir.from("profiles")
-          .select("id,name,avatar_url,role_label,profession,passport_tier,discoverable,last_seen_at")
+          .select("id,name,avatar_url,role_label,profession,passport_tier,discoverable,last_seen_at,created_at")
           .neq("id", callerId)
           .limit(500);
         if (error) return sendJson(res, 400, { error: error.message });
@@ -2029,6 +2029,7 @@ export default async function handler(req, res) {
           role_label: p.role_label,
           passport_tier: p.passport_tier,
           status: presenceMap[p.id] || "offline",
+          created_at: p.created_at || null,
           contactRank: 0,
           lastContactAt: 0,
         }));
