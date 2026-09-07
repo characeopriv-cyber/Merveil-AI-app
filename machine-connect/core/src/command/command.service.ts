@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { MachineCommand, CommandStatus, canTransition } from '../domain/command';
 import { MachineService } from '../machine/machine.service';
@@ -71,6 +71,14 @@ export class CommandService {
     (command as MachineCommand & { attemptCount?: number; adapterId?: string }).adapterId = result.adapterId;
     await this.recordEvent(command, 'command.dispatched', { adapterId: result.adapterId, dispatchedAt: result.dispatchedAt, timeoutAt: result.timeoutAt, attemptCount: result.attemptCount });
     return result;
+  }
+
+  async acknowledgeMachine(tenantId: string, machineId: string, commandId: string): Promise<MachineCommand> {
+    const command = this.commands.get(commandId) ?? await this.findDurableById(tenantId, commandId);
+    if (!command || command.tenantId !== tenantId) throw new BadRequestException('Command not found');
+    if (command.machineId !== machineId) throw new UnauthorizedException('Command is bound to a different machine');
+    if (command.status !== 'dispatched') throw new BadRequestException(`Command cannot be acknowledged from ${command.status}`);
+    return this.transition(tenantId, commandId, 'acknowledged');
   }
 
   async transition(tenantId: string, commandId: string, to: CommandStatus): Promise<MachineCommand> {
