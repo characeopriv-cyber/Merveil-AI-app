@@ -10787,8 +10787,8 @@ export default async function handler(req, res) {
     }
 
     // ---------------------------------------------------------- /api/status
-    // Merveil Connect 3D Status World — circular identity status
-    // Max video duration 40s enforced server-side
+    // Merveil 3D Status — circular spatial identity environment (not Reels)
+    // Max video 40s; visibility; multi-status per citizen; block override
     if (resource === "status") {
       const me = String(user?.id || citizen?.id || jwtSub || "");
       let svc;
@@ -10796,50 +10796,110 @@ export default async function handler(req, res) {
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
       }
 
-      if (method === "GET" && (!action || action === "list")) {
-        if (!me) return sendJson(res, 200, { statuses: [], mine: null });
-        const scope = String(req.query.scope || "everyone").toLowerCase();
-        const limit = Math.min(60, Math.max(1, parseInt(req.query.limit || "40", 10) || 40));
-        const nowIso = new Date().toISOString();
-
-        let circleIds = [];
-        if (scope === "circle") {
-          const { data: conns } = await svc
-            .from("connections")
-            .select("user_id, connected_user_id, status")
-            .or(`user_id.eq.${me},connected_user_id.eq.${me}`)
-            .eq("status", "accepted")
-            .limit(300);
-          for (const c of conns || []) {
-            const other = String(c.user_id) === me ? c.connected_user_id : c.user_id;
-            if (other) circleIds.push(String(other));
+      async function loadStatusConfig() {
+        const defaults = { default_expires_hours: 24, max_video_seconds: 40, max_active_per_citizen: 5 };
+        try {
+          const { data } = await svc.from("merveil_status_config").select("key,value");
+          for (const row of data || []) {
+            if (row.key === "default_expires_hours") defaults.default_expires_hours = Math.max(1, parseInt(row.value, 10) || 24);
+            if (row.key === "max_video_seconds") defaults.max_video_seconds = Math.max(1, parseInt(row.value, 10) || 40);
+            if (row.key === "max_active_per_citizen") defaults.max_active_per_citizen = Math.max(1, parseInt(row.value, 10) || 5);
           }
+        } catch { /* table may not exist yet */ }
+        return defaults;
+      }
+
+      async function circleIdsFor(uid) {
+        const ids = [];
+        const { data: conns } = await svc
+          .from("connections")
+          .select("user_id, connected_user_id, status")
+          .or(`user_id.eq.${uid},connected_user_id.eq.${uid}`)
+          .eq("status", "accepted")
+          .limit(400);
+        for (const c of conns || []) {
+          const other = String(c.user_id) === String(uid) ? c.connected_user_id : c.user_id;
+          if (other) ids.push(String(other));
         }
+        return ids;
+      }
+
+      async function blockedSet(uid) {
+        const set = new Set();
+        try {
+          const { data: blocks } = await svc
+            .from("blocked_users")
+            .select("blocker_id, blocked_id")
+            .or(`blocker_id.eq.${uid},blocked_id.eq.${uid}`);
+          for (const b of blocks || []) {
+            set.add(String(b.blocker_id === uid ? b.blocked_id : b.blocker_id));
+          }
+        } catch { /* optional table */ }
+        return set;
+      }
+
+      function canSeeStatus(row, viewerId, circleSet, blocked) {
+        const owner = String(row.user_id);
+        if (owner === String(viewerId)) return true;
+        if (blocked.has(owner)) return false;
+        const vis = String(row.visibility || row.audience || "everyone").toLowerCase();
+        if (vis === "nobody") return false;
+        if (vis === "circle") return circleSet.has(owner);
+        if (vis === "selected") {
+          const arr = row.visible_to || [];
+          return Array.isArray(arr) && arr.map(String).includes(String(viewerId));
+        }
+        if (vis === "citizens" || vis === "everyone") return true;
+        return true;
+      }
+
+      // GET list — returns identity nodes (one primary circle per citizen) + items[]
+      if (method === "GET" && (!action || action === "list")) {
+        if (!me) return sendJson(res, 200, { identities: [], mine: null, config: { max_video_seconds: 40 } });
+        const cfg = await loadStatusConfig();
+        const nowIso = new Date().toISOString();
+        const limit = Math.min(80, Math.max(1, parseInt(req.query.limit || "48", 10) || 48));
+        const since = req.query.since || null; // for soft realtime delta
+
+        const [circleIds, blocked] = await Promise.all([circleIdsFor(me), blockedSet(me)]);
+        const circleSet = new Set(circleIds);
 
         let q = svc
           .from("citizen_status")
-          .select("id,user_id,content_type,body_text,media_url,media_mime,media_duration_seconds,thumbnail_url,location_label,activity_label,audience,expires_at,view_count,created_at")
+          .select("id,user_id,content_type,body_text,media_url,media_mime,media_duration_seconds,thumbnail_url,location_label,activity_label,audience,visibility,visible_to,lifecycle,expires_at,view_count,created_at")
           .gt("expires_at", nowIso)
+          .or("lifecycle.eq.active,lifecycle.is.null")
           .order("created_at", { ascending: false })
-          .limit(limit * 2);
+          .limit(limit * 3);
 
-        if (scope === "mine") {
-          q = q.eq("user_id", me);
-        } else if (scope === "circle" && circleIds.length) {
-          q = q.in("user_id", [...circleIds, me]);
-        }
+        if (since) q = q.gt("created_at", since);
 
         const { data: rows, error } = await q;
-        if (error) return sendJson(res, 400, { error: error.message });
+        if (error) {
+          // fallback without lifecycle/visibility cols if migration not run
+          const { data: rows2, error: e2 } = await svc
+            .from("citizen_status")
+            .select("id,user_id,content_type,body_text,media_url,media_mime,media_duration_seconds,thumbnail_url,location_label,activity_label,audience,expires_at,view_count,created_at")
+            .gt("expires_at", nowIso)
+            .order("created_at", { ascending: false })
+            .limit(limit * 3);
+          if (e2) return sendJson(res, 400, { error: e2.message });
+          var rawRows = rows2 || [];
+        } else {
+          var rawRows = rows || [];
+        }
 
-        const circleSet = new Set(circleIds.map(String));
-        const filtered = (rows || []).filter((r) => {
-          if (String(r.user_id) === me) return true;
-          if (r.audience === "circle") return circleSet.has(String(r.user_id));
-          return true;
-        }).slice(0, limit);
+        const visible = rawRows.filter((r) => canSeeStatus(r, me, circleSet, blocked));
 
-        const userIds = [...new Set(filtered.map((r) => r.user_id))];
+        // Group by citizen — one identity, multiple status items
+        const byUser = new Map();
+        for (const r of visible) {
+          const uid = String(r.user_id);
+          if (!byUser.has(uid)) byUser.set(uid, []);
+          byUser.get(uid).push(r);
+        }
+
+        const userIds = [...byUser.keys()];
         let profiles = {};
         if (userIds.length) {
           const { data: profs } = await svc
@@ -10849,17 +10909,56 @@ export default async function handler(req, res) {
           for (const p of profs || []) profiles[p.id] = p;
         }
 
-        const byUser = new Map();
-        for (const r of filtered) {
-          if (!byUser.has(r.user_id)) byUser.set(r.user_id, r);
-        }
-        const statuses = [...byUser.values()].map((r) => ({
-          ...r,
-          user: profiles[r.user_id] || { id: r.user_id, name: "Citizen" },
-        }));
+        // Order: me first, then by latest status created_at
+        const identities = [...byUser.entries()]
+          .map(([uid, items]) => {
+            const sorted = items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const primary = sorted[0];
+            return {
+              user_id: uid,
+              user: profiles[uid] || { id: uid, name: "Citizen" },
+              has_status: true,
+              primary,
+              items: sorted.slice(0, cfg.max_active_per_citizen),
+              latest_at: primary?.created_at,
+            };
+          })
+          .sort((a, b) => {
+            if (a.user_id === me) return -1;
+            if (b.user_id === me) return 1;
+            return new Date(b.latest_at || 0) - new Date(a.latest_at || 0);
+          })
+          .slice(0, limit);
 
-        const mine = statuses.find((s) => String(s.user_id) === me) || null;
-        return sendJson(res, 200, { statuses, mine });
+        // Ensure viewer appears even with no status (Your Status ring)
+        if (!identities.some((x) => x.user_id === me)) {
+          const { data: meProf } = await svc.from("profiles").select("id,name,avatar_url,role_label,passport_tier").eq("id", me).maybeSingle();
+          identities.unshift({
+            user_id: me,
+            user: meProf || { id: me, name: user?.name || "You" },
+            has_status: false,
+            primary: null,
+            items: [],
+            latest_at: null,
+            is_you: true,
+          });
+        } else {
+          identities[0].is_you = identities[0].user_id === me;
+        }
+
+        const mine = identities.find((x) => x.user_id === me) || null;
+        // Flat statuses for backward compat
+        const statuses = identities
+          .filter((x) => x.primary)
+          .map((x) => ({ ...x.primary, user: x.user }));
+
+        return sendJson(res, 200, {
+          identities,
+          statuses,
+          mine,
+          config: cfg,
+          server_time: nowIso,
+        });
       }
 
       if (method === "GET" && action === "get") {
@@ -10872,8 +10971,14 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { status: row });
       }
 
+      if (method === "GET" && action === "config") {
+        const cfg = await loadStatusConfig();
+        return sendJson(res, 200, { config: cfg });
+      }
+
       if (method === "POST" && (!action || action === "create")) {
         if (!me) return sendJson(res, 401, { error: "Sign in to post a Status." });
+        const cfg = await loadStatusConfig();
         const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
         const contentType = String(body.content_type || "").toLowerCase();
         const allowed = ["photo", "video", "text", "voice", "location", "activity"];
@@ -10886,8 +10991,8 @@ export default async function handler(req, res) {
           if (duration == null || !Number.isFinite(duration) || duration <= 0) {
             return sendJson(res, 400, { error: "media_duration_seconds required for video/voice" });
           }
-          if (duration > 40) {
-            return sendJson(res, 400, { error: "Maximum Status duration is 40 seconds." });
+          if (duration > cfg.max_video_seconds) {
+            return sendJson(res, 400, { error: `Maximum Status duration is ${cfg.max_video_seconds} seconds.` });
           }
         } else {
           duration = null;
@@ -10900,11 +11005,28 @@ export default async function handler(req, res) {
           return sendJson(res, 400, { error: "media_url required for this content type" });
         }
 
-        const audience = body.audience === "circle" ? "circle" : "everyone";
-        const expiresHours = Math.min(48, Math.max(1, Number(body.expires_hours) || 24));
+        const visRaw = String(body.visibility || body.audience || "everyone").toLowerCase();
+        const visibility = ["everyone", "citizens", "circle", "selected", "nobody"].includes(visRaw) ? visRaw : "everyone";
+        const visible_to = visibility === "selected" && Array.isArray(body.visible_to)
+          ? body.visible_to.map(String).slice(0, 100)
+          : null;
+
+        const expiresHours = Math.min(72, Math.max(1, Number(body.expires_hours) || cfg.default_expires_hours));
         const expiresAt = new Date(Date.now() + expiresHours * 3600 * 1000).toISOString();
 
-        await svc.from("citizen_status").delete().eq("user_id", me).gt("expires_at", new Date().toISOString());
+        // Cap active items per citizen
+        const nowIso = new Date().toISOString();
+        const { data: existing } = await svc
+          .from("citizen_status")
+          .select("id,created_at")
+          .eq("user_id", me)
+          .gt("expires_at", nowIso)
+          .order("created_at", { ascending: false });
+        const active = existing || [];
+        if (active.length >= cfg.max_active_per_citizen) {
+          const drop = active.slice(cfg.max_active_per_citizen - 1);
+          await svc.from("citizen_status").delete().in("id", drop.map((d) => d.id));
+        }
 
         const insert = {
           user_id: me,
@@ -10918,13 +11040,25 @@ export default async function handler(req, res) {
           location_lat: body.location_lat != null ? Number(body.location_lat) : null,
           location_lng: body.location_lng != null ? Number(body.location_lng) : null,
           activity_label: body.activity_label ? String(body.activity_label).slice(0, 120) : null,
-          audience,
+          audience: visibility === "circle" ? "circle" : "everyone",
+          visibility,
+          visible_to,
+          lifecycle: "active",
           expires_at: expiresAt,
           view_count: 0,
         };
 
         const { data: created, error } = await svc.from("citizen_status").insert(insert).select("*").single();
-        if (error) return sendJson(res, 400, { error: error.message });
+        if (error) {
+          // Retry without new columns if migration not applied
+          const legacy = { ...insert };
+          delete legacy.visibility;
+          delete legacy.visible_to;
+          delete legacy.lifecycle;
+          const { data: created2, error: e2 } = await svc.from("citizen_status").insert(legacy).select("*").single();
+          if (e2) return sendJson(res, 400, { error: e2.message });
+          return sendJson(res, 200, { status: created2 });
+        }
         return sendJson(res, 200, { status: created });
       }
 
@@ -10941,6 +11075,23 @@ export default async function handler(req, res) {
           { onConflict: "status_id,viewer_id" }
         );
         await svc.from("citizen_status").update({ view_count: (st.view_count || 0) + 1 }).eq("id", statusId);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (method === "POST" && action === "react") {
+        if (!me) return sendJson(res, 401, { error: "Sign in required" });
+        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+        const statusId = body.status_id || body.id;
+        const reaction = String(body.reaction || "like").toLowerCase();
+        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
+        if (!["like", "super", "fire", "support"].includes(reaction)) {
+          return sendJson(res, 400, { error: "invalid reaction" });
+        }
+        const { error } = await svc.from("status_reactions").upsert(
+          { status_id: statusId, citizen_id: me, reaction, created_at: new Date().toISOString() },
+          { onConflict: "status_id,citizen_id" }
+        );
+        if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
       }
 
