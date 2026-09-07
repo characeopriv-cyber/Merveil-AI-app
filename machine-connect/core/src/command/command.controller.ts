@@ -23,6 +23,12 @@ export class CommandController {
     return this.commands.dispatch(principal.tenantId, commandId, body.adapterId);
   }
 
+  @Post('commands/:commandId/ack')
+  acknowledge(@Req() req: RequestWithPrincipal, @Param('commandId') commandId: string) {
+    const principal = requirePermission(req.user, 'device.control');
+    return this.commands.transition(principal.tenantId, commandId, 'acknowledged');
+  }
+
   @Post('commands/:commandId/transition')
   transition(@Req() req: RequestWithPrincipal, @Param('commandId') commandId: string, @Body() body: { status: CommandStatus }) {
     const principal = requirePermission(req.user, 'device.control');
