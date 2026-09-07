@@ -1913,9 +1913,9 @@ export default async function handler(req, res) {
         if (!ids.length) return sendJson(res, 200, { presence: {} });
         const { data } = await sb.from("presence").select("*").in("user_id", ids);
         const presence = {};
-        // 180s window — clients beat ~30s when visible / ~90s when away;
+        // 300s window — clients beat ~30s when visible / ~90s when away;
         // tolerates several missed beats (background tab, flaky network).
-        const cutoff = Date.now() - 180 * 1000;
+        const cutoff = Date.now() - 300 * 1000;
         for (const row of data || []) {
           const fresh = row.updated_at && new Date(row.updated_at).getTime() > cutoff;
           const st = (row.status || "online").toLowerCase();
@@ -1991,7 +1991,7 @@ export default async function handler(req, res) {
       }
 
       // Directory: browse ALL Merveil citizens (no friend requirement).
-      // Live presence: online if heartbeat within 180s. Online users first.
+      // Live presence: online if heartbeat within 300s. Status is a dot only on client.
       // Uses service role so RLS never hides other citizens; session race
       // still resolves caller via jwtSub when access token just rotated.
       if (method === "GET" && action === "directory") {
@@ -2011,7 +2011,7 @@ export default async function handler(req, res) {
         const visible = (people || []).filter((p) => p.discoverable !== false);
         const ids = visible.map((p) => p.id);
         let presenceMap = {};
-        const cutoff = Date.now() - 180 * 1000;
+        const cutoff = Date.now() - 300 * 1000;
         if (ids.length) {
           const { data: pres } = await svcDir.from("presence").select("*").in("user_id", ids);
           for (const row of pres || []) {
