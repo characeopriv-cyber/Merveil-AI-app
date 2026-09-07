@@ -49,9 +49,9 @@ export class CommandService {
     return command;
   }
 
-  transition(commandId: string, to: CommandStatus): MachineCommand {
+  transition(tenantId: string, commandId: string, to: CommandStatus): MachineCommand {
     const command = this.commands.get(commandId);
-    if (!command) throw new BadRequestException('Command not found');
+    if (!command || command.tenantId !== tenantId) throw new BadRequestException('Command not found');
     if (!canTransition(command.status, to)) throw new BadRequestException(`Invalid command transition: ${command.status} -> ${to}`);
     command.status = to;
     return command;
