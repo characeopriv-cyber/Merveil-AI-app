@@ -1,7 +1,9 @@
 import { Body, Controller, Param, Post, Req } from '@nestjs/common';
 import { MachineCredentialsService } from './machine-credentials.service';
-import { RequestWithPrincipal } from '../machine/machine.controller';
+import { Principal } from './principal';
 import { requirePermission } from './permissions';
+
+type RequestWithPrincipal = { user?: Principal };
 
 @Controller('api/machine-auth')
 export class MachineCredentialsController {
