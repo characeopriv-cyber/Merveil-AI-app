@@ -7,8 +7,9 @@ import { EmergencyStopModule } from './safety/emergency-stop.module';
 import { OffensiveSecurityModule } from './security/offensive-security.module';
 import { RemediationModule } from './security/remediation.module';
 import { AdvancedModule } from './advanced/advanced.module';
+import { WorkflowModule } from './workflow/workflow.module';
 
 @Module({
-  imports: [MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule],
+  imports: [MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule],
 })
 export class AppModule {}
