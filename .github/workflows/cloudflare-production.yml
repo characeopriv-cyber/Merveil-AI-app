@@ -15,10 +15,12 @@ permissions:
 
 env:
   CLOUDFLARE_WORKER_NAME: merveil-ai-app
+  MACHINE_CONNECT_HEALTH_URL: https://machine.connect.junction.technology/api/machine-connect/health
+  MACHINE_CONNECT_READY_URL: https://machine.connect.junction.technology/api/machine-connect/ready
 
 jobs:
   deploy:
-    name: Build and deploy to Cloudflare Worker
+    name: Build, deploy and verify Cloudflare Worker
     runs-on: ubuntu-latest
     environment: production
 
@@ -37,8 +39,37 @@ jobs:
       - name: Build Merveil AI
         run: npm run build
 
+      - name: Validate Cloudflare Worker bundle
+        run: npx wrangler@latest deploy --dry-run --config wrangler.jsonc --name "$CLOUDFLARE_WORKER_NAME" --outdir .wrangler-dry-run
+
       - name: Deploy with npx wrangler
         run: npx wrangler@latest deploy --config wrangler.jsonc --name "$CLOUDFLARE_WORKER_NAME"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Verify Machine Connect health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            status=$(curl -sS -o /tmp/machine-health.json -w '%{http_code}' "$MACHINE_CONNECT_HEALTH_URL" || true)
+            if [ "$status" = "200" ] && grep -q '"status":"ok"' /tmp/machine-health.json; then
+              cat /tmp/machine-health.json
+              exit 0
+            fi
+            echo "Machine Connect health not ready (attempt $attempt, HTTP $status)"
+            sleep 10
+          done
+          cat /tmp/machine-health.json 2>/dev/null || true
+          exit 1
+
+      - name: Verify Machine Connect readiness and persistence configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /tmp/machine-ready.json -w '%{http_code}' "$MACHINE_CONNECT_READY_URL")
+          cat /tmp/machine-ready.json
+          test "$status" = "200"
+          grep -q '"status":"ready"' /tmp/machine-ready.json
+          grep -q '"persistence":"configured"' /tmp/machine-ready.json
