@@ -1,15 +1,36 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { FormField, FormSchema } from './ai-form.types';
 import { OpenAiFormProvider } from './openai-form-provider';
 
+interface StoredForm { id: string; tenantId: string; createdBy: string; schema: FormSchema; published: boolean; createdAt: string; }
+
 @Injectable()
 export class AiFormBuilderService {
+  private readonly forms = new Map<string, StoredForm>();
   constructor(private readonly provider: OpenAiFormProvider) {}
 
-  async generate(prompt: string): Promise<FormSchema> {
-    const normalizedPrompt = prompt.trim();
-    if (!normalizedPrompt || normalizedPrompt.length > 4000) throw new Error('invalid form prompt');
-    return this.validate(await this.provider.generate(normalizedPrompt));
+  async generate(input: { tenantId: string; actorId: string; prompt: string }): Promise<StoredForm> {
+    const normalizedPrompt = input.prompt.trim();
+    if (!input.tenantId || !input.actorId || !normalizedPrompt || normalizedPrompt.length > 4000) throw new Error('invalid form request');
+    const schema = this.validate(await this.provider.generate(normalizedPrompt));
+    const form: StoredForm = { id: randomUUID(), tenantId: input.tenantId, createdBy: input.actorId, schema, published: false, createdAt: new Date().toISOString() };
+    this.forms.set(form.id, form);
+    return form;
+  }
+
+  publish(tenantId: string, actorId: string, formId: string): StoredForm {
+    const form = this.forms.get(formId);
+    if (!form || form.tenantId !== tenantId) throw new Error('form not found');
+    if (form.createdBy !== actorId) throw new Error('only the form owner may publish');
+    form.published = true;
+    return form;
+  }
+
+  get(tenantId: string, formId: string): StoredForm {
+    const form = this.forms.get(formId);
+    if (!form || form.tenantId !== tenantId) throw new Error('form not found');
+    return form;
   }
 
   validate(value: unknown): FormSchema {
@@ -20,10 +41,7 @@ export class AiFormBuilderService {
     if (!Array.isArray(input.fields) || input.fields.length === 0 || input.fields.length > 100) throw new Error('invalid form fields');
     const fields = input.fields.map((raw, index) => this.validateField(raw, index));
     const names = new Set<string>();
-    for (const field of fields) {
-      if (names.has(field.name)) throw new Error(`duplicate field: ${field.name}`);
-      names.add(field.name);
-    }
+    for (const field of fields) { if (names.has(field.name)) throw new Error(`duplicate field: ${field.name}`); names.add(field.name); }
     return { version: 1, formName, fields };
   }
 
