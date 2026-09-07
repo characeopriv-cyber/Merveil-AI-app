@@ -1,21 +1,25 @@
-import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { ServiceRequestService } from './service-request.service';
+import { Principal, requirePrincipal } from '../auth/principal';
+
+type RequestWithPrincipal = { user?: Principal };
 
 @Controller('api/service-requests')
 export class ServiceRequestController {
   constructor(private readonly service: ServiceRequestService) {}
 
   @Post()
-  create(@Headers('x-tenant-id') tenantId: string, @Headers('x-actor-id') requesterId: string, @Body() body: { title: string; category: string; payload?: Record<string, unknown>; idempotencyKey: string; workflowId?: string }) {
-    return this.service.create({ tenantId, requesterId, ...body });
+  create(@Req() req: RequestWithPrincipal, @Body() body: { title: string; category: string; payload?: Record<string, unknown>; idempotencyKey: string; workflowId?: string }) {
+    const principal = requirePrincipal(req.user);
+    return this.service.create({ tenantId: principal.tenantId, requesterId: principal.actorId, ...body });
   }
 
   @Get()
-  list(@Headers('x-tenant-id') tenantId: string) { return this.service.list(tenantId); }
+  list(@Req() req: RequestWithPrincipal) { return this.service.list(requirePrincipal(req.user).tenantId); }
 
   @Get(':requestId')
-  get(@Headers('x-tenant-id') tenantId: string, @Param('requestId') requestId: string) {
-    const request = this.service.get(tenantId, requestId);
+  get(@Req() req: RequestWithPrincipal, @Param('requestId') requestId: string) {
+    const request = this.service.get(requirePrincipal(req.user).tenantId, requestId);
     return request ?? { error: 'not_found' };
   }
 }
