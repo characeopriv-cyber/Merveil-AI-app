@@ -13,3 +13,9 @@ export function requirePrincipal(principal?: Principal): Principal {
   }
   return principal;
 }
+
+export function requireRole(principal: Principal | undefined, ...allowed: PrincipalRole[]): Principal {
+  const current = requirePrincipal(principal);
+  if (!allowed.some((role) => current.roles.includes(role))) throw new Error('Insufficient role');
+  return current;
+}
