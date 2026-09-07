@@ -16,6 +16,14 @@ const CAPABILITIES = {
 
 function cleanBase(url) { return String(url || '').replace(/\/$/, ''); }
 
+function normalizeModel(name, provider) {
+  const model = String(name || '').trim();
+  // grok-2-latest is no longer a valid xAI model. Keep production resilient
+  // even if an old Vercel env var is still present.
+  if (provider === 'xai' && (!model || model === 'grok-2-latest' || model === 'grok-2')) return 'grok-4.6';
+  return model;
+}
+
 function providers(order) {
   const configured = String(process.env.MERVEIL_AI_PROVIDER_ORDER || 'xai,anthropic,openai').split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
   const names = order?.length ? order : configured;
@@ -23,7 +31,7 @@ function providers(order) {
     name,
     baseUrl: cleanBase(process.env[`MERVEIL_${name.toUpperCase()}_API_URL`] || process.env[`${name.toUpperCase()}_API_URL`] || (name === 'xai' ? process.env.AI_API_URL || process.env.XAI_API_URL : '')),
     apiKey: process.env[`MERVEIL_${name.toUpperCase()}_API_KEY`] || process.env[`${name.toUpperCase()}_API_KEY`] || (name === 'xai' ? process.env.AI_API_KEY || process.env.XAI_API_KEY : ''),
-    model: process.env[`MERVEIL_${name.toUpperCase()}_MODEL`] || process.env[`${name.toUpperCase()}_MODEL`] || (name === 'xai' ? process.env.AI_MODEL || process.env.XAI_MODEL || 'grok-2-latest' : '')
+    model: normalizeModel(process.env[`MERVEIL_${name.toUpperCase()}_MODEL`] || process.env[`${name.toUpperCase()}_MODEL`] || (name === 'xai' ? process.env.AI_MODEL || process.env.XAI_MODEL || 'grok-4.6' : ''), name)
   })).filter(p => p.baseUrl && p.apiKey && p.model);
 }
 
