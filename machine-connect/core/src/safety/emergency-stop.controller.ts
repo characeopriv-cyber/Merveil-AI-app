@@ -1,17 +1,20 @@
-import { Controller, Headers, Param, Post, Body } from '@nestjs/common';
+import { Controller, Param, Post, Body, Req } from '@nestjs/common';
 import { EmergencyStopService } from './emergency-stop.service';
+import { Principal, requirePrincipal } from '../auth/principal';
+
+type RequestWithPrincipal = { user?: Principal };
 
 @Controller('/api/machines')
 export class EmergencyStopController {
   constructor(private readonly service: EmergencyStopService) {}
   @Post(':machineId/emergency-stop')
-  stop(@Param('machineId') machineId: string, @Headers('x-tenant-id') tenantId: string, @Headers('x-actor-id') actorId: string, @Body() body: any) {
-    if (!tenantId || !actorId) throw new Error('Authenticated tenant and actor context required');
-    return this.service.stop(tenantId, actorId, machineId, body?.reason ?? 'Emergency stop requested');
+  stop(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Body() body: any) {
+    const principal = requirePrincipal(req.user);
+    return this.service.stop(principal.tenantId, principal.actorId, machineId, body?.reason ?? 'Emergency stop requested');
   }
   @Post(':machineId/emergency-stop/reset')
-  reset(@Param('machineId') machineId: string, @Headers('x-tenant-id') tenantId: string, @Headers('x-actor-id') actorId: string) {
-    if (!tenantId || !actorId) throw new Error('Authenticated tenant and actor context required');
-    return this.service.reset(tenantId, actorId, machineId);
+  reset(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string) {
+    const principal = requirePrincipal(req.user);
+    return this.service.reset(principal.tenantId, principal.actorId, machineId);
   }
 }
