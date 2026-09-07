@@ -10439,70 +10439,93 @@ const CT = {
 };
 
 // ---------------------------------------------------------------------------
-// Connect 3D Status World — circular identity + spatial rotation (not Reels)
-// Spec: large circles, 3D rotation (no vertical feed), dual layers, max video 40s
+// Merveil 3D Status — circular spatial identity environment inside Connect
+// RULE: Not a carousel, not Stories, not Reels, not a conventional modal.
+// Navigation = rotate the 3D world of citizen identity nodes.
+// Focus layer expands media while surrounding identities stay spatially present.
 // ---------------------------------------------------------------------------
 const STATUS_MAX_SEC = 40;
 
 function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
   const meId = currentUser?.id ? String(currentUser.id) : null;
-  const [statuses, setStatuses] = useState([]);
-  const [mine, setMine] = useState(null);
+  const [identities, setIdentities] = useState([]);
+  const [config, setConfig] = useState({ max_video_seconds: STATUS_MAX_SEC, default_expires_hours: 24 });
   const [loading, setLoading] = useState(true);
   const [focal, setFocal] = useState(0);
-  const [rot, setRot] = useState(0); // continuous rotation radians
+  const [rot, setRot] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [viewing, setViewing] = useState(null);
+  const [focusLayer, setFocusLayer] = useState(null); // { identity, itemIndex }
+  const [itemIndex, setItemIndex] = useState(0);
   const dragRef = useRef({ x: 0, startRot: 0, moved: false });
   const mediaRef = useRef(null);
-  const stageRef = useRef(null);
   const rotRef = useRef(0);
   const focalRef = useRef(0);
+  const sinceRef = useRef(null);
 
-  const load = useCallback(async () => {
-    if (!meId) { setStatuses([]); setMine(null); setLoading(false); return; }
+  const load = useCallback(async (soft = false) => {
+    if (!meId) { setIdentities([]); setLoading(false); return; }
     try {
-      const res = await merveilFetch("/api/status?action=list&scope=everyone&limit=40");
+      let url = "/api/status?action=list&limit=40";
+      if (soft && sinceRef.current) url += `&since=${encodeURIComponent(sinceRef.current)}`;
+      const res = await merveilFetch(url);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to load Status");
-      const list = Array.isArray(data.statuses) ? data.statuses : [];
-      const sorted = [...list].sort((a, b) => {
-        const aMe = String(a.user_id) === meId ? 0 : 1;
-        const bMe = String(b.user_id) === meId ? 0 : 1;
-        if (aMe !== bMe) return aMe - bMe;
-        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-      });
-      // Ensure "You" slot always exists as first item (placeholder if no status yet)
-      const hasMine = sorted.some((x) => String(x.user_id) === meId);
-      const slots = hasMine ? sorted : [
-        {
-          id: "__you__",
+      if (data.config) setConfig(data.config);
+      if (data.server_time) sinceRef.current = data.server_time;
+
+      let list = Array.isArray(data.identities) ? data.identities : [];
+      // Backward compat: build identities from statuses[]
+      if (!list.length && Array.isArray(data.statuses)) {
+        const map = new Map();
+        for (const st of data.statuses) {
+          const uid = String(st.user_id);
+          if (!map.has(uid)) map.set(uid, { user_id: uid, user: st.user, has_status: true, primary: st, items: [st] });
+          else map.get(uid).items.push(st);
+        }
+        list = [...map.values()];
+      }
+      // Always ensure You first
+      const youIdx = list.findIndex((x) => String(x.user_id) === meId);
+      if (youIdx > 0) {
+        const [you] = list.splice(youIdx, 1);
+        list.unshift(you);
+      } else if (youIdx < 0) {
+        list.unshift({
           user_id: meId,
-          content_type: "text",
-          body_text: null,
-          media_url: null,
-          isPlaceholder: true,
-          user: {
-            id: meId,
-            name: currentUser?.name || "You",
-            avatar_url: currentUser?.avatar_url || null,
-          },
-        },
-        ...sorted,
-      ];
-      setStatuses(slots);
-      setMine(data.mine || sorted.find((x) => String(x.user_id) === meId) || null);
+          user: { id: meId, name: currentUser?.name || "You", avatar_url: currentUser?.avatar_url },
+          has_status: false,
+          primary: null,
+          items: [],
+          is_you: true,
+        });
+      }
+      if (soft && list.length) {
+        // Merge soft delta into existing identities by user_id
+        setIdentities((prev) => {
+          const by = new Map(prev.map((p) => [String(p.user_id), p]));
+          for (const n of list) by.set(String(n.user_id), n);
+          const merged = [...by.values()];
+          const yi = merged.findIndex((x) => String(x.user_id) === meId);
+          if (yi > 0) {
+            const [you] = merged.splice(yi, 1);
+            merged.unshift(you);
+          }
+          return merged;
+        });
+      } else {
+        setIdentities(list);
+      }
     } catch (e) {
       console.warn("Status load", e);
-      // Still show Your Status ring offline
-      if (meId) {
-        setStatuses([{
-          id: "__you__",
+      if (!soft) {
+        setIdentities([{
           user_id: meId,
-          isPlaceholder: true,
-          content_type: "text",
           user: { id: meId, name: currentUser?.name || "You", avatar_url: currentUser?.avatar_url },
+          has_status: false,
+          primary: null,
+          items: [],
+          is_you: true,
         }]);
       }
     } finally {
@@ -10510,16 +10533,16 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
     }
   }, [meId, currentUser?.name, currentUser?.avatar_url]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(false); }, [load]);
+  // Soft realtime — status state only, not full Connect reload
   useEffect(() => {
     if (!meId) return undefined;
-    const t = setInterval(load, 90000);
+    const t = setInterval(() => load(true), 45000);
     return () => clearInterval(t);
   }, [meId, load]);
 
-  const n = Math.max(statuses.length, 1);
-  // Minimum 6 slots for a full ring feel when few statuses
-  const ringSlots = Math.max(n, 6);
+  const n = Math.max(identities.length, 1);
+  const ringSlots = Math.max(n, 8);
   const angleStep = (Math.PI * 2) / ringSlots;
 
   useEffect(() => { rotRef.current = rot; }, [rot]);
@@ -10529,9 +10552,11 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
     const i = ((idx % n) + n) % n;
     setFocal(i);
     setRot(-i * angleStep);
+    setItemIndex(0);
   }, [n, angleStep]);
 
   const onPointerDown = (e) => {
+    if (focusLayer) return; // rotation paused while focus layer open — use side identities
     const x = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
     dragRef.current = { x, startRot: rotRef.current, moved: false };
     setDragging(true);
@@ -10543,16 +10568,16 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
       const x = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
       const dx = x - dragRef.current.x;
       if (Math.abs(dx) > 4) dragRef.current.moved = true;
-      setRot(dragRef.current.startRot + dx * 0.012);
+      setRot(dragRef.current.startRot + dx * 0.011);
     };
     const onUp = () => {
       setDragging(false);
       const r = rotRef.current;
-      // Snap nearest index
       let idx = Math.round(-r / angleStep);
       idx = ((idx % n) + n) % n;
       setFocal(idx);
       setRot(-idx * angleStep);
+      setItemIndex(0);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -10568,31 +10593,64 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
     };
   }, [dragging, n, angleStep]);
 
-  const openFocal = (idx) => {
-    const s = statuses[idx];
-    if (!s) return;
-    if (s.isPlaceholder || String(s.user_id) === meId && !s.media_url && !s.body_text && !s.activity_label && !s.location_label) {
-      setShowCreate(true);
+  const openFocus = (idx) => {
+    const idn = identities[idx];
+    if (!idn) return;
+    const isYou = String(idn.user_id) === meId;
+    if (!idn.has_status || !idn.items?.length) {
+      if (isYou) setShowCreate(true);
       return;
     }
-    setViewing(s);
-    if (meId && String(s.user_id) !== meId && s.id && s.id !== "__you__") {
+    setFocal(idx);
+    setRot(-idx * angleStep);
+    setItemIndex(0);
+    setFocusLayer({ identity: idn, itemIndex: 0 });
+    const st = idn.items[0] || idn.primary;
+    if (st?.id && !isYou) {
       merveilFetch("/api/status?action=view", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status_id: s.id }),
+        body: JSON.stringify({ status_id: st.id }),
       }).catch(() => {});
     }
   };
 
-  useEffect(() => {
-    if (viewing || !mediaRef.current) return;
+  const closeFocus = () => {
     try {
-      mediaRef.current.pause();
-      mediaRef.current.removeAttribute("src");
-      mediaRef.current.load();
+      if (mediaRef.current) {
+        mediaRef.current.pause();
+        mediaRef.current.removeAttribute("src");
+        mediaRef.current.load();
+      }
     } catch { /* */ }
-  }, [viewing]);
+    setFocusLayer(null);
+    setItemIndex(0);
+  };
+
+  // Advance to next status item or next identity (spatial recycle)
+  const advanceFocus = () => {
+    if (!focusLayer) return;
+    const idn = focusLayer.identity;
+    const items = idn.items || [];
+    const nextItem = (focusLayer.itemIndex || 0) + 1;
+    if (nextItem < items.length) {
+      setFocusLayer({ identity: idn, itemIndex: nextItem });
+      setItemIndex(nextItem);
+      return;
+    }
+    // next citizen on the ring
+    const curIdx = identities.findIndex((x) => String(x.user_id) === String(idn.user_id));
+    let next = (curIdx + 1) % n;
+    for (let k = 0; k < n; k++) {
+      const cand = identities[next];
+      if (cand?.has_status && cand.items?.length) {
+        openFocus(next);
+        return;
+      }
+      next = (next + 1) % n;
+    }
+    closeFocus();
+  };
 
   const createStatus = async (payload) => {
     const res = await merveilFetch("/api/status?action=create", {
@@ -10603,11 +10661,16 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Could not post Status");
     setShowCreate(false);
-    await load();
+    await load(false);
     setFocal(0);
     setRot(0);
     return data.status;
   };
+
+  // Active media only when focus layer open
+  const activeItem = focusLayer
+    ? (focusLayer.identity.items?.[focusLayer.itemIndex] || focusLayer.identity.primary)
+    : null;
 
   if (!meId) {
     return (
@@ -10617,99 +10680,108 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
     );
   }
 
-  // Build display list: real statuses only occupy first n positions on the ring
-  const items = statuses;
+  const maxSec = config.max_video_seconds || STATUS_MAX_SEC;
 
   return (
     <div
       className="relative border-b overflow-hidden"
       style={{
         borderColor: CT.line,
-        background: "linear-gradient(165deg,#07161C 0%,#0E2A33 42%,#143A44 100%)",
-        minHeight: 196,
+        background: "linear-gradient(168deg,#06141A 0%,#0C2832 40%,#13404C 100%)",
+        minHeight: focusLayer ? 220 : 200,
       }}
     >
-      {/* Atmospheric depth */}
-      <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 110%, rgba(14,154,167,0.38) 0%, transparent 58%)" }} />
-      <div className="pointer-events-none absolute inset-0 opacity-25" style={{ background: "radial-gradient(circle at 18% 28%, rgba(255,255,255,0.14), transparent 42%)" }} />
-      <div className="pointer-events-none absolute inset-0 opacity-15" style={{ background: "radial-gradient(circle at 82% 20%, rgba(6,182,212,0.2), transparent 35%)" }} />
+      <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 115%, rgba(14,154,167,0.4) 0%, transparent 55%)" }} />
+      <div className="pointer-events-none absolute inset-0 opacity-20" style={{ background: "radial-gradient(circle at 15% 25%, rgba(255,255,255,0.12), transparent 40%)" }} />
 
-      <div className="relative px-3 pt-3 pb-1 flex items-center justify-between z-10">
-        <div>
-          <div className="text-[10px] font-bold tracking-[0.14em] uppercase" style={{ color: "rgba(255,255,255,0.5)" }}>3D Status</div>
-          <div className="text-[13px] font-semibold" style={{ color: "#E8F4F6" }}>People relevant to you</div>
+      {!focusLayer && (
+        <div className="relative px-3 pt-3 pb-1 flex items-center justify-between z-10">
+          <div>
+            <div className="text-[10px] font-bold tracking-[0.14em] uppercase" style={{ color: "rgba(255,255,255,0.48)" }}>3D Status</div>
+            <div className="text-[13px] font-semibold" style={{ color: "#E8F4F6" }}>People relevant to you</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-full min-h-[36px]"
+            style={{ background: CT.accent, color: "#fff", boxShadow: "0 4px 16px rgba(14,154,167,0.45)" }}
+          >
+            <span className="text-base leading-none">+</span> Your Status
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-full min-h-[36px]"
-          style={{ background: CT.accent, color: "#fff", boxShadow: "0 4px 16px rgba(14,154,167,0.45)" }}
-        >
-          <span className="text-base leading-none">+</span> Your Status
-        </button>
-      </div>
+      )}
 
-      {/* 3D circular stage */}
+      {/* Layer A — Identity ring (always present; shrinks slightly under focus layer) */}
       <div
-        ref={stageRef}
-        className="relative h-[132px] select-none"
-        style={{ perspective: "1100px", perspectiveOrigin: "50% 45%", cursor: dragging ? "grabbing" : "grab", touchAction: "none" }}
+        className="relative select-none"
+        style={{
+          height: focusLayer ? 88 : 136,
+          perspective: "1200px",
+          perspectiveOrigin: "50% 40%",
+          cursor: focusLayer ? "default" : (dragging ? "grabbing" : "grab"),
+          touchAction: "none",
+          transition: "height 0.35s ease",
+        }}
         onPointerDown={onPointerDown}
         role="list"
-        aria-label="3D Status World — drag to rotate citizens"
+        aria-label="3D Status World — rotate citizen identities"
       >
-        {loading && (
+        {loading && !identities.length && (
           <div className="absolute inset-0 flex items-center justify-center text-[12px] z-20" style={{ color: "rgba(255,255,255,0.5)" }}>Loading Status…</div>
         )}
-
-        {/* Floor / horizon line for depth */}
-        <div className="pointer-events-none absolute left-[10%] right-[10%] bottom-3 h-px opacity-30" style={{ background: "linear-gradient(90deg,transparent,rgba(14,154,167,0.6),transparent)" }} />
+        <div className="pointer-events-none absolute left-[12%] right-[12%] bottom-2 h-px opacity-25" style={{ background: "linear-gradient(90deg,transparent,rgba(14,154,167,0.7),transparent)" }} />
 
         <div
-          className="absolute left-1/2 top-[48%] w-0 h-0"
+          className="absolute left-1/2 top-[46%] w-0 h-0"
           style={{
             transformStyle: "preserve-3d",
-            transform: `translate(-50%,-50%) rotateX(8deg) rotateY(${rot}rad)`,
+            transform: `translate(-50%,-50%) rotateX(${focusLayer ? 14 : 8}deg) rotateY(${rot}rad)`,
             transition: dragging ? "none" : "transform 0.5s cubic-bezier(0.22,1,0.36,1)",
           }}
         >
-          {items.map((s, i) => {
+          {identities.map((idn, i) => {
             const ang = i * angleStep;
             const isFocal = i === focal;
-            const radius = 130;
-            // Secondary layer: slight downward offset when not focal (spatial depth)
-            const yLift = isFocal ? 0 : 10;
-            const u = s.user || {};
-            const isMe = String(s.user_id) === meId;
-            const thumb = s.thumbnail_url || (s.content_type === "photo" ? s.media_url : null) || u.avatar_url;
-            const hasContent = !s.isPlaceholder && !!(s.media_url || s.body_text || s.activity_label || s.location_label);
+            const radius = focusLayer ? 100 : 132;
+            // Layer B depth: non-focal sit lower/back
+            const yLift = isFocal ? (focusLayer ? -6 : 0) : (focusLayer ? 18 : 12);
+            const u = idn.user || {};
+            const isYou = String(idn.user_id) === meId;
+            const has = !!idn.has_status && (idn.items?.length > 0 || idn.primary);
+            const thumb = idn.primary?.thumbnail_url
+              || (idn.primary?.content_type === "photo" ? idn.primary?.media_url : null)
+              || u.avatar_url;
+            const size = focusLayer ? (isFocal ? 48 : 34) : (isFocal ? 72 : 50);
             const ring = isFocal
               ? "3px solid #0E9AA7"
-              : hasContent
-                ? "2px solid rgba(14,154,167,0.55)"
-                : "2px dashed rgba(255,255,255,0.35)";
-            const size = isFocal ? 70 : 52;
+              : has
+                ? "2px solid rgba(14,154,167,0.5)"
+                : "2px dashed rgba(255,255,255,0.32)";
             return (
               <button
-                key={s.id || `s-${i}`}
+                key={idn.user_id || i}
                 type="button"
                 role="listitem"
                 className="absolute flex flex-col items-center outline-none"
                 style={{
-                  width: size + 8,
+                  width: size + 10,
                   transform: `rotateY(${ang}rad) translateZ(${radius}px) translateY(${yLift}px) rotateY(${-ang - rot}rad)`,
-                  marginLeft: -(size + 8) / 2,
-                  marginTop: -(size / 2 + 12),
-                  zIndex: isFocal ? 8 : 2,
+                  marginLeft: -(size + 10) / 2,
+                  marginTop: -(size / 2 + 10),
+                  zIndex: isFocal ? 10 : 2,
                   transition: dragging ? "none" : "transform 0.5s cubic-bezier(0.22,1,0.36,1)",
+                  opacity: focusLayer && !isFocal ? 0.55 : (isFocal ? 1 : 0.82),
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (dragRef.current.moved) return;
-                  if (isFocal) openFocal(i);
-                  else snapTo(i);
+                  if (isFocal) openFocus(i);
+                  else {
+                    snapTo(i);
+                    if (focusLayer) openFocus(i);
+                  }
                 }}
-                aria-label={`${isMe ? "Your" : (u.name || "Citizen")} Status`}
+                aria-label={`${isYou ? "Your" : (u.name || "Citizen")} Status`}
               >
                 <div
                   className="rounded-full overflow-hidden relative"
@@ -10718,148 +10790,127 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
                     height: size,
                     border: ring,
                     boxShadow: isFocal
-                      ? "0 0 0 4px rgba(14,154,167,0.22), 0 12px 28px rgba(0,0,0,0.45)"
-                      : "0 6px 16px rgba(0,0,0,0.3)",
+                      ? "0 0 0 4px rgba(14,154,167,0.2), 0 10px 24px rgba(0,0,0,0.4)"
+                      : "0 5px 14px rgba(0,0,0,0.28)",
                     background: "linear-gradient(145deg,#1a3a44,#0E9AA7)",
-                    opacity: isFocal ? 1 : 0.78,
-                    transform: isFocal ? "scale(1.05)" : "scale(1)",
-                    transition: "transform 0.3s ease, opacity 0.3s ease",
+                    transform: isFocal && !focusLayer ? "scale(1.06)" : "scale(1)",
                   }}
                 >
                   {thumb ? (
                     <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" draggable={false} />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: isFocal ? 22 : 16 }}>
+                    <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: size * 0.32 }}>
                       {(u.name || "?").slice(0, 1).toUpperCase()}
                     </div>
                   )}
-                  {/* Live content pulse ring */}
-                  {hasContent && (
-                    <span
-                      className="absolute inset-0 rounded-full pointer-events-none"
-                      style={{
-                        boxShadow: isFocal ? "inset 0 0 0 2px rgba(14,154,167,0.5)" : "none",
-                        animation: isFocal ? "statusBreathe 2.4s ease-in-out infinite" : "none",
-                      }}
-                    />
+                  {has && isFocal && !focusLayer && (
+                    <span className="absolute inset-0 rounded-full pointer-events-none" style={{ animation: "statusBreathe 2.4s ease-in-out infinite" }} />
                   )}
-                  {isMe && !hasContent && (
-                    <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white text-2xl font-light">+</span>
+                  {isYou && !has && (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xl font-light">+</span>
                   )}
                 </div>
-                <span
-                  className="mt-1.5 text-[10px] font-semibold truncate text-center"
-                  style={{
-                    maxWidth: size + 12,
-                    color: isFocal ? "#fff" : "rgba(255,255,255,0.62)",
-                    textShadow: "0 1px 4px rgba(0,0,0,0.55)",
-                  }}
-                >
-                  {isMe ? "You" : (u.name || "Citizen").split(" ")[0]}
-                </span>
+                {!focusLayer && (
+                  <span
+                    className="mt-1.5 text-[10px] font-semibold truncate text-center"
+                    style={{ maxWidth: size + 14, color: isFocal ? "#fff" : "rgba(255,255,255,0.6)", textShadow: "0 1px 4px rgba(0,0,0,0.55)" }}
+                  >
+                    {isYou ? "You" : (u.name || "Citizen").split(" ")[0]}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Focal dots */}
-      <div className="px-3 pb-2.5 flex justify-center gap-1.5 flex-wrap">
-        {items.slice(0, 16).map((_, i) => (
-          <button
-            key={i}
-            type="button"
-            aria-label={`Go to status ${i + 1}`}
-            onClick={() => snapTo(i)}
-            className="w-1.5 h-1.5 rounded-full transition-all"
-            style={{
-              background: i === focal ? CT.accent : "rgba(255,255,255,0.22)",
-              transform: i === focal ? "scale(1.35)" : "scale(1)",
-            }}
-          />
-        ))}
-      </div>
+      {!focusLayer && (
+        <div className="px-3 pb-2.5 flex justify-center gap-1.5 flex-wrap">
+          {identities.slice(0, 16).map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              aria-label={`Focus citizen ${i + 1}`}
+              onClick={() => snapTo(i)}
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: i === focal ? CT.accent : "rgba(255,255,255,0.2)", transform: i === focal ? "scale(1.4)" : "scale(1)" }}
+            />
+          ))}
+        </div>
+      )}
 
-      {/* Spatial Status viewer — environment, not conventional modal */}
-      {viewing && (
-        <div
-          className="fixed inset-0 z-[130] flex flex-col"
-          style={{ background: "radial-gradient(ellipse at 50% 40%, #0F2A32 0%, #050C10 75%)" }}
-          role="dialog"
-          aria-label="Status"
-        >
-          <div className="pointer-events-none absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 50% 85%, rgba(14,154,167,0.28), transparent 50%)" }} />
-          <div className="relative flex items-center gap-3 px-4 pt-[max(12px,env(safe-area-inset-top))] pb-2">
-            <button type="button" onClick={() => setViewing(null)} className="text-white/85 text-sm font-medium px-3 py-2 rounded-xl min-h-[40px]" style={{ background: "rgba(255,255,255,0.1)" }}>
-              Close
-            </button>
-            <button type="button" onClick={() => onOpenProfile?.(viewing.user_id)} className="flex items-center gap-2 flex-1 min-w-0">
-              <div className="w-10 h-10 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: CT.accent }}>
-                {viewing.user?.avatar_url
-                  ? <img src={viewing.user.avatar_url} alt="" className="w-full h-full object-cover" />
-                  : <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ background: CT.accent }}>{(viewing.user?.name || "?").slice(0, 1)}</div>}
-              </div>
-              <div className="min-w-0 text-left">
-                <div className="text-white font-semibold text-sm truncate">{viewing.user?.name || "Citizen"}</div>
-                <div className="text-white/45 text-[11px]">{viewing.content_type}{viewing.created_at ? ` · ${timeAgo(viewing.created_at)}` : ""}</div>
-              </div>
-            </button>
-            {String(viewing.user_id) !== meId && (
-              <button
-                type="button"
-                onClick={() => { onMessage?.(viewing.user || { id: viewing.user_id, name: viewing.user?.name }); setViewing(null); }}
-                className="text-[12px] font-bold px-3 py-2 rounded-full min-h-[36px]"
-                style={{ background: CT.accent, color: "#fff" }}
-              >
-                Message
+      {/* 3D Status Focus Layer — content emerges; ring stays spatially present above */}
+      {focusLayer && activeItem && (
+        <div className="relative z-20 px-3 pb-3 pt-1">
+          <div
+            className="rounded-2xl overflow-hidden mx-auto"
+            style={{
+              maxWidth: 420,
+              background: "rgba(8,22,28,0.92)",
+              border: "1px solid rgba(14,154,167,0.35)",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04)",
+            }}
+          >
+            <div className="flex items-center gap-2 px-3 py-2.5">
+              <button type="button" onClick={closeFocus} className="text-[12px] font-medium px-2.5 py-1.5 rounded-lg min-h-[36px]" style={{ color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.08)" }}>
+                Close
               </button>
-            )}
-          </div>
-          <div className="flex-1 flex items-center justify-center px-4 pb-6 min-h-0">
-            {viewing.content_type === "video" && viewing.media_url && (
-              <video
-                ref={mediaRef}
-                src={viewing.media_url}
-                controls
-                playsInline
-                autoPlay
-                className="max-h-full max-w-full rounded-2xl shadow-2xl"
-                style={{ maxHeight: "72vh" }}
-                onEnded={() => {
-                  const idx = statuses.findIndex((x) => x.id === viewing.id);
-                  if (idx < 0) return;
-                  const nextIdx = (idx + 1) % statuses.length;
-                  const next = statuses[nextIdx];
-                  if (next && !next.isPlaceholder && next.id !== viewing.id) {
-                    setFocal(nextIdx);
-                    setRot(-nextIdx * angleStep);
-                    openFocal(nextIdx);
-                  }
-                }}
-              />
-            )}
-            {viewing.content_type === "photo" && viewing.media_url && (
-              <img src={viewing.media_url} alt="" className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl" />
-            )}
-            {(viewing.content_type === "text" || viewing.content_type === "activity") && (
-              <div className="max-w-md w-full rounded-3xl p-8 text-center" style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)" }}>
-                <p className="text-white text-xl font-medium leading-relaxed" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
-                  {viewing.body_text || viewing.activity_label}
-                </p>
-              </div>
-            )}
-            {viewing.content_type === "location" && (
-              <div className="max-w-md w-full rounded-3xl p-8 text-center" style={{ background: "rgba(255,255,255,0.07)" }}>
-                <MapPin className="mx-auto mb-3 text-teal-300" size={32} />
-                <p className="text-white text-lg font-semibold">{viewing.location_label || viewing.body_text || "Location"}</p>
-              </div>
-            )}
-            {viewing.content_type === "voice" && viewing.media_url && (
-              <audio ref={mediaRef} src={viewing.media_url} controls autoPlay className="w-full max-w-md" />
-            )}
-          </div>
-          <div className="text-center pb-[max(16px,env(safe-area-inset-bottom))] text-[11px]" style={{ color: "rgba(255,255,255,0.38)" }}>
-            Rotate · next citizen moves into focus — not a Reels feed
+              <button type="button" onClick={() => onOpenProfile?.(focusLayer.identity.user_id)} className="flex-1 min-w-0 text-left">
+                <div className="text-white text-sm font-semibold truncate">{focusLayer.identity.user?.name || "Citizen"}</div>
+                <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                  {activeItem.content_type}
+                  {activeItem.created_at ? ` · ${timeAgo(activeItem.created_at)}` : ""}
+                  {(focusLayer.identity.items?.length || 0) > 1 ? ` · ${focusLayer.itemIndex + 1}/${focusLayer.identity.items.length}` : ""}
+                </div>
+              </button>
+              {String(focusLayer.identity.user_id) !== meId && (
+                <button
+                  type="button"
+                  onClick={() => { onMessage?.(focusLayer.identity.user || { id: focusLayer.identity.user_id }); closeFocus(); }}
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-full min-h-[36px]"
+                  style={{ background: CT.accent, color: "#fff" }}
+                >
+                  Message
+                </button>
+              )}
+            </div>
+            <div className="flex items-center justify-center px-3 pb-3 min-h-[180px] max-h-[52vh]">
+              {activeItem.content_type === "video" && activeItem.media_url && (
+                <video
+                  key={activeItem.id}
+                  ref={mediaRef}
+                  src={activeItem.media_url}
+                  controls
+                  playsInline
+                  autoPlay
+                  className="max-h-[48vh] w-full rounded-xl object-contain bg-black"
+                  onEnded={advanceFocus}
+                />
+              )}
+              {activeItem.content_type === "photo" && activeItem.media_url && (
+                <img src={activeItem.media_url} alt="" className="max-h-[48vh] w-full rounded-xl object-contain" onClick={advanceFocus} />
+              )}
+              {(activeItem.content_type === "text" || activeItem.content_type === "activity") && (
+                <button type="button" onClick={advanceFocus} className="w-full rounded-xl p-6 text-center" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <p className="text-white text-lg font-medium leading-relaxed" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
+                    {activeItem.body_text || activeItem.activity_label}
+                  </p>
+                </button>
+              )}
+              {activeItem.content_type === "location" && (
+                <button type="button" onClick={advanceFocus} className="w-full rounded-xl p-6 text-center" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <MapPin className="mx-auto mb-2 text-teal-300" size={28} />
+                  <p className="text-white text-base font-semibold">{activeItem.location_label || activeItem.body_text || "Location"}</p>
+                </button>
+              )}
+              {activeItem.content_type === "voice" && activeItem.media_url && (
+                <audio key={activeItem.id} ref={mediaRef} src={activeItem.media_url} controls autoPlay className="w-full" onEnded={advanceFocus} />
+              )}
+            </div>
+            <div className="px-3 pb-2.5 flex items-center justify-between text-[10px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+              <span>Surrounding identities stay in the ring</span>
+              <button type="button" onClick={advanceFocus} className="font-semibold px-2 py-1 rounded-md" style={{ color: CT.accent }}>Next →</button>
+            </div>
           </div>
         </div>
       )}
@@ -10867,6 +10918,8 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
       {showCreate && (
         <StatusCreateSheet
           currentUser={currentUser}
+          maxSec={maxSec}
+          defaultExpiresHours={config.default_expires_hours || 24}
           onClose={() => setShowCreate(false)}
           onSubmit={createStatus}
         />
@@ -10874,19 +10927,20 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
 
       <style>{`
         @keyframes statusBreathe {
-          0%, 100% { box-shadow: inset 0 0 0 2px rgba(14,154,167,0.35); }
-          50% { box-shadow: inset 0 0 0 3px rgba(14,154,167,0.7); }
+          0%, 100% { box-shadow: inset 0 0 0 2px rgba(14,154,167,0.3); }
+          50% { box-shadow: inset 0 0 0 3px rgba(14,154,167,0.75); }
         }
       `}</style>
     </div>
   );
 }
 
-function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
+function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX_SEC, defaultExpiresHours = 24 }) {
   const [kind, setKind] = useState("text");
   const [text, setText] = useState("");
   const [activity, setActivity] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
+  const [visibility, setVisibility] = useState("everyone");
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [duration, setDuration] = useState(null);
@@ -10918,9 +10972,9 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
         return;
       }
       const d = v.duration;
-      if (!Number.isFinite(d) || d > STATUS_MAX_SEC) {
+      if (!Number.isFinite(d) || d > maxSec) {
         URL.revokeObjectURL(url);
-        setErr(`Video must be ${STATUS_MAX_SEC} seconds or less (yours is ${Math.round(d || 0)}s).`);
+        setErr(`Video must be ${maxSec} seconds or less (yours is ${Math.round(d || 0)}s).`);
         setFile(null); setPreview(null); setDuration(null);
         return;
       }
@@ -10935,9 +10989,9 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
       a.src = url;
       await new Promise((res) => { a.onloadedmetadata = res; a.onerror = res; });
       const d = a.duration;
-      if (Number.isFinite(d) && d > STATUS_MAX_SEC) {
+      if (Number.isFinite(d) && d > maxSec) {
         URL.revokeObjectURL(url);
-        setErr(`Voice must be ${STATUS_MAX_SEC}s or less.`);
+        setErr(`Voice must be ${maxSec}s or less.`);
         return;
       }
       setDuration(Number.isFinite(d) ? d : 1);
@@ -10975,10 +11029,10 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
       mr.start(200);
       const tick = setInterval(() => {
         setRecSec((sec) => {
-          if (sec + 1 >= STATUS_MAX_SEC) {
+          if (sec + 1 >= maxSec) {
             clearInterval(tick);
             try { mr.stop(); } catch { /* */ }
-            return STATUS_MAX_SEC;
+            return maxSec;
           }
           return sec + 1;
         });
@@ -11001,9 +11055,7 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
     fd.append("file", f);
     fd.append("folder", "status-media");
     let res = await merveilFetch("/api/upload?folder=status-media", { method: "POST", body: fd }).catch(() => null);
-    if (!res || !res.ok) {
-      res = await merveilFetch("/api/world?action=upload", { method: "POST", body: fd }).catch(() => null);
-    }
+    if (!res || !res.ok) res = await merveilFetch("/api/world?action=upload", { method: "POST", body: fd }).catch(() => null);
     if (res && res.ok) {
       const data = await res.json();
       return data.url || data.media_url || data.publicUrl || null;
@@ -11037,7 +11089,9 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
         media_url,
         media_mime,
         media_duration_seconds: (kind === "video" || kind === "voice") ? duration : null,
-        audience: "everyone",
+        visibility,
+        audience: visibility === "circle" ? "circle" : "everyone",
+        expires_hours: defaultExpiresHours,
       };
       if (kind === "text" && !payload.body_text) throw new Error("Write something for your Status.");
       if (kind === "activity" && !payload.activity_label) throw new Error("Describe your activity.");
@@ -11059,9 +11113,15 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
     { id: "location", label: "Location" },
     { id: "activity", label: "Activity" },
   ];
+  const visOptions = [
+    { id: "everyone", label: "Everyone" },
+    { id: "citizens", label: "Citizens" },
+    { id: "circle", label: "My Circle" },
+    { id: "nobody", label: "Nobody" },
+  ];
 
   return (
-    <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center" style={{ background: "rgba(6,16,21,0.75)" }} role="dialog">
+    <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center" style={{ background: "rgba(6,16,21,0.78)" }} role="dialog">
       <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl" style={{ background: CT.panel, maxHeight: "92vh" }}>
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: CT.line }}>
           <button type="button" onClick={onClose} className="text-sm font-medium min-h-[40px]" style={{ color: CT.sub }}>Cancel</button>
@@ -11072,18 +11132,26 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
         </div>
         <div className="px-4 py-3 flex gap-1.5 overflow-x-auto">
           {kinds.map((k) => (
-            <button
-              key={k.id}
-              type="button"
-              onClick={() => { setKind(k.id); setErr(""); }}
+            <button key={k.id} type="button" onClick={() => { setKind(k.id); setErr(""); }}
               className="shrink-0 text-[12px] font-semibold px-3 py-1.5 rounded-full min-h-[36px]"
-              style={{ background: kind === k.id ? CT.accent : CT.panelHover, color: kind === k.id ? "#fff" : CT.sub }}
-            >
+              style={{ background: kind === k.id ? CT.accent : CT.panelHover, color: kind === k.id ? "#fff" : CT.sub }}>
               {k.label}
             </button>
           ))}
         </div>
-        <div className="px-4 pb-6 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+        <div className="px-4 pb-2">
+          <div className="text-[11px] font-semibold mb-1.5" style={{ color: CT.sub }}>Who can see</div>
+          <div className="flex gap-1.5 flex-wrap">
+            {visOptions.map((v) => (
+              <button key={v.id} type="button" onClick={() => setVisibility(v.id)}
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full min-h-[32px]"
+                style={{ background: visibility === v.id ? "rgba(14,154,167,0.15)" : CT.panelHover, color: visibility === v.id ? CT.accent : CT.sub, border: visibility === v.id ? `1px solid ${CT.accent}` : "1px solid transparent" }}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="px-4 pb-6 overflow-y-auto" style={{ maxHeight: "52vh" }}>
           {(kind === "text" || kind === "activity") && (
             <textarea
               value={kind === "activity" ? activity : text}
@@ -11095,37 +11163,29 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
             />
           )}
           {kind === "location" && (
-            <input
-              value={locationLabel}
-              onChange={(e) => setLocationLabel(e.target.value)}
+            <input value={locationLabel} onChange={(e) => setLocationLabel(e.target.value)}
               placeholder="Where are you? e.g. Dubai Marina"
               className="w-full rounded-2xl border px-3 py-3 text-sm outline-none"
-              style={{ borderColor: CT.line, color: CT.ink, background: "#FAFAF8" }}
-            />
+              style={{ borderColor: CT.line, color: CT.ink, background: "#FAFAF8" }} />
           )}
           {(kind === "photo" || kind === "video") && (
             <div>
               <input ref={fileRef} type="file" accept={kind === "video" ? "video/*" : "image/*"} className="hidden" onChange={onFile} />
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
+              <button type="button" onClick={() => fileRef.current?.click()}
                 className="w-full py-8 rounded-2xl border-2 border-dashed text-sm font-medium"
-                style={{ borderColor: CT.line, color: CT.sub }}
-              >
-                {preview ? "Change media" : `Choose ${kind} (max ${STATUS_MAX_SEC}s for video)`}
+                style={{ borderColor: CT.line, color: CT.sub }}>
+                {preview ? "Change media" : `Choose ${kind} (max ${maxSec}s for video)`}
               </button>
               {preview && kind === "photo" && <img src={preview} alt="" className="mt-3 max-h-48 mx-auto rounded-xl" />}
               {preview && kind === "video" && <video src={preview} controls className="mt-3 max-h-48 mx-auto rounded-xl w-full" />}
-              {duration != null && (
-                <div className="text-[11px] mt-1 text-center" style={{ color: CT.sub }}>{Number(duration).toFixed(1)}s / {STATUS_MAX_SEC}s max</div>
-              )}
+              {duration != null && <div className="text-[11px] mt-1 text-center" style={{ color: CT.sub }}>{Number(duration).toFixed(1)}s / {maxSec}s max</div>}
             </div>
           )}
           {kind === "voice" && (
             <div className="text-center py-4">
               {!recording && !preview && (
                 <button type="button" onClick={startVoice} className="px-6 py-3 rounded-full font-bold text-white" style={{ background: CT.accent }}>
-                  Record voice (max {STATUS_MAX_SEC}s)
+                  Record voice (max {maxSec}s)
                 </button>
               )}
               {recording && (
@@ -11139,7 +11199,7 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit }) {
           )}
           {err && <div className="mt-3 text-[12px] font-medium" style={{ color: "#E0554C" }}>{err}</div>}
           <p className="mt-4 text-[11px] leading-relaxed" style={{ color: CT.sub }}>
-            Status appears as your circular identity on Connect. Video and voice max {STATUS_MAX_SEC}s. Spatial rotation — not a vertical Reels feed.
+            Circular identity on Connect. Rotate the 3D world — not a vertical feed. Video/voice max {maxSec}s. Expires in ~{defaultExpiresHours}h (server config).
           </p>
         </div>
       </div>
