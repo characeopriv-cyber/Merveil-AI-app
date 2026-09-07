@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { MachineProvisioningInput } from '../domain/machine';
 import { MachineService } from './machine.service';
-import { Principal, requirePrincipal } from '../auth/principal';
+import { Principal, requirePrincipal, requireRole } from '../auth/principal';
 
 type RequestWithPrincipal = { user?: Principal };
 
@@ -21,12 +21,13 @@ export class MachineController {
 
   @Post()
   provision(@Req() req: RequestWithPrincipal, @Body() body: Omit<MachineProvisioningInput, 'tenantId'>) {
-    const principal = requirePrincipal(req.user);
+    const principal = requireRole(req.user, 'owner', 'admin', 'operator');
     return this.machines.provision({ ...body, tenantId: principal.tenantId });
   }
 
   @Post(':id/activate')
   activate(@Req() req: RequestWithPrincipal, @Param('id') id: string) {
-    return this.machines.activate(requirePrincipal(req.user).tenantId, id);
+    const principal = requireRole(req.user, 'owner', 'admin', 'operator');
+    return this.machines.activate(principal.tenantId, id);
   }
 }
