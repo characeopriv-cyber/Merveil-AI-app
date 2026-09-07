@@ -1118,6 +1118,39 @@ video { max-width: 100%; object-fit: cover; }
   50% { transform: translateY(-8px); opacity: 1; }
 }
 
+/* Merveil AI circular 3D Mini — floating, short brand only */
+.merveil-ai-mini { filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35)); }
+.merveil-ai-mini-orb {
+  width: 52px; height: 52px; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 30% 28%, #5EEAD4 0%, #0E9AA7 42%, #0A5F6A 100%);
+  border: 1.5px solid rgba(255,255,255,0.55);
+  box-shadow:
+    inset 0 2px 4px rgba(255,255,255,0.35),
+    inset 0 -3px 6px rgba(0,0,0,0.25),
+    0 6px 16px rgba(14,154,167,0.35);
+  animation: merveil-mini-float 4.5s ease-in-out infinite;
+  transform-style: preserve-3d;
+}
+.merveil-ai-mini-text {
+  font-size: 7px; font-weight: 800; letter-spacing: 0.02em; color: #fff;
+  text-align: center; line-height: 1.05; max-width: 44px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+}
+.merveil-ai-mini-ai {
+  margin-top: 1px; font-size: 6px; font-weight: 700; color: rgba(255,255,255,0.9);
+  letter-spacing: 0.12em;
+}
+@keyframes merveil-mini-float {
+  0%, 100% { transform: translateY(0) rotateX(0deg) rotateY(0deg); }
+  25% { transform: translateY(-5px) rotateX(6deg) rotateY(-8deg); }
+  50% { transform: translateY(-2px) rotateX(-4deg) rotateY(6deg); }
+  75% { transform: translateY(-6px) rotateX(5deg) rotateY(4deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .merveil-ai-mini-orb { animation: none; }
+}
 /* Merveil AI living watermark — continuous for full reel duration */
 @keyframes merveilMarkBreathe {
   0%, 100% { opacity: 0.72; }
@@ -2048,6 +2081,195 @@ function stableMergeById(prev, next, idKey = "id") {
 }
 
 /** Shallow field equality for a single record (used by catalog merges). */
+
+// ============================================================
+// MERVEIL UX FOUNDATION — badges, seen-store, presence, virtual
+// Spec: virtual scroll + counts + 🆕 + online dots + Mini mark
+// ============================================================
+
+/** Format badge numbers: 999 stays, 1000 → 1k, 1200 → 1.2k */
+function formatBadgeCount(n) {
+  const v = Number(n) || 0;
+  if (v <= 0) return "";
+  if (v < 1000) return String(v);
+  if (v < 10000) return (Math.round(v / 100) / 10).toFixed(1).replace(/\.0$/, "") + "k";
+  if (v < 1000000) return Math.round(v / 1000) + "k";
+  return (Math.round(v / 100000) / 10).toFixed(1).replace(/\.0$/, "") + "M";
+}
+
+/** Persistent "last seen" markers for section badges (local, per browser). */
+const MerveilSeen = {
+  get(key) {
+    try { return Number(localStorage.getItem("merveil_seen_" + key) || "0") || 0; } catch { return 0; }
+  },
+  set(key, ts = Date.now()) {
+    try { localStorage.setItem("merveil_seen_" + key, String(ts)); } catch {}
+  },
+  /** Count items newer than last seen. itemTs can be ms or ISO string. */
+  countNewer(key, items, getTs) {
+    const seen = MerveilSeen.get(key);
+    if (!Array.isArray(items) || !items.length) return 0;
+    let n = 0;
+    for (const it of items) {
+      const raw = getTs ? getTs(it) : (it.created_at || it.createdAt || it.updated_at || 0);
+      const ts = typeof raw === "number" ? raw : new Date(raw).getTime();
+      if (ts && ts > seen) n += 1;
+    }
+    return n;
+  },
+};
+
+/** 🆕 feature flags — local dismiss + optional forever-until-seen keys */
+const MerveilNewFlags = {
+  KEY: "merveil_new_flags_v1",
+  read() {
+    try { return JSON.parse(localStorage.getItem(this.KEY) || "{}") || {}; } catch { return {}; }
+  },
+  dismiss(id) {
+    const all = this.read();
+    all[id] = Date.now();
+    try { localStorage.setItem(this.KEY, JSON.stringify(all)); } catch {}
+  },
+  isNew(id, introducedAtMs) {
+    const all = this.read();
+    if (all[id]) return false; // user dismissed / opened
+    if (!introducedAtMs) return true;
+    // auto-expire feature 🆕 after 30 days of ship date if never opened
+    return Date.now() - introducedAtMs < 30 * 24 * 60 * 60 * 1000;
+  },
+};
+
+/** New citizen 🆕 for max 5 days from profile created_at / joined */
+function isNewCitizen(user, maxDays = 5) {
+  if (!user) return false;
+  const raw = user.created_at || user.createdAt || user.joined_at || user.joinedAt;
+  if (!raw) return false;
+  const ts = typeof raw === "number" ? raw : new Date(raw).getTime();
+  if (!ts || Number.isNaN(ts)) return false;
+  return Date.now() - ts < maxDays * 24 * 60 * 60 * 1000;
+}
+
+/** High-contrast presence colors (a11y) */
+const PRESENCE_COLORS = {
+  online: "#16A34A",  // green-600 — WCAG on dark & light chips
+  busy: "#D97706",    // amber-600
+  offline: "#94A3B8", // slate-400
+  away: "#94A3B8",
+};
+
+function PresenceDot({ status, size = 10, className = "", title }) {
+  const st = String(status || "offline").toLowerCase();
+  const color = PRESENCE_COLORS[st] || PRESENCE_COLORS.offline;
+  const live = st === "online" || st === "busy";
+  const label = st === "online" ? "Online" : st === "busy" ? "Busy" : "Offline";
+  return (
+    <span
+      className={className}
+      role="img"
+      aria-label={title || label}
+      title={title || label}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: color,
+        display: "inline-block",
+        boxShadow: live ? `0 0 0 2px rgba(255,255,255,0.95), 0 0 8px ${color}` : "0 0 0 2px rgba(255,255,255,0.9)",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+/** Compact badge pill for nav / tabs */
+function CountBadge({ count, tone = "brand" }) {
+  const n = Number(count) || 0;
+  if (n <= 0) return null;
+  const label = formatBadgeCount(n);
+  return (
+    <span
+      className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold tabular-nums"
+      style={{
+        background: tone === "danger" ? "#DC2626" : "var(--mv-brand, #0E9AA7)",
+        color: "#fff",
+        boxShadow: "0 0 0 1.5px var(--t-panel, #fff)",
+      }}
+      aria-label={`${n} new`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function NewEmojiBadge({ show, className = "" }) {
+  if (!show) return null;
+  return (
+    <span className={className} aria-label="New" title="New" style={{ fontSize: 11, lineHeight: 1 }}>
+      🆕
+    </span>
+  );
+}
+
+/**
+ * Circular floating 3D Mini “Merveil AI” mark for reels.
+ * Only short brand text — no long tagline.
+ */
+function MerveilAiMiniMark({ aiGenerated = false }) {
+  return (
+    <div
+      className="merveil-ai-mini absolute z-20 pointer-events-none"
+      style={{
+        right: "calc(12px + var(--safe-right, 0px))",
+        bottom: "calc(120px + var(--safe-bottom, 0px))",
+      }}
+      aria-hidden="true"
+    >
+      <div className="merveil-ai-mini-orb">
+        <span className="merveil-ai-mini-text">Merveil AI</span>
+        {aiGenerated && <span className="merveil-ai-mini-ai">AI</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Lightweight virtual window for fixed/approx-height rows.
+ * Renders only [start, end) indices with spacer divs.
+ */
+function VirtualWindow({ items, itemHeight = 72, overscan = 8, className = "", style = {}, renderItem, getKey }) {
+  const ref = useRef(null);
+  const [range, setRange] = useState({ start: 0, end: 20 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onScroll = () => {
+      const h = el.clientHeight || 600;
+      const top = el.scrollTop || 0;
+      const start = Math.max(0, Math.floor(top / itemHeight) - overscan);
+      const end = Math.min(items.length, Math.ceil((top + h) / itemHeight) + overscan);
+      setRange((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+    };
+    onScroll();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [items.length, itemHeight, overscan]);
+  const start = range.start;
+  const end = Math.min(items.length, Math.max(range.end, start + 1));
+  const slice = items.slice(start, end);
+  return (
+    <div ref={ref} className={className} style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", ...style }} data-merveil-scroll="1">
+      <div style={{ height: start * itemHeight }} aria-hidden="true" />
+      {slice.map((item, i) => {
+        const idx = start + i;
+        const key = getKey ? getKey(item, idx) : (item?.id ?? idx);
+        return <div key={key} style={{ minHeight: itemHeight }}>{renderItem(item, idx)}</div>;
+      })}
+      <div style={{ height: Math.max(0, (items.length - end) * itemHeight) }} aria-hidden="true" />
+    </div>
+  );
+}
+
+
 function shallowSameRecord(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -10148,7 +10370,7 @@ const CT = {
 };
 
 function connectPresenceDot(status) {
-  return { online: CT.online, busy: CT.busy, offline: CT.offline }[status] || CT.offline;
+  return PRESENCE_COLORS[status] || PRESENCE_COLORS.offline;
 }
 
 // Unfiltered presence: no id allow-list. `presence` SELECT RLS is public
@@ -10327,9 +10549,10 @@ function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
   return (
     <div
       className="flex items-center gap-3 mx-2 px-2.5 py-2.5 rounded-2xl transition-colors"
-      style={{ background: live ? "rgba(6,182,212,0.08)" : "transparent" }}
+      style={{ background: live ? "rgba(6,182,212,0.08)" : "transparent", minHeight: 44 }}
+      role="listitem"
     >
-      <button type="button" onClick={() => onProfile(user.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+      <button type="button" onClick={() => onProfile(user.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left" aria-label={`${user.name || "Citizen"}, ${statusLabel}`}>
         <div className="relative shrink-0">
           {user.avatar_url
             ? <img src={user.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: `1.5px solid ${live ? "rgba(6,182,212,0.45)" : CT.line}` }} />
@@ -10337,21 +10560,17 @@ function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
                 style={{ background: "linear-gradient(145deg,#0E9AA7,#06B6D4)", color: "#fff", border: `1.5px solid ${live ? "rgba(6,182,212,0.45)" : CT.line}` }}>
                 {(user.name || "?").slice(0, 1).toUpperCase()}
               </div>}
-          <span
-            className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full"
-            style={{
-              background: connectPresenceDot(status),
-              border: `2px solid ${CT.bg}`,
-              boxShadow: live ? `0 0 8px ${connectPresenceDot(status)}` : "none",
-            }}
-          />
+          <span className="absolute bottom-0 right-0" style={{ lineHeight: 0 }}>
+            <PresenceDot status={status} size={12} />
+          </span>
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="text-[15px] font-semibold truncate" style={{ color: CT.ink, fontFamily: "'Space Grotesk',sans-serif" }}>
               {user.name || "Merveil Citizen"}
             </span>
-            {trusted && <BadgeCheck size={14} style={{ color: CT.accent }} />}
+            <NewEmojiBadge show={isNewCitizen(user)} />
+            {trusted && <BadgeCheck size={14} style={{ color: CT.accent }} aria-label="Verified" />}
           </div>
           <div className="text-[12px] truncate flex items-center gap-1.5" style={{ color: CT.sub }}>
             {live && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: connectPresenceDot(status) }} />}
@@ -10524,9 +10743,22 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
               {rest.length > 0 && (
                 <>
                   <Section label={t("connect.network") || "Network"} count={rest.length} />
-                  {rest.map((u) => (
-                    <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
-                  ))}
+                  {rest.length > 40 ? (
+                    <VirtualWindow
+                      items={rest}
+                      itemHeight={72}
+                      overscan={10}
+                      style={{ maxHeight: "min(70vh, 640px)" }}
+                      getKey={(u) => u.id}
+                      renderItem={(u) => (
+                        <CitizenRow user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
+                      )}
+                    />
+                  ) : (
+                    rest.map((u) => (
+                      <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
+                    ))
+                  )}
                 </>
               )}
             </>
@@ -16903,30 +17135,9 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
       </span>
       )}
 
-      {/* Merveil AI signature — top, clear of poster + tools */}
+      {/* Circular 3D Mini brand — short “Merveil AI” only */}
       {!compact && (
-        <div
-          className="merveil-living-mark absolute z-20 text-left"
-          style={{
-            left: "calc(14px + var(--safe-left, 0px))",
-            top: "calc(56px + var(--safe-top, 0px))",
-            maxWidth: "42%",
-            textShadow: "0 1px 4px rgba(0,0,0,0.85), 0 0 14px rgba(0,0,0,0.4)",
-          }}
-          aria-hidden="true"
-        >
-          <div className="text-[10px] font-bold tracking-[0.16em] text-white" style={{ letterSpacing: "0.16em" }}>
-            MERVEIL AI
-          </div>
-          <div className="text-[8px] font-semibold tracking-[0.1em] text-white/80" style={{ marginTop: 1 }}>
-            INTELLIGENCE BEYOND INTERACTION
-          </div>
-          {(post.content_origin === "ai" || post._seed) && (
-            <div className="text-[8px] font-bold tracking-[0.12em]" style={{ marginTop: 2, color: "#5EEAD4" }}>
-              AI GENERATED
-            </div>
-          )}
-        </div>
+        <MerveilAiMiniMark aiGenerated={post.content_origin === "ai" || !!post._seed} />
       )}
 
       {compact ? (
@@ -17067,10 +17278,20 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
           <div className="absolute bottom-0 left-0 right-0 p-4 z-10" style={{ paddingRight: 80 }}>
             <button onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
               className="flex items-center gap-1.5 mb-2">
-              {post.owner_avatar
-                ? <img src={post.owner_avatar} alt="" className="w-8 h-8 rounded-full object-cover border-2" style={{ borderColor: "#fff" }}/>
-                : <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white border-2" style={{ background: "#06B6D4", borderColor: "#fff" }}>{(post.owner_name||"?")[0]}</div>}
-              <span className="text-sm font-semibold text-white">{post.owner_name || "Merveil Citizen"}</span>
+              <span className="relative inline-flex shrink-0">
+                {post.owner_avatar
+                  ? <img src={post.owner_avatar} alt="" className="w-8 h-8 rounded-full object-cover border-2" style={{ borderColor: "#fff" }}/>
+                  : <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white border-2" style={{ background: "#06B6D4", borderColor: "#fff" }}>{(post.owner_name||"?")[0]}</div>}
+                {(post.owner_status === "online" || post.owner_status === "busy" || post._ownerOnline) && (
+                  <span className="absolute -bottom-0.5 -right-0.5">
+                    <PresenceDot status={post.owner_status || "online"} size={9} />
+                  </span>
+                )}
+              </span>
+              <span className="text-sm font-semibold text-white inline-flex items-center gap-1">
+                {post.owner_name || "Merveil Citizen"}
+                {isNewCitizen({ created_at: post.owner_created_at }) && <NewEmojiBadge show />}
+              </span>
             </button>
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-block mb-1.5" style={{ background: "#0EA5E933", color: "#7DD3FC" }}>{post.topic}</span>
             <div className="text-base font-bold text-white mb-1">{post.title}</div>
@@ -29322,7 +29543,7 @@ function AppInner() {
     mvRegisterDevice().catch(() => {});
   }, [currentUser?.id]);
 
-  const [tabCounts, setTabCounts] = useState({ events: 0, jobs: 0 });
+  const [tabCounts, setTabCounts] = useState({ events: 0, jobs: 0, pulseFeed: 0, pulseReels: 0, world: 0 });
 
   // Analytics session id — stable for this browser tab's session, not
   // persisted beyond it. Lets the admin dashboard count unique visitors
@@ -29352,10 +29573,10 @@ function AppInner() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return;
-        const lastSeenJobs = Number(localStorage.getItem("jx_seen_jobs") || 0);
-        setTabCounts({
-          jobs: (tab === "market" && marketSubTab === "work") ? 0 : (Date.now() - lastSeenJobs < 48 * 60 * 60 * 1000 ? 0 : data.jobs),
-        });
+        setTabCounts((prev) => ({
+          ...prev,
+          jobs: (tab === "market" && marketSubTab === "work") ? 0 : (data.jobs || 0),
+        }));
       })
       .catch(() => {});
     poll();
@@ -29363,9 +29584,31 @@ function AppInner() {
     return () => clearInterval(id);
   }, [tab, marketSubTab]);
 
+  // Pulse / World badge totals from local catalogs (newer than last visit)
   useEffect(() => {
-    if (tab === "market" && marketSubTab === "work") localStorage.setItem("jx_seen_jobs", String(Date.now()));
-  }, [tab, marketSubTab]);
+    const feedItems = (properties || []).filter((p) => p && p.visibility !== "investor");
+    const reelItems = feedItems.filter((p) => p.video_url || p.media_type === "video" || p.isLive);
+    const pulseFeed = tab === "pulse" && pulseSubTab !== "reels" ? 0 : MerveilSeen.countNewer("pulse_feed", feedItems, (p) => p.created_at || p.updated_at);
+    const pulseReels = tab === "pulse" && pulseSubTab === "reels" ? 0 : MerveilSeen.countNewer("pulse_reels", reelItems, (p) => p.created_at || p.updated_at);
+    setTabCounts((prev) => {
+      if (prev.pulseFeed === pulseFeed && prev.pulseReels === pulseReels) return prev;
+      return { ...prev, pulseFeed, pulseReels };
+    });
+  }, [properties, tab, pulseSubTab]);
+
+  useEffect(() => {
+    if (tab === "market" && marketSubTab === "work") {
+      localStorage.setItem("jx_seen_jobs", String(Date.now()));
+      MerveilSeen.set("market_jobs");
+    }
+    // Entering a section clears its badge (Facebook-style). Sibling counts stay.
+    if (tab === "pulse") {
+      if (pulseSubTab === "reels") MerveilSeen.set("pulse_reels");
+      else MerveilSeen.set("pulse_feed");
+    }
+    if (tab === "world") MerveilSeen.set("world");
+    if (tab === "messages") MerveilSeen.set("connect");
+  }, [tab, marketSubTab, pulseSubTab]);
   const [verifyStatuses, setVerifyStatuses] = useState({});
   const [properties, setProperties] = useState([]); // real data only — no demo seed
   const [services, setServices] = useState([]); // real data only — no demo seed
@@ -30779,15 +31022,23 @@ function AppInner() {
                   }}>
                   <Icon size={17} strokeWidth={isActive ? 2.25 : 1.7} color={isActive ? "var(--mv-brand)" : "var(--mv-text-muted)"} />
                   {n.id === "messages" && unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center"
-                      style={{ background: "var(--mv-brand)", color: "#fff", boxShadow: "0 0 0 2px var(--t-panel)" }}>
-                      {unreadCount > 9 ? "9+" : unreadCount}
+                    <span className="absolute -top-0.5 -right-0.5">
+                      <CountBadge count={unreadCount} />
                     </span>
                   )}
                   {n.id === "market" && tabCounts.jobs > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center"
-                      style={{ background: "var(--mv-brand)", color: "#fff" }}>
-                      {tabCounts.jobs > 9 ? "9+" : tabCounts.jobs}
+                    <span className="absolute -top-0.5 -right-0.5">
+                      <CountBadge count={tabCounts.jobs} />
+                    </span>
+                  )}
+                  {n.id === "pulse" && (tabCounts.pulseFeed + tabCounts.pulseReels) > 0 && tab !== "pulse" && (
+                    <span className="absolute -top-0.5 -right-0.5">
+                      <CountBadge count={tabCounts.pulseFeed + tabCounts.pulseReels} />
+                    </span>
+                  )}
+                  {n.id === "world" && tabCounts.world > 0 && tab !== "world" && (
+                    <span className="absolute -top-0.5 -right-0.5">
+                      <CountBadge count={tabCounts.world} />
                     </span>
                   )}
                 </div>
