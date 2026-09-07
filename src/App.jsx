@@ -10175,8 +10175,8 @@ function IncomingConnectionRequests({ currentUser, onChanged }) {
   const load = useCallback(() => {
     if (!currentUser?.id) return;
     merveilFetch("/api/connections?action=list&kind=incoming")
-      .then((r) => (r.ok ? r.json() : { connections: [] }))
-      .then((d) => setRequests(d.connections || []))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setRequests(d.connections || []); })
       .catch(() => {});
   }, [currentUser?.id]);
 
@@ -10362,8 +10362,8 @@ function MyConnectionsPresence({ currentUser, onOpenChat }) {
     let cancelled = false;
     const load = () => {
       merveilFetch("/api/connections?action=list&kind=accepted")
-        .then((r) => (r.ok ? r.json() : { connections: [] }))
-        .then((d) => { if (!cancelled) setPeople((d.connections || []).map((c) => c.person).filter((p) => p?.id)); })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d) setPeople((d.connections || []).map((c) => c.person).filter((p) => p?.id)); })
         .catch(() => {})
         .finally(() => { if (!cancelled) setLoading(false); });
     };
@@ -12166,7 +12166,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       merveilFetch(`/api/conversations?action=directory&q=${encodeURIComponent(q)}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          if (cancelled) return;
+          if (cancelled || !data) return;
           const raw = data?.users || [];
           const users = raw.map((u) => {
             const { status, ...rest } = u;
@@ -12192,8 +12192,9 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const reloadConnections = useCallback(() => {
     if (!currentUser?.id) return;
     merveilFetch("/api/connections?action=list&kind=accepted")
-      .then((r) => (r.ok ? r.json() : { connections: [] }))
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
+        if (!d) return;
         const people = (d.connections || []).map((c) => c.person).filter((p) => p?.id);
         setConnectionPeople((prev) => stableMergeById(prev, people));
       })
@@ -26951,7 +26952,7 @@ function ProfileView({ currentUser, properties, services, onSignOut, onSignIn, o
     if (!currentUser?.id) return;
     fetch(`/api/circles?userId=${currentUser.id}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => setJoinedCircles(data?.circles || []))
+      .then((data) => { if (data?.circles) setJoinedCircles(data.circles); })
       .catch(() => {});
   }, [currentUser?.id]);
   const joinedCircleCodes = joinedCircles.map((c) => c.code);
@@ -28794,7 +28795,7 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
     if (!currentUser?.id) return;
     fetch(`/api/circles?userId=${currentUser.id}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => setJoinedCircles(data?.circles || []))
+      .then((data) => { if (data?.circles) setJoinedCircles(data.circles); })
       .catch(() => {});
   }, [currentUser?.id]);
 
