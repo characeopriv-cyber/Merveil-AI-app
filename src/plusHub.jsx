@@ -20,10 +20,28 @@ const FEATURES = [
   { label: "Community", icon: Users, tab: "community" },
   { label: "New to UAE", icon: Globe2, tab: "newcomer" },
   { label: "Sounds", icon: Volume2, tab: "sound" },
-  { label: "Arena", icon: Gamepad2, tab: "arena" },
-  { label: "AI Call", icon: Phone, tab: "ai-call" },
-  { label: "Wallet", icon: ReceiptText, tab: "transactions" },
+  { label: "Arena", icon: Gamepad2, tab: "arena", newId: "plus_arena", since: "2026-08-01" },
+  { label: "AI Call", icon: Phone, tab: "ai-call", newId: "plus_ai_call", since: "2026-08-15" },
+  { label: "Wallet", icon: ReceiptText, tab: "transactions", newId: "plus_wallet", since: "2026-09-01" },
 ];
+
+function plusIsNew(newId, since) {
+  if (!newId) return false;
+  try {
+    const all = JSON.parse(localStorage.getItem("merveil_new_flags_v1") || "{}") || {};
+    if (all[newId]) return false;
+    if (since && Date.now() - Date.parse(since) > 30 * 24 * 60 * 60 * 1000) return false;
+    return true;
+  } catch { return !!newId; }
+}
+function plusDismissNew(newId) {
+  if (!newId) return;
+  try {
+    const all = JSON.parse(localStorage.getItem("merveil_new_flags_v1") || "{}") || {};
+    all[newId] = Date.now();
+    localStorage.setItem("merveil_new_flags_v1", JSON.stringify(all));
+  } catch {}
+}
 
 /**
  * Ecosystem rooms — same origin, same Merveil brand.
@@ -292,13 +310,22 @@ function PlusHub() {
             </header>
 
             <div className="merveil-plus-list">
-              {FEATURES.map(({ label, icon: Icon, tab }) => (
-                <button key={label} type="button" className="merveil-plus-item" onClick={() => activate(label, tab)}>
-                  <span className="merveil-plus-icon">
+              {FEATURES.map(({ label, icon: Icon, tab, newId, since }) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="merveil-plus-item"
+                  aria-label={plusIsNew(newId, since) ? `${label}, new` : label}
+                  onClick={() => { plusDismissNew(newId); activate(label, tab); }}
+                >
+                  <span className="merveil-plus-icon" aria-hidden="true">
                     <Icon size={20} />
                   </span>
-                  <span className="merveil-plus-label">{label}</span>
-                  <ChevronRight size={18} className="merveil-plus-chevron" />
+                  <span className="merveil-plus-label">
+                    {label}
+                    {plusIsNew(newId, since) ? <span aria-hidden="true"> 🆕</span> : null}
+                  </span>
+                  <ChevronRight size={18} className="merveil-plus-chevron" aria-hidden="true" />
                 </button>
               ))}
             </div>
