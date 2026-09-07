@@ -1,35 +1,44 @@
-import { Body, Controller, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
 import { CommandStatus } from '../domain/command';
 import { CommandService } from './command.service';
 import { Principal } from '../auth/principal';
 import { requirePermission } from '../auth/permissions';
+import { MachineCredentialsService } from '../auth/machine-credentials.service';
 
-type RequestWithPrincipal = { user?: Principal };
-
-type CommandBody = {
-  capability: string;
-  parameters?: Record<string, unknown>;
-  idempotencyKey: string;
-  safetyClass?: 'control' | 'critical';
-};
+type RequestWithPrincipal = { user?: Principal; headers?: Record<string, string | string[] | undefined> };
+type CommandBody = { capability: string; parameters?: Record<string, unknown>; idempotencyKey: string; safetyClass?: 'control' | 'critical' };
 
 @Controller('api/machines')
 export class CommandController {
-  constructor(private readonly commands: CommandService) {}
+  constructor(private readonly commands: CommandService, private readonly credentials: MachineCredentialsService) {}
 
   @Post(':machineId/commands')
   request(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Body() body: CommandBody) {
     const principal = requirePermission(req.user, 'device.control');
-    return this.commands.request({
-      tenantId: principal.tenantId,
-      machineId,
-      requestedBy: principal.actorId,
-      capability: body.capability,
-      parameters: body.parameters ?? {},
-      idempotencyKey: body.idempotencyKey,
-      safetyClass: body.safetyClass ?? 'control',
-      capabilityKnown: true,
-    });
+    return this.commands.request({ tenantId: principal.tenantId, machineId, requestedBy: principal.actorId, capability: body.capability, parameters: body.parameters ?? {}, idempotencyKey: body.idempotencyKey, safetyClass: body.safetyClass ?? 'control', capabilityKnown: true });
+  }
+
+  @Post('commands/:commandId/dispatch')
+  dispatch(@Req() req: RequestWithPrincipal, @Param('commandId') commandId: string, @Body() body: { adapterId?: string }) {
+    const principal = requirePermission(req.user, 'device.control');
+    return this.commands.dispatch(principal.tenantId, commandId, body.adapterId);
+  }
+
+  @Post(':machineId/commands/:commandId/ack')
+  async acknowledgeMachine(@Req() req: RequestWithPrincipal, @Param('machineId') machineId: string, @Param('commandId') commandId: string) {
+    const credentialHeader = req.headers?.['x-machine-credential'];
+    const credential = Array.isArray(credentialHeader) ? credentialHeader[0] : credentialHeader;
+    if (!credential) throw new UnauthorizedException('Missing machine credential');
+    const principal = req.user;
+    if (!principal) throw new UnauthorizedException('Machine ACK requires authenticated machine principal');
+    await this.credentials.require(principal.tenantId, machineId, credential);
+    return this.commands.acknowledgeMachine(principal.tenantId, machineId, commandId);
+  }
+
+  @Post('commands/:commandId/ack')
+  acknowledge(@Req() req: RequestWithPrincipal, @Param('commandId') commandId: string) {
+    const principal = requirePermission(req.user, 'device.control');
+    return this.commands.transition(principal.tenantId, commandId, 'acknowledged');
   }
 
   @Post('commands/:commandId/transition')
