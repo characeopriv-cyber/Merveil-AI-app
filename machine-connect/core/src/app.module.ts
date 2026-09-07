@@ -8,8 +8,9 @@ import { OffensiveSecurityModule } from './security/offensive-security.module';
 import { RemediationModule } from './security/remediation.module';
 import { AdvancedModule } from './advanced/advanced.module';
 import { WorkflowModule } from './workflow/workflow.module';
+import { ServiceRequestModule } from './service-request/service-request.module';
 
 @Module({
-  imports: [MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule],
+  imports: [MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule],
 })
 export class AppModule {}
