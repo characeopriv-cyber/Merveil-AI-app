@@ -22,14 +22,14 @@ export class AuthMiddleware implements NestMiddleware {
       return;
     }
 
-    // Machine-to-machine traffic uses a short-lived-secret-equivalent credential
-    // stored only as a salted scrypt hash. The machine id is taken from the URL,
-    // never from a caller-controlled tenant id.
-    const machineId = path.match(/^\/api\/(?:telemetry|machine-auth)\/([^/]+)/)?.[1];
+    // Only the machine-originated ACK endpoint accepts machine credentials.
+    // Other /api/machines routes remain protected by human organization sessions.
+    const machineAck = path.match(/^\/api\/machines\/([^/]+)\/commands\/([^/]+)\/ack$/);
     const machineCredential = typeof req.headers['x-machine-credential'] === 'string'
       ? req.headers['x-machine-credential'].trim()
       : '';
-    if (machineId && machineCredential) {
+    if (machineAck && machineCredential) {
+      const machineId = machineAck[1];
       const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '');
       const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
       if (!supabaseUrl || !supabaseKey) throw new UnauthorizedException('Machine authentication is not configured');
