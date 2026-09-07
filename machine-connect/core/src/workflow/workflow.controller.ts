@@ -1,28 +1,33 @@
-import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { WorkflowService } from './workflow.service';
+import { Principal, requirePrincipal } from '../auth/principal';
+
+type RequestWithPrincipal = { user?: Principal };
 
 @Controller('api/workflows')
 export class WorkflowController {
   constructor(private readonly service: WorkflowService) {}
 
   @Post()
-  create(@Headers('x-tenant-id') tenantId: string, @Headers('x-actor-id') createdBy: string, @Body() body: { name: string; steps: { name: string; requiresApproval?: boolean }[] }) {
-    return this.service.createDefinition({ tenantId, createdBy, ...body });
+  create(@Req() req: RequestWithPrincipal, @Body() body: { name: string; steps: { name: string; requiresApproval?: boolean }[] }) {
+    const principal = requirePrincipal(req.user);
+    return this.service.createDefinition({ tenantId: principal.tenantId, createdBy: principal.actorId, ...body });
   }
 
   @Get()
-  list(@Headers('x-tenant-id') tenantId: string) { return this.service.listDefinitions(tenantId); }
+  list(@Req() req: RequestWithPrincipal) { return this.service.listDefinitions(requirePrincipal(req.user).tenantId); }
 
   @Post(':workflowId/instances')
-  start(@Headers('x-tenant-id') tenantId: string, @Headers('x-actor-id') requestedBy: string, @Param('workflowId') workflowId: string) {
-    return this.service.start(tenantId, workflowId, requestedBy);
+  start(@Req() req: RequestWithPrincipal, @Param('workflowId') workflowId: string) {
+    const principal = requirePrincipal(req.user);
+    return this.service.start(principal.tenantId, workflowId, principal.actorId);
   }
 
   @Get('instances')
-  instances(@Headers('x-tenant-id') tenantId: string) { return this.service.listInstances(tenantId); }
+  instances(@Req() req: RequestWithPrincipal) { return this.service.listInstances(requirePrincipal(req.user).tenantId); }
 
   @Get('instances/:instanceId/tasks')
-  tasks(@Headers('x-tenant-id') tenantId: string, @Param('instanceId') instanceId: string) {
-    return this.service.listTasks(tenantId, instanceId);
+  tasks(@Req() req: RequestWithPrincipal, @Param('instanceId') instanceId: string) {
+    return this.service.listTasks(requirePrincipal(req.user).tenantId, instanceId);
   }
 }
