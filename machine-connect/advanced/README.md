@@ -1,4 +1,4 @@
-# Machine Connect Advanced Modules
+# Machine Connect Advanced Services
 
 These modules extend the Digital Nation Builder without creating a second platform.
 
@@ -45,3 +45,7 @@ Edge AI may emit observations and evidence references. It does not issue command
 ## Cryptographic agility
 
 Identity/signature implementations should expose algorithm identifiers and provider interfaces. Do not hard-code experimental cryptography or invent post-quantum primitives. Production crypto providers should use current standardized algorithms and managed key custody.
+
+## Service boundaries
+
+Every advanced worker is an analysis/integration component. Authentication, tenant authorization, approval, safety policy, audit, and rate limits remain enforced by Machine Connect Core. No worker accepts arbitrary shell commands, arbitrary SQL, or direct physical-control instructions.
