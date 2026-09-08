@@ -2,8 +2,10 @@
   "name": "@merveil/machine-connect-offline-telemetry",
   "private": true,
   "version": "0.1.0",
+  "engines": { "node": ">=22" },
   "scripts": {
-    "start": "node offline_telemetry_processor.js"
+    "start": "node offline_telemetry_processor.js",
+    "check": "node --check offline_telemetry_processor.js"
   },
   "dependencies": {
     "mqtt": "^5.14.1",
