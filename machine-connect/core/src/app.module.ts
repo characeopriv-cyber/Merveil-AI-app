@@ -21,16 +21,15 @@ import { AdvancedAnalyticsModule } from './graph/advanced-analytics.module';
 import { DocumentModule } from './graph/document.module';
 import { DocumentEntityModule } from './graph/document-entity.module';
 import { ComplianceModule } from './compliance/compliance.module';
+import { SecurityEventModule } from './security/security-event.module';
 import { RateLimitMiddleware } from './security/rate-limit.middleware';
 
 @Module({
-  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, SecurityModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, SecurityModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule, SecurityEventModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(AuthMiddleware, RateLimitMiddleware)
-      .forRoutes({ path: 'api/(.*)', method: RequestMethod.ALL });
+    consumer.apply(AuthMiddleware, RateLimitMiddleware).forRoutes({ path: 'api/(.*)', method: RequestMethod.ALL });
   }
 }
