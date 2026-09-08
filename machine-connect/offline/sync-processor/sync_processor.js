@@ -29,37 +29,29 @@ async function claimBatch(client) {
   return result.rows;
 }
 
-async function markSuccess(client, row) {
-  await client.query(
-    `UPDATE sync_queue SET synced = true, synced_at = now(), claimed_at = NULL, claim_id = NULL, last_error = NULL
-     WHERE id = $1 AND claim_id = $2`, [row.id, row.claim_id]);
-  await client.query(
-    `UPDATE sync_checkpoints SET last_success_at = now(), last_queue_id = $1, last_error = NULL WHERE id = true`, [row.id]);
-}
-
 async function markFailure(client, row, error) {
   const attempts = Number(row.attempts || 0) + 1;
   const dead = attempts >= MAX_ATTEMPTS;
   const next = new Date(Date.now() + backoff(attempts));
+  const message = String(error?.message || error).slice(0, 4000);
   await client.query(
     `UPDATE sync_queue SET attempts = $1, last_error = $2, next_attempt_at = $3,
        dead_lettered = $4, claimed_at = NULL, claim_id = NULL
      WHERE id = $5 AND claim_id = $6`,
-    [attempts, String(error?.message || error).slice(0, 4000), next, dead, row.id, row.claim_id],
+    [attempts, message, next, dead, row.id, row.claim_id],
   );
   await client.query(
     `UPDATE sync_checkpoints SET last_failure_at = now(), last_queue_id = $1, last_error = $2 WHERE id = true`,
-    [row.id, String(error?.message || error).slice(0, 4000)],
+    [row.id, message],
   );
 }
 
 async function processRow(client, row) {
-  // This processor deliberately stops at the durable queue boundary. Cloud transport
-  // adapters consume the same queue records and must call an authenticated Core sync API.
-  // No offline process is allowed to bypass Core authorization or safety controls.
+  // Queue ownership/recovery only. A valid row stays pending until an authenticated
+  // cloud transport adapter has delivered it through Core and explicitly marks it synced.
   if (!row.table_name || !row.record_id || !row.operation) throw new Error('invalid sync queue record');
   if (row.data === null && row.operation !== 'delete') throw new Error('missing sync payload');
-  await markSuccess(client, row);
+  throw new Error('cloud sync transport is not configured');
 }
 
 async function tick() {
