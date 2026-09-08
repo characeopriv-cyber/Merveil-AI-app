@@ -27,25 +27,16 @@ export class MachineCredentialsService {
     if (this.db.enabled) {
       await this.db.request('machine_connect_credentials', {
         method: 'POST',
-        body: JSON.stringify({
-          machine_id: machineId,
-          organization_id: tenantId,
-          secret_hash: hash,
-          secret_salt: salt.toString('base64url'),
-        }),
+        body: JSON.stringify({ machine_id: machineId, organization_id: tenantId, secret_hash: hash, secret_salt: salt.toString('base64url') }),
       });
     }
-
     return { machineId, credential: secret };
   }
 
   async revoke(tenantId: string, machineId: string): Promise<{ machineId: string; revoked: boolean }> {
     await this.machines.get(tenantId, machineId);
     if (!this.db.enabled) return { machineId, revoked: false };
-    await this.db.request(
-      `machine_connect_credentials?machine_id=eq.${encodeURIComponent(machineId)}&organization_id=eq.${encodeURIComponent(tenantId)}&revoked_at=is.null`,
-      { method: 'PATCH', body: JSON.stringify({ revoked_at: new Date().toISOString() }) },
-    );
+    await this.db.request(`machine_connect_credentials?machine_id=eq.${encodeURIComponent(machineId)}&organization_id=eq.${encodeURIComponent(tenantId)}&revoked_at=is.null`, { method: 'PATCH', body: JSON.stringify({ revoked_at: new Date().toISOString() }) });
     return { machineId, revoked: true };
   }
 
@@ -56,20 +47,23 @@ export class MachineCredentialsService {
 
   async verify(tenantId: string, machineId: string, credential: string): Promise<boolean> {
     if (!credential.startsWith(PREFIX) || !this.db.enabled) return false;
-    const rows = await this.db.request<CredentialRow[]>(
-      `machine_connect_credentials?machine_id=eq.${encodeURIComponent(machineId)}&organization_id=eq.${encodeURIComponent(tenantId)}&revoked_at=is.null&order=created_at.desc&limit=1`,
-    );
+    const rows = await this.db.request<CredentialRow[]>(`machine_connect_credentials?machine_id=eq.${encodeURIComponent(machineId)}&organization_id=eq.${encodeURIComponent(tenantId)}&revoked_at=is.null&order=created_at.desc&limit=1`);
     if (!rows.length) return false;
-
     const row = rows[0];
     const supplied = scryptSync(credential, Buffer.from(row.secret_salt, 'base64url'), KEY_LENGTH);
     const stored = Buffer.from(row.secret_hash, 'base64url');
     return supplied.length === stored.length && timingSafeEqual(supplied, stored);
   }
 
+  async authenticate(machineId: string, credential: string): Promise<string> {
+    if (!credential.startsWith(PREFIX) || !this.db.enabled) throw new UnauthorizedException('Invalid or revoked machine credential');
+    const rows = await this.db.request<CredentialRow[]>(`machine_connect_credentials?machine_id=eq.${encodeURIComponent(machineId)}&revoked_at=is.null&order=created_at.desc&limit=1`);
+    const row = rows[0];
+    if (!row?.organization_id || !(await this.verify(row.organization_id, machineId, credential))) throw new UnauthorizedException('Invalid or revoked machine credential');
+    return row.organization_id;
+  }
+
   async require(tenantId: string, machineId: string, credential: string): Promise<void> {
-    if (!(await this.verify(tenantId, machineId, credential))) {
-      throw new UnauthorizedException('Invalid or revoked machine credential');
-    }
+    if (!(await this.verify(tenantId, machineId, credential))) throw new UnauthorizedException('Invalid or revoked machine credential');
   }
 }
