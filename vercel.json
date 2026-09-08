@@ -33,7 +33,7 @@
     { "source": "/", "has": [{ "type": "host", "value": "machine.connect.junction.technology" }], "destination": "/machine-connect.html" },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "machine.connect.junction.technology" }], "destination": "/machine-connect.html" },
     { "source": "/api/(.*)", "destination": "/api/router" },
-    { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/|developer(?:/|$)|developer-portal(?:/|$)|interface(?:/|$)|admin(?:/|$)|merveil-admin-x9k2(?:/|$)|onboarding(?:/|$)).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/|developer(?:/|$)|developer-portal(?:/|$)|interface(?:/|$)|admin(?:/|$)|merveil-admin-x9k2(?:/|$)|onboarding(?:/|$)|machine-connect\\.html(?:/|$)).*)", "destination": "/index.html" }
   ],
   "headers": [
     { "source": "/api/v1/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
