@@ -1,0 +1,24 @@
+services:
+  pulse-edge:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - pulse_data:/data
+    environment:
+      PULSE_DB_PATH: /data/pulse-edge.db
+      PULSE_MODE: offline
+    ports:
+      - "127.0.0.1:5000:5000"
+  mqtt:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+    ports:
+      - "127.0.0.1:1883:1883"
+
+volumes:
+  pulse_data:
+  mqtt_data:
+  mqtt_log:
