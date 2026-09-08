@@ -1,0 +1,35 @@
+name: Targeted Vite warning cleanup
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove known duplicate Arabic translation keys
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/App.jsx')
+          s = p.read_text(encoding='utf-8')
+          old = '''      "common.medium": "متوسط",\n      "common.large": "كبير",\n      "pulse.emptyTitle": "لا توجد ريلز عقارية بعد",'''
+          new = '''      "pulse.emptyTitle": "لا توجد ريلز عقارية بعد",'''
+          if old not in s:
+              raise SystemExit('target duplicate block not found; refusing unrelated edit')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Commit cleanup
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.jsx
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: remove duplicate Vite translation keys'
+          git push
