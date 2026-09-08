@@ -1,18 +1,15 @@
 import { Injectable, NestMiddleware, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { PrincipalRole } from './principal';
 import { MachineCredentialsService } from './machine-credentials.service';
+import { ApiKeyService } from '../security/api-key.service';
+import type { Permission } from './permissions';
 
-type RequestLike = {
-  url?: string;
-  headers: Record<string, string | string[] | undefined>;
-  user?: { actorId: string; tenantId: string; roles: PrincipalRole[]; authenticated: true };
-};
-
+type RequestLike = { url?: string; headers: Record<string, string | string[] | undefined>; user?: { actorId: string; tenantId: string; roles: PrincipalRole[]; authenticated: true; permissions?: Permission[] } };
 const PLATFORM_ROLES: PrincipalRole[] = ['owner', 'admin', 'operator', 'viewer', 'security_analyst', 'land_registry_officer', 'data_scientist'];
 
 @Injectable()
 export class AuthMiddleware implements NestMiddleware {
-  constructor(private readonly machineCredentials: MachineCredentialsService) {}
+  constructor(private readonly machineCredentials: MachineCredentialsService, private readonly apiKeys: ApiKeyService) {}
 
   async use(req: RequestLike, _res: unknown, next: () => void) {
     const path = (req.url ?? '').split('?')[0];
@@ -24,6 +21,13 @@ export class AuthMiddleware implements NestMiddleware {
       const machineId = machineRoute[1];
       const tenantId = await this.machineCredentials.authenticate(machineId, machineCredential);
       req.user = { actorId: `machine:${machineId}`, tenantId, roles: ['operator'], authenticated: true };
+      next(); return;
+    }
+
+    const apiKey = typeof req.headers['x-api-key'] === 'string' ? req.headers['x-api-key'].trim() : '';
+    if (apiKey) {
+      const principal = await this.apiKeys.authenticate(apiKey);
+      req.user = { actorId: principal.actorId, tenantId: principal.organizationId, roles: ['operator'], permissions: principal.scopes as Permission[], authenticated: true };
       next(); return;
     }
 

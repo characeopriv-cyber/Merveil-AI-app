@@ -8,10 +8,11 @@ import { PolicyService } from '../safety/policy.service';
 import { PersistenceModule } from '../persistence/persistence.module';
 import { EmergencyStopModule } from '../safety/emergency-stop.module';
 import { MachineCredentialsModule } from '../auth/machine-credentials.module';
+import { SecurityEventModule } from '../security/security-event.module';
 import { MachineAckSignatureService } from '../security/machine-ack-signature.service';
 
 @Module({
-  imports: [MachineModule, PersistenceModule, EmergencyStopModule, MachineCredentialsModule],
+  imports: [MachineModule, PersistenceModule, EmergencyStopModule, MachineCredentialsModule, SecurityEventModule],
   controllers: [CommandController],
   providers: [CommandService, CommandDispatcherService, CommandRetryWorker, PolicyService, MachineAckSignatureService],
   exports: [CommandService, CommandDispatcherService],

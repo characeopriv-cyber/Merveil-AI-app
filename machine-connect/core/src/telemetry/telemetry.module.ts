@@ -3,6 +3,13 @@ import { TelemetryController } from './telemetry.controller';
 import { TelemetryService } from './telemetry.service';
 import { PersistenceModule } from '../persistence/persistence.module';
 import { MachineModule } from '../machine/machine.module';
+import { TwinModule } from '../twin/twin.module';
+import { OperationsModule } from '../operations/operations.module';
 
-@Module({ imports: [PersistenceModule, MachineModule], controllers: [TelemetryController], providers: [TelemetryService], exports: [TelemetryService] })
+@Module({
+  imports: [PersistenceModule, MachineModule, TwinModule, OperationsModule],
+  controllers: [TelemetryController],
+  providers: [TelemetryService],
+  exports: [TelemetryService],
+})
 export class TelemetryModule {}

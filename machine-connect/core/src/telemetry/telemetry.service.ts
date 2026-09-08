@@ -1,15 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { TelemetryEnvelope } from '../domain/telemetry';
 import { SupabaseRest } from '../persistence/supabase-rest';
 import { MachineService } from '../machine/machine.service';
+import { TwinService } from '../twin/twin.service';
+import { OperationsService } from '../operations/operations.service';
 
 @Injectable()
 export class TelemetryService {
   private readonly records = new Map<string, TelemetryEnvelope[]>();
   private readonly seen = new Map<string, TelemetryEnvelope>();
 
-  constructor(private readonly db: SupabaseRest, private readonly machines: MachineService) {}
+  constructor(
+    private readonly db: SupabaseRest,
+    private readonly machines: MachineService,
+    @Optional() private readonly twins?: TwinService,
+    @Optional() private readonly operations?: OperationsService,
+  ) {}
 
   async append(input: Omit<TelemetryEnvelope, 'id' | 'receivedAt'>): Promise<TelemetryEnvelope> {
     await this.machines.get(input.tenantId, input.machineId);
@@ -32,8 +39,40 @@ export class TelemetryService {
         }),
       });
     }
+
     const list = this.records.get(input.machineId) ?? [];
     list.push(record); this.records.set(input.machineId, list); this.seen.set(key, record);
+
+    if (this.twins) {
+      const state = record.data && typeof record.data === 'object' && !Array.isArray(record.data)
+        ? record.data as Record<string, unknown>
+        : { value: record.data };
+      await this.twins.reconcile({
+        tenantId: record.tenantId,
+        machineId: record.machineId,
+        reportedState: state,
+        observedAt: record.observedAt,
+        source: `telemetry:${record.source}`,
+      });
+    }
+
+    // Publish one durable operational event after telemetry persistence/twin reconciliation.
+    // The telemetry id is the causation key, making retries/replays idempotent at the event layer.
+    if (this.operations) {
+      await this.operations.publish({
+        tenantId: record.tenantId,
+        machineId: record.machineId,
+        eventType: 'telemetry.received',
+        source: record.source,
+        occurredAt: record.observedAt,
+        causationId: record.id,
+        schemaVersion: record.schemaVersion,
+        payload: record.data && typeof record.data === 'object' && !Array.isArray(record.data)
+          ? record.data as Record<string, unknown>
+          : { value: record.data },
+      });
+    }
+
     return record;
   }
 
