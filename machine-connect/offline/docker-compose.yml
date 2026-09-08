@@ -42,8 +42,25 @@ services:
       MACHINE_CONNECT_PORT: 4100
       OFFLINE_MODE: "true"
       MQTT_URL: mqtt://emqx:1883
+      DATABASE_URL: postgres://${POSTGRES_USER:-mc}:${POSTGRES_PASSWORD:-mcpass}@postgres:5432/${POSTGRES_DB:-machineconnect}
     ports:
       - "4100:4100"
+    depends_on:
+      emqx:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  telemetry-processor:
+    build:
+      context: ./telemetry-processor
+    restart: unless-stopped
+    environment:
+      MQTT_URL: mqtt://emqx:1883
+      DATABASE_URL: postgres://${POSTGRES_USER:-mc}:${POSTGRES_PASSWORD:-mcpass}@postgres:5432/${POSTGRES_DB:-machineconnect}
+      MQTT_TELEMETRY_TOPIC: devices/+/telemetry
+      PG_POOL_MAX: 5
+      MAX_PAYLOAD_BYTES: 262144
     depends_on:
       emqx:
         condition: service_healthy
