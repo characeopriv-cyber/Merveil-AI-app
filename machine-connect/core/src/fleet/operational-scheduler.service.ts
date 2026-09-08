@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { SupabaseRest } from '../persistence/supabase-rest';
 import { RemediationService } from './remediation.service';
 
-/** Lightweight scheduler for durable fleet operations. It never creates fake device data. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Durable fleet remediation scheduler. It never invents machine/device data. */
 @Injectable()
 export class OperationalSchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OperationalSchedulerService.name);
@@ -23,24 +25,29 @@ export class OperationalSchedulerService implements OnModuleInit, OnModuleDestro
 
   async tick() {
     if (this.running || !this.db.enabled) return;
+    const actorId = process.env.MACHINE_CONNECT_SYSTEM_ACTOR_ID?.trim();
+    if (!actorId || !UUID_RE.test(actorId)) {
+      this.logger.warn('Remediation scheduler disabled: MACHINE_CONNECT_SYSTEM_ACTOR_ID must be a valid UUID');
+      return;
+    }
     this.running = true;
     try {
-      const fleets = await this.db.request<any[]>('machine_connect_fleets?select=id,organization_id&enabled=eq.true&limit=100');
+      const fleets = await this.db.request<any[]>('machine_connect_fleets?select=id,organization_id&order=created_at.asc&limit=100');
       for (const fleet of fleets) {
         try {
-          await this.remediation.evaluate(fleet.organization_id, fleet.id, 'system:scheduler');
+          await this.remediation.evaluate(fleet.organization_id, fleet.id, actorId);
         } catch (error: any) {
           this.logger.error(`fleet remediation failed ${fleet.id}: ${error?.message ?? 'unknown'}`);
-          await this.writeAudit(fleet.organization_id, fleet.id, false, error?.message ?? 'unknown');
+          await this.writeAudit(fleet.organization_id, fleet.id, actorId, error?.message ?? 'unknown');
         }
       }
     } finally { this.running = false; }
   }
 
-  private async writeAudit(organizationId: string, fleetId: string, success: boolean, error: string) {
+  private async writeAudit(organizationId: string, fleetId: string, actorId: string, error: string) {
     await this.db.request('machine_connect_operational_audit', {
       method: 'POST',
-      body: JSON.stringify({ organization_id: organizationId, fleet_id: fleetId, actor_id: 'system:scheduler', action: 'remediation.cycle', resource_type: 'fleet', resource_id: fleetId, outcome: success ? 'success' : 'failed', correlation_id: randomUUID(), details: { error } }),
+      body: JSON.stringify({ organization_id: organizationId, fleet_id: fleetId, actor_id: actorId, action: 'remediation.cycle', resource_type: 'fleet', resource_id: fleetId, outcome: 'failed', correlation_id: randomUUID(), details: { error } }),
     });
   }
 }
