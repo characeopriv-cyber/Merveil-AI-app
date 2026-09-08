@@ -11572,14 +11572,18 @@ function useUnfilteredPresence(currentUser) {
       const st = String(row.status || "online").toLowerCase();
       // Trust row if it has a recent updated_at; otherwise still accept explicit status
       // from live postgres_changes (always fresh on the wire).
+      // "away" (backgrounded tab) still counts as connected/online — a
+      // minimized app hasn't disconnected. Only an explicit "offline" write
+      // (real disconnect) or a genuinely stale row counts as offline.
       let status = "offline";
       if (st === "busy") status = "busy";
-      else if (st !== "offline" && st !== "away") status = "online";
-      // If updated_at is ancient (client closed long ago), force offline
+      else if (st !== "offline") status = "online";
+      // If updated_at is ancient (client crashed without sending the
+      // disconnect beacon), force offline. This is a safety net, not the
+      // primary offline signal — matches the server's 24h window.
       if (row.updated_at) {
         const age = Date.now() - new Date(row.updated_at).getTime();
-        // Server heartbeat window is the only expiry — mirrors "they're connected or not"
-        if (age > 5 * 60 * 1000) status = "offline";
+        if (age > 24 * 60 * 60 * 1000) status = "offline";
       }
       return { userId: String(row.user_id), status };
     };
@@ -31265,8 +31269,12 @@ function AppInner() {
   };
 
   // GLOBAL presence heartbeat — single source of truth for all tabs.
-  // Optimized vs 8s spam: only POST when status changes or interval elapses;
-  // 30s when visible (server cutoff 180s), 90s when backgrounded as "away".
+  // Facebook-style: a citizen stays "online" for as long as the app is
+  // open, including while backgrounded/minimized — connected is connected.
+  // We only report "offline" on a real disconnect (network loss, or the
+  // explicit tab-close beacon below), never just because the tab isn't
+  // in the foreground. Beats slow down in the background to save battery
+  // (90s vs 30s) but keep reporting the citizen's real status.
   // Connect no longer runs a second interval — it only writes preferred status.
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -31280,9 +31288,21 @@ function AppInner() {
       } catch { return "online"; }
     };
     const desired = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return "away";
       if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline";
       return preferred();
+    };
+    const beaconStatus = (status) => {
+      // sendBeacon survives a tab being backgrounded/suspended far more
+      // reliably than a normal fetch — mobile browsers can freeze JS
+      // execution moments after visibilitychange fires, killing an
+      // in-flight fetch before it lands. Beacon is fire-and-forget at the
+      // browser level, not tied to the page staying alive.
+      try {
+        return navigator.sendBeacon?.(
+          "/api/conversations?action=presence",
+          new Blob([JSON.stringify({ status })], { type: "application/json" })
+        );
+      } catch { return false; }
     };
     const postStatus = (status, force = false) => {
       const now = Date.now();
@@ -31290,17 +31310,26 @@ function AppInner() {
       if (!force && status === lastStatus && now - lastSentAt < 25000) return;
       lastStatus = status;
       lastSentAt = now;
+      // Going hidden: prefer sendBeacon since the page may be suspended
+      // right after this call returns. Otherwise use a normal fetch.
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      if (hidden && beaconStatus(status)) return;
       fetch("/api/conversations?action=presence", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
+        keepalive: hidden,
       }).catch(() => {});
     };
     const schedule = () => {
       if (timer) clearInterval(timer);
       const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-      // Visible: 30s. Background: 90s (still refreshes before 300s server cutoff). Session-long.
+      // Visible: 30s. Background: 90s — note mobile browsers/WebViews can
+      // suspend this timer entirely while backgrounded; the last status
+      // written before suspension is what sticks until the app resumes
+      // (handled by the 24h server-side safety net + explicit disconnect
+      // beacon below, not by this interval alone).
       timer = setInterval(() => postStatus(desired()), hidden ? 90000 : 30000);
     };
     const beat = (force = false) => {
@@ -31317,12 +31346,7 @@ function AppInner() {
     const goOffline = () => {
       lastStatus = "offline";
       lastSentAt = Date.now();
-      try {
-        navigator.sendBeacon?.(
-          "/api/conversations?action=presence",
-          new Blob([JSON.stringify({ status: "offline" })], { type: "application/json" })
-        );
-      } catch {}
+      if (beaconStatus("offline")) return;
       try {
         fetch("/api/conversations?action=presence", {
           method: "POST",
