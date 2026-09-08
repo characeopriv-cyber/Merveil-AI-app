@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Merveil Developer Project",
+  "type": "object",
+  "required": ["name", "runtime", "entry"],
+  "properties": {
+    "name": {"type": "string", "minLength": 1, "maxLength": 80},
+    "runtime": {"type": "string", "enum": ["nextjs", "node", "static"]},
+    "entry": {"type": "string", "minLength": 1},
+    "template": {"type": "string"},
+    "capabilities": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

@@ -19,6 +19,13 @@ import usage from '../server/merveil-v1/usage.js';
 import commercial from '../server/merveil-v1/commercial.js';
 import billing from '../server/merveil-v1/billing.js';
 import developerConfig from '../server/merveil-v1/developer/config.js';
+import developerProjects from '../server/merveil-v1/developer/projects-router.js';
+import providerCatalog from '../server/merveil-v1/developer/provider-catalog.js';
+import developerLanguages from '../server/merveil-v1/developer/languages.js';
+import developerExperience from '../server/merveil-v1/developer/experience.js';
+import developerProfile from '../server/merveil-v1/developer/profile.js';
+import developerBrief from '../server/merveil-v1/developer/brief.js';
+import developerVoice from '../server/merveil-v1/developer/voice.js';
 import { json, requestId } from '../server/merveil-v1/_lib.js';
 
 const routes = new Map([
@@ -28,7 +35,10 @@ const routes = new Map([
   ['investors', investors], ['credits', credits], ['verification', verification],
   ['oauth', oauth], ['webhooks', webhooks], ['apps', apps], ['usage', usage],
   ['organization', commercial], ['organizations', commercial], ['billing', billing],
-  ['developer/config', developerConfig]
+  ['developer/config', developerConfig], ['developer/projects', developerProjects],
+  ['developer/provider-catalog', providerCatalog], ['developer/languages', developerLanguages],
+  ['developer/experience', developerExperience], ['developer/profile', developerProfile],
+  ['developer/brief', developerBrief], ['developer/voice', developerVoice]
 ]);
 
 function routeFromRequest(req) {
