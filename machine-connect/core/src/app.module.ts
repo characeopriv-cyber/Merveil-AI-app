@@ -29,9 +29,10 @@ import { IntelligenceModule } from './intelligence/intelligence.module';
 import { TwinModule } from './twin/twin.module';
 import { OperationsModule } from './operations/operations.module';
 import { FleetModule } from './fleet/fleet.module';
+import { FleetIntelligenceModule } from './fleet-intelligence/fleet-intelligence.module';
 
 @Module({
-  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, SecurityModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule, SecurityEventModule, ApiKeyModule, ConnectorModule, IntelligenceModule, TwinModule, OperationsModule, FleetModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, SecurityModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule, SecurityEventModule, ApiKeyModule, ConnectorModule, IntelligenceModule, TwinModule, OperationsModule, FleetModule, FleetIntelligenceModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule {
