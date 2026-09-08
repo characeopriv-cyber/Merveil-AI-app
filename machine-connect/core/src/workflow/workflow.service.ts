@@ -1,85 +1,31 @@
 import { BadRequestException, Injectable, ForbiddenException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { WorkflowDefinition, WorkflowInstance, WorkflowTask, WorkflowTaskStatus } from './workflow.types';
+import { WorkflowDefinition, WorkflowInstance, WorkflowTask, WorkflowTaskStatus, WorkflowExecution } from './workflow.types';
+import { SupabaseRest } from '../persistence/supabase-rest';
+import { ClosedLoopService } from '../operations/closed-loop.service';
+import { OperationalEvent, OperationalRule } from '../operations/operations.types';
 
-const TASK_TRANSITIONS: Record<WorkflowTaskStatus, readonly WorkflowTaskStatus[]> = {
-  pending: ['in_progress', 'rejected', 'cancelled'],
-  in_progress: ['completed', 'rejected', 'cancelled'],
-  completed: [],
-  rejected: [],
-  cancelled: [],
-};
+const TASK_TRANSITIONS: Record<WorkflowTaskStatus, readonly WorkflowTaskStatus[]> = { pending:['in_progress','rejected','cancelled'], in_progress:['completed','rejected','cancelled'], completed:[], rejected:[], cancelled:[] };
 
 @Injectable()
 export class WorkflowService {
-  private readonly definitions = new Map<string, WorkflowDefinition>();
-  private readonly instances = new Map<string, WorkflowInstance>();
-  private readonly tasks = new Map<string, WorkflowTask>();
+  private readonly definitions=new Map<string,WorkflowDefinition>(); private readonly instances=new Map<string,WorkflowInstance>(); private readonly tasks=new Map<string,WorkflowTask>(); private readonly executions=new Map<string,WorkflowExecution>(); private readonly executionEvents=new Map<string,OperationalEvent>(); private readonly executionRules=new Map<string,OperationalRule>();
+  constructor(private readonly db:SupabaseRest, private readonly closedLoop:ClosedLoopService) {}
 
-  createDefinition(input: { tenantId: string; name: string; steps: WorkflowDefinition['steps']; createdBy: string }): WorkflowDefinition {
-    const name = input.name.trim();
-    if (!input.tenantId || !input.createdBy || !name || !input.steps.length || input.steps.length > 50) throw new BadRequestException('invalid workflow definition');
-    const steps = input.steps.map((step) => ({ name: step.name.trim(), requiresApproval: Boolean(step.requiresApproval) }));
-    if (steps.some((step) => !step.name || step.name.length > 120)) throw new BadRequestException('invalid workflow step');
-    const definition: WorkflowDefinition = { id: randomUUID(), tenantId: input.tenantId, name: name.slice(0, 160), steps, createdBy: input.createdBy, createdAt: new Date().toISOString() };
-    this.definitions.set(definition.id, definition);
-    return definition;
-  }
+  createDefinition(input:{tenantId:string;name:string;steps:WorkflowDefinition['steps'];createdBy:string}):WorkflowDefinition { const name=input.name.trim(); if(!input.tenantId||!input.createdBy||!name||!input.steps.length||input.steps.length>50) throw new BadRequestException('invalid workflow definition'); const steps=input.steps.map(s=>({name:s.name.trim(),requiresApproval:Boolean(s.requiresApproval)})); if(steps.some(s=>!s.name||s.name.length>120)) throw new BadRequestException('invalid workflow step'); const d:WorkflowDefinition={id:randomUUID(),tenantId:input.tenantId,name:name.slice(0,160),steps,createdBy:input.createdBy,createdAt:new Date().toISOString()}; this.definitions.set(d.id,d); return d; }
+  start(tenantId:string,workflowId:string,requestedBy:string):WorkflowInstance { const d=this.definitions.get(workflowId); if(!d||d.tenantId!==tenantId) throw new BadRequestException('workflow not found'); if(!requestedBy) throw new BadRequestException('requester required'); const now=new Date().toISOString(); const i:WorkflowInstance={id:randomUUID(),workflowId,tenantId,requestedBy,status:'running',currentStep:0,createdAt:now,updatedAt:now}; this.instances.set(i.id,i); this.createTask(i,d.steps[0],now); return i; }
+  transitionTask(tenantId:string,taskId:string,actorId:string,to:WorkflowTaskStatus):WorkflowTask { const t=this.tasks.get(taskId); if(!t||t.tenantId!==tenantId) throw new BadRequestException('task not found'); const i=this.instances.get(t.instanceId); if(!i||i.tenantId!==tenantId) throw new BadRequestException('workflow instance not found'); if(!actorId) throw new BadRequestException('actor required'); if(t.status==='pending'&&to==='completed'&&i.requestedBy===actorId) throw new ForbiddenException('requester cannot self-approve workflow task'); if(!TASK_TRANSITIONS[t.status].includes(to)) throw new BadRequestException(`Invalid task transition: ${t.status} -> ${to}`); const now=new Date().toISOString(); t.status=to;t.updatedAt=now;if(to==='rejected'||to==='cancelled'){i.status=to;i.updatedAt=now;return t;} if(to==='completed'){const d=this.definitions.get(i.workflowId)!;const n=i.currentStep+1;if(n>=d.steps.length)i.status='completed';else{i.currentStep=n;this.createTask(i,d.steps[n],now);}i.updatedAt=now;} return t; }
 
-  start(tenantId: string, workflowId: string, requestedBy: string): WorkflowInstance {
-    const definition = this.definitions.get(workflowId);
-    if (!definition || definition.tenantId !== tenantId) throw new BadRequestException('workflow not found');
-    if (!requestedBy) throw new BadRequestException('requester required');
-    const now = new Date().toISOString();
-    const instance: WorkflowInstance = { id: randomUUID(), workflowId, tenantId, requestedBy, status: 'running', currentStep: 0, createdAt: now, updatedAt: now };
-    this.instances.set(instance.id, instance);
-    this.createTask(instance, definition.steps[0], now);
-    return instance;
-  }
+  async enqueueExecution(input:{tenantId:string;rule:OperationalRule;event:OperationalEvent;maxAttempts?:number}):Promise<WorkflowExecution>{ if(!input.tenantId||input.tenantId!==input.event.tenantId) throw new BadRequestException('tenant mismatch'); if(!input.event.machineId) throw new BadRequestException('execution requires machine-bound event'); const key=`rule:${input.rule.id}:event:${input.event.id}`; const existing=[...this.executions.values()].find(x=>x.tenantId===input.tenantId&&x.idempotencyKey===key); if(existing)return existing; if(this.db.enabled){const rows=await this.db.request<any[]>(`machine_connect_workflow_executions?organization_id=eq.${encodeURIComponent(input.tenantId)}&idempotency_key=eq.${encodeURIComponent(key)}&limit=1`);if(rows.length)return this.fromExecutionRow(rows[0]);} const now=new Date().toISOString(); const x:WorkflowExecution={id:randomUUID(),tenantId:input.tenantId,ruleId:input.rule.id,eventId:input.event.id,correlationId:input.event.correlationId,idempotencyKey:key,status:'queued',attempts:0,maxAttempts:Math.max(1,Math.min(10,Math.floor(input.maxAttempts??3))),availableAt:now,createdAt:now,updatedAt:now}; this.executions.set(x.id,x);this.executionEvents.set(x.eventId,input.event);this.executionRules.set(x.ruleId,input.rule); if(this.db.enabled)await this.db.request('machine_connect_workflow_executions',{method:'POST',body:JSON.stringify({id:x.id,organization_id:x.tenantId,rule_id:x.ruleId,event_id:x.eventId,correlation_id:x.correlationId,idempotency_key:x.idempotencyKey,status:x.status,attempts:0,max_attempts:x.maxAttempts,available_at:now,created_at:now,updated_at:now})}); return x; }
 
-  transitionTask(tenantId: string, taskId: string, actorId: string, to: WorkflowTaskStatus): WorkflowTask {
-    const task = this.tasks.get(taskId);
-    if (!task || task.tenantId !== tenantId) throw new BadRequestException('task not found');
-    const instance = this.instances.get(task.instanceId);
-    if (!instance || instance.tenantId !== tenantId) throw new BadRequestException('workflow instance not found');
-    if (!actorId) throw new BadRequestException('actor required');
-    if (task.status === 'pending' && to === 'completed' && instance.requestedBy === actorId) {
-      throw new ForbiddenException('requester cannot self-approve workflow task');
-    }
-    if (!TASK_TRANSITIONS[task.status].includes(to)) {
-      throw new BadRequestException(`Invalid task transition: ${task.status} -> ${to}`);
-    }
-
-    const now = new Date().toISOString();
-    task.status = to;
-    task.updatedAt = now;
-
-    if (to === 'rejected' || to === 'cancelled') {
-      instance.status = to;
-      instance.updatedAt = now;
-      return task;
-    }
-
-    if (to === 'completed') {
-      const definition = this.definitions.get(instance.workflowId)!;
-      const nextStep = instance.currentStep + 1;
-      if (nextStep >= definition.steps.length) {
-        instance.status = 'completed';
-      } else {
-        instance.currentStep = nextStep;
-        this.createTask(instance, definition.steps[nextStep], now);
-      }
-      instance.updatedAt = now;
-    }
-    return task;
-  }
-
-  listDefinitions(tenantId: string) { return [...this.definitions.values()].filter((x) => x.tenantId === tenantId); }
-  listInstances(tenantId: string) { return [...this.instances.values()].filter((x) => x.tenantId === tenantId); }
-  listTasks(tenantId: string, instanceId?: string) { return [...this.tasks.values()].filter((x) => x.tenantId === tenantId && (!instanceId || x.instanceId === instanceId)); }
-
-  private createTask(instance: WorkflowInstance, step: WorkflowDefinition['steps'][number], now: string) {
-    const taskId = randomUUID();
-    this.tasks.set(taskId, { id: taskId, instanceId: instance.id, tenantId: instance.tenantId, name: step.name, status: step.requiresApproval ? 'pending' : 'in_progress', createdAt: now, updatedAt: now });
-  }
+  async runExecution(tenantId:string,id:string):Promise<WorkflowExecution>{ const x=this.executions.get(id)??await this.loadExecution(id,tenantId);if(!x||x.tenantId!==tenantId)throw new BadRequestException('workflow execution not found');if(['completed','cancelled','failed'].includes(x.status))return x;if(new Date(x.availableAt).getTime()>Date.now())throw new BadRequestException('workflow execution not available');x.status='leased';x.attempts++;x.leaseUntil=new Date(Date.now()+30000).toISOString();x.updatedAt=new Date().toISOString();await this.persistExecution(x);x.status='running';await this.persistExecution(x);try{const event=this.executionEvents.get(x.eventId)??await this.loadEvent(x);const rule=this.executionRules.get(x.ruleId)??await this.loadRule(x);if(!event||!rule)throw new BadRequestException('workflow execution context unavailable');await this.closedLoop.executeRuleAction(rule,event);x.status='completed';x.leaseUntil=undefined;x.lastError=undefined;}catch(e){x.lastError=e instanceof Error?e.message.slice(0,500):'execution failed';x.leaseUntil=undefined;x.status=x.attempts>=x.maxAttempts?'failed':'queued';x.availableAt=new Date(Date.now()+Math.min(60000,1000*2**Math.max(0,x.attempts-1))).toISOString();}x.updatedAt=new Date().toISOString();await this.persistExecution(x);return x; }
+  async cancelExecution(tenantId:string,id:string){const x=this.executions.get(id)??await this.loadExecution(id,tenantId);if(!x||x.tenantId!==tenantId)throw new BadRequestException('workflow execution not found');if(['completed','failed'].includes(x.status))throw new BadRequestException('terminal workflow execution');x.status='cancelled';x.leaseUntil=undefined;x.updatedAt=new Date().toISOString();await this.persistExecution(x);return x;}
+  listExecutions(tenantId:string){return [...this.executions.values()].filter(x=>x.tenantId===tenantId);}
+  listDefinitions(tenantId:string){return [...this.definitions.values()].filter(x=>x.tenantId===tenantId);} listInstances(tenantId:string){return [...this.instances.values()].filter(x=>x.tenantId===tenantId);} listTasks(tenantId:string,instanceId?:string){return [...this.tasks.values()].filter(x=>x.tenantId===tenantId&&(!instanceId||x.instanceId===instanceId));}
+  private createTask(i:WorkflowInstance,s:WorkflowDefinition['steps'][number],now:string){const id= randomUUID();this.tasks.set(id,{id,instanceId:i.id,tenantId:i.tenantId,name:s.name,status:s.requiresApproval?'pending':'in_progress',createdAt:now,updatedAt:now});}
+  private fromExecutionRow(r:any):WorkflowExecution{const x:WorkflowExecution={id:r.id,tenantId:r.organization_id,ruleId:r.rule_id,eventId:r.event_id,correlationId:r.correlation_id,idempotencyKey:r.idempotency_key,status:r.status,attempts:Number(r.attempts??0),maxAttempts:Number(r.max_attempts??3),availableAt:r.available_at,leaseUntil:r.lease_until,lastError:r.last_error,createdAt:r.created_at,updatedAt:r.updated_at};this.executions.set(x.id,x);return x;}
+  private async loadExecution(id:string,tenantId:string){if(!this.db.enabled)return null;const r=await this.db.request<any[]>(`machine_connect_workflow_executions?id=eq.${encodeURIComponent(id)}&organization_id=eq.${encodeURIComponent(tenantId)}&limit=1`);return r.length?this.fromExecutionRow(r[0]):null;}
+  private async loadEvent(x:WorkflowExecution){if(!this.db.enabled)return null;const r=await this.db.request<any[]>(`machine_connect_operational_events?id=eq.${encodeURIComponent(x.eventId)}&organization_id=eq.${encodeURIComponent(x.tenantId)}&limit=1`);if(!r.length)return null;const e=r[0];const event:OperationalEvent={id:e.id,tenantId:e.organization_id,machineId:e.machine_id,eventType:e.event_type,source:e.source,occurredAt:e.occurred_at,correlationId:e.correlation_id,causationId:e.causation_id,schemaVersion:Number(e.schema_version??1),payload:e.payload??{}};this.executionEvents.set(event.id,event);return event;}
+  private async loadRule(x:WorkflowExecution){if(!this.db.enabled)return null;const r=await this.db.request<any[]>(`machine_connect_operational_rules?id=eq.${encodeURIComponent(x.ruleId)}&organization_id=eq.${encodeURIComponent(x.tenantId)}&limit=1`);if(!r.length)return null;const a=r[0];const rule:OperationalRule={id:a.id,tenantId:a.organization_id,name:a.name,enabled:a.enabled,eventType:a.event_type,conditions:a.conditions??[],cooldownSeconds:Number(a.cooldown_seconds??0),action:a.action??undefined,lastTriggeredAt:a.last_triggered_at,createdAt:a.created_at};this.executionRules.set(rule.id,rule);return rule;}
+  private async persistExecution(x:WorkflowExecution){if(!this.db.enabled)return;await this.db.request(`machine_connect_workflow_executions?id=eq.${encodeURIComponent(x.id)}&organization_id=eq.${encodeURIComponent(x.tenantId)}`,{method:'PATCH',body:JSON.stringify({status:x.status,attempts:x.attempts,available_at:x.availableAt,lease_until:x.leaseUntil??null,last_error:x.lastError??null,updated_at:x.updatedAt})});}
 }
