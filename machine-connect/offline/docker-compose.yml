@@ -61,11 +61,18 @@ services:
       MQTT_TELEMETRY_TOPIC: devices/+/telemetry
       PG_POOL_MAX: 5
       MAX_PAYLOAD_BYTES: 262144
+      CORE_SYNC_URL: ${CORE_SYNC_URL:-}
+      MACHINE_ID: ${MACHINE_ID:-sensor-001}
+      MACHINE_CREDENTIAL: ${MACHINE_CREDENTIAL:-}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-2000}
+      SYNC_BATCH_SIZE: ${SYNC_BATCH_SIZE:-100}
     depends_on:
       emqx:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      core:
+        condition: service_started
 
   simulator:
     build:
@@ -74,7 +81,7 @@ services:
     environment:
       MQTT_HOST: emqx
       MQTT_PORT: 1883
-      DEVICE_ID: sensor-001
+      DEVICE_ID: ${MACHINE_ID:-sensor-001}
       PUBLISH_INTERVAL_SECONDS: 5
     depends_on:
       emqx:
