@@ -31,7 +31,11 @@ export class CommandDispatcherService {
     const now = new Date().toISOString();
 
     try {
-      await adapter.dispatchCommand({ tenantId: command.tenantId, machineId: command.machineId }, command.capability, command.parameters);
+      await adapter.dispatchCommand(
+        { tenantId: command.tenantId, machineId: command.machineId },
+        command.capability,
+        { ...command.parameters, commandId: command.commandId },
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (this.db.enabled) await this.db.request(`machine_connect_commands?id=eq.${encodeURIComponent(command.commandId)}&organization_id=eq.${encodeURIComponent(command.tenantId)}`, { method: 'PATCH', body: JSON.stringify({ attempt_count: attemptCount, last_error: message, status: 'failed' }) });
