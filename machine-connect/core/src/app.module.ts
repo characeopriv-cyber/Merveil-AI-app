@@ -25,9 +25,10 @@ import { SecurityEventModule } from './security/security-event.module';
 import { ApiKeyModule } from './security/api-key.module';
 import { RateLimitMiddleware } from './security/rate-limit.middleware';
 import { ConnectorModule } from './connectors/connector.module';
+import { IntelligenceModule } from './intelligence/intelligence.module';
 
 @Module({
-  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, SecurityModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule, SecurityEventModule, ApiKeyModule, ConnectorModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, SecurityModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule, SecurityEventModule, ApiKeyModule, ConnectorModule, IntelligenceModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule {
