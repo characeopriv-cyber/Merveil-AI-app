@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { SupabaseRest } from '../persistence/supabase-rest';
 import { MachineService } from '../machine/machine.service';
+import { SecurityEventService } from '../security/security-event.service';
 
 const PREFIX = 'mc_';
 const KEY_LENGTH = 32;
@@ -16,19 +17,16 @@ type CredentialRow = {
 
 @Injectable()
 export class MachineCredentialsService {
-  constructor(private readonly db: SupabaseRest, private readonly machines: MachineService) {}
+  constructor(private readonly db: SupabaseRest, private readonly machines: MachineService, private readonly securityEvents: SecurityEventService) {}
 
   async issue(tenantId: string, machineId: string): Promise<{ machineId: string; credential: string }> {
     await this.machines.get(tenantId, machineId);
     const secret = `${PREFIX}${randomBytes(32).toString('base64url')}`;
     const salt = randomBytes(16);
     const hash = scryptSync(secret, salt, KEY_LENGTH).toString('base64url');
-
     if (this.db.enabled) {
-      await this.db.request('machine_connect_credentials', {
-        method: 'POST',
-        body: JSON.stringify({ machine_id: machineId, organization_id: tenantId, secret_hash: hash, secret_salt: salt.toString('base64url') }),
-      });
+      const rows = await this.db.request<any[]>('machine_connect_credentials', { method: 'POST', body: JSON.stringify({ machine_id: machineId, organization_id: tenantId, secret_hash: hash, secret_salt: salt.toString('base64url') }) });
+      await this.securityEvents.record({ organizationId: tenantId, actorId: `machine:${machineId}`, eventType: 'machine_credential.issued', severity: 'info', resourceType: 'machine', resourceId: machineId, metadata: { credentialId: rows?.[0]?.id ?? null } });
     }
     return { machineId, credential: secret };
   }
@@ -37,12 +35,15 @@ export class MachineCredentialsService {
     await this.machines.get(tenantId, machineId);
     if (!this.db.enabled) return { machineId, revoked: false };
     await this.db.request(`machine_connect_credentials?machine_id=eq.${encodeURIComponent(machineId)}&organization_id=eq.${encodeURIComponent(tenantId)}&revoked_at=is.null`, { method: 'PATCH', body: JSON.stringify({ revoked_at: new Date().toISOString() }) });
+    await this.securityEvents.record({ organizationId: tenantId, actorId: `machine:${machineId}`, eventType: 'machine_credential.revoked', severity: 'warn', resourceType: 'machine', resourceId: machineId });
     return { machineId, revoked: true };
   }
 
   async rotate(tenantId: string, machineId: string): Promise<{ machineId: string; credential: string }> {
     await this.revoke(tenantId, machineId);
-    return this.issue(tenantId, machineId);
+    const issued = await this.issue(tenantId, machineId);
+    await this.securityEvents.record({ organizationId: tenantId, actorId: `machine:${machineId}`, eventType: 'machine_credential.rotated', severity: 'warn', resourceType: 'machine', resourceId: machineId });
+    return issued;
   }
 
   async verify(tenantId: string, machineId: string, credential: string): Promise<boolean> {
