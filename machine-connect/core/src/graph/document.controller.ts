@@ -19,13 +19,13 @@ export class DocumentController {
   }
 
   @Post()
-  async create(@Req() req: any, @Body() body: { title?: string; storagePath?: string; mimeType?: string; sizeBytes?: number }) {
+  async create(@Req() req: any, @Body() body: { fileName?: string; storagePath?: string; mimeType?: string; byteSize?: number }) {
     requirePermission(req, 'ontology.write');
     return this.documents.create(req.principal.organizationId, req.principal.userId, {
-      title: body?.title ?? '',
+      fileName: body?.fileName ?? '',
       storagePath: body?.storagePath ?? '',
       mimeType: body?.mimeType ?? '',
-      sizeBytes: Number(body?.sizeBytes ?? 0),
+      byteSize: Number(body?.byteSize ?? 0),
     });
   }
 }
