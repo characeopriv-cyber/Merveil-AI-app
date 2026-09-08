@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Delete, Get, Param, Post, Body, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
 import { ApiKeyService } from './api-key.service';
 import { requirePermission } from '../auth/permissions';
 
@@ -15,7 +15,8 @@ export class ApiKeyController {
   @Post()
   create(@Req() req: any, @Body() body: any) {
     const principal = requirePermission(req.user, 'security.write');
-    return this.service.create(principal.tenantId, principal.actorId, String(body?.name ?? ''), body?.expiresAt);
+    const scopes = Array.isArray(body?.scopes) ? body.scopes.map(String) : undefined;
+    return this.service.create(principal.tenantId, principal.actorId, String(body?.name ?? ''), body?.expiresAt, scopes);
   }
 
   @Post(':id/rotate')
