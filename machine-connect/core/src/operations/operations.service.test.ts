@@ -18,7 +18,17 @@ describe('OperationsService', () => {
 
   it('enforces cooldown', async () => {
     await service.createRule({ tenantId: 'tenant-1', name: 'Cooldown', eventType: 'telemetry.received', cooldownSeconds: 60, conditions: [{ field: 'state', operator: 'eq', value: 'alarm' }] });
-    const event = await service.publish({ tenantId: 'tenant-1', machineId: 'machine-1', eventType: 'telemetry.received', source: 'test', occurredAt: new Date().toISOString(), schemaVersion: 1, causationId: 'cause-2', payload: { state: 'alarm' } });
+    const event = {
+      tenantId: 'tenant-1',
+      machineId: 'machine-1',
+      eventType: 'telemetry.received',
+      source: 'test',
+      occurredAt: new Date().toISOString(),
+      schemaVersion: 1,
+      id: 'event-cooldown',
+      correlationId: 'correlation-cooldown',
+      payload: { state: 'alarm' },
+    } as any;
     const first = await service.evaluate(event);
     const second = await service.evaluate(event);
     expect(first.some(r => r.matched)).toBe(true);
