@@ -19,3 +19,9 @@ test('backoff is bounded and exponential', () => {
   assert.equal(nextBackoffMs(2), 4000);
   assert.ok(nextBackoffMs(99) <= 60 * 60 * 1000);
 });
+
+test('envelope never contains a credential', () => {
+  const envelope = buildSyncEnvelope({ id: 7, table_name: 'telemetry', record_id: 'sensor-1', operation: 'insert', data: { ok: true } });
+  assert.equal(Object.prototype.hasOwnProperty.call(envelope, 'credential'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(envelope, 'token'), false);
+});
