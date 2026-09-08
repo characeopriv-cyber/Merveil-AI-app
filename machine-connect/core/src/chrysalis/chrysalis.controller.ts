@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import { Principal, requirePrincipal } from '../auth/principal';
 import { requirePermission } from '../auth/permissions';
 import { AssessChrysalisDto, ExecuteChrysalisDto, VerifyChrysalisDto } from './chrysalis.dto';
@@ -9,6 +9,12 @@ type RequestWithPrincipal = { user?: Principal };
 @Controller('api/chrysalis')
 export class ChrysalisController {
   constructor(private readonly chrysalis: ChrysalisService) {}
+
+  @Get('capabilities')
+  capabilities(@Req() req: RequestWithPrincipal) {
+    const principal = requirePermission(req.user, 'device.read');
+    return this.chrysalis.listCapabilities(principal);
+  }
 
   @Post('assess')
   assess(@Req() req: RequestWithPrincipal, @Body() dto: AssessChrysalisDto) {
