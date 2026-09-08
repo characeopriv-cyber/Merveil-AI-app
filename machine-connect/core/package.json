@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist",
+    "test": "npm run build && node --test \"dist/**/*.test.js\" \"dist/**/*.spec.js\"",
     "audit:modules": "node audit-modules.mjs"
   },
   "dependencies": {
