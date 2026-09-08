@@ -7,15 +7,7 @@ import { MachineCredentialsService } from '../auth/machine-credentials.service';
 import { TelemetryService } from '../telemetry/telemetry.service';
 import { CommandService } from '../command/command.service';
 
-/**
- * Production MQTT bridge. Disabled unless MACHINE_CONNECT_MQTT_URL is configured.
- * Topic contract:
- *   machine-connect/{tenantId}/{machineId}/telemetry
- *   machine-connect/{tenantId}/{machineId}/heartbeat
- *   machine-connect/{tenantId}/{machineId}/commands
- *   machine-connect/{tenantId}/{machineId}/acks
- * Telemetry/heartbeat payloads must include the one-time-issued machine credential.
- */
+/** Production MQTT bridge; disabled until MACHINE_CONNECT_MQTT_URL is configured. */
 @Injectable()
 export class MqttAdapter implements Adapter, OnModuleInit, OnModuleDestroy {
   readonly id = 'mqtt';
@@ -25,18 +17,17 @@ export class MqttAdapter implements Adapter, OnModuleInit, OnModuleDestroy {
 
   constructor(private readonly registry: AdapterRegistry, private readonly moduleRef: ModuleRef) {}
 
+  isConnected(): boolean { return this.client?.connected === true; }
+
   onModuleInit(): void {
     const url = process.env.MACHINE_CONNECT_MQTT_URL?.trim();
     if (!url) {
       this.logger.warn('MQTT transport disabled: MACHINE_CONNECT_MQTT_URL is not configured');
       return;
     }
-
-    const username = process.env.MACHINE_CONNECT_MQTT_USERNAME;
-    const password = process.env.MACHINE_CONNECT_MQTT_PASSWORD;
     this.client = mqtt.connect(url, {
-      username,
-      password,
+      username: process.env.MACHINE_CONNECT_MQTT_USERNAME,
+      password: process.env.MACHINE_CONNECT_MQTT_PASSWORD,
       protocolVersion: 5,
       reconnectPeriod: 5000,
       connectTimeout: 10000,
@@ -44,7 +35,6 @@ export class MqttAdapter implements Adapter, OnModuleInit, OnModuleDestroy {
       clientId: process.env.MACHINE_CONNECT_MQTT_CLIENT_ID ?? `merveil-machine-connect-${process.pid}`,
       rejectUnauthorized: process.env.MACHINE_CONNECT_MQTT_TLS_INSECURE !== 'true',
     });
-
     this.client.on('connect', () => {
       this.logger.log(`MQTT connected: ${url.replace(/\/\/.*@/, '//***@')}`);
       void this.client?.subscribe('machine-connect/+/+/telemetry', { qos: 1 });
@@ -75,7 +65,7 @@ export class MqttAdapter implements Adapter, OnModuleInit, OnModuleDestroy {
 
   async dispatchCommand(context: AdapterContext, capability: string, parameters: Record<string, unknown>): Promise<void> {
     await this.publish(`machine-connect/${encodeURIComponent(context.tenantId)}/${encodeURIComponent(context.machineId)}/commands`, {
-      commandId: parameters.commandId ?? undefined,
+      commandId: parameters.commandId,
       capability,
       parameters,
       issuedAt: new Date().toISOString(),
@@ -95,36 +85,22 @@ export class MqttAdapter implements Adapter, OnModuleInit, OnModuleDestroy {
     const [, tenantId, machineId, kind] = parts.map(decodeURIComponent);
     let body: any;
     try { body = JSON.parse(payload.toString('utf8')); } catch { this.logger.warn(`Rejected non-JSON MQTT message: ${topic}`); return; }
-
     const credentials = this.moduleRef.get(MachineCredentialsService, { strict: false });
     const credential = typeof body.credential === 'string' ? body.credential : '';
     if (!credentials || !credential || !(await credentials.verify(tenantId, machineId, credential))) {
       this.logger.warn(`Rejected unauthenticated MQTT ${kind}: ${tenantId}/${machineId}`);
       return;
     }
-
     if (kind === 'telemetry') {
       const telemetry = this.moduleRef.get(TelemetryService, { strict: false });
-      if (!telemetry) return;
-      await telemetry.append({
-        tenantId,
-        machineId,
-        source: typeof body.source === 'string' ? body.source : 'mqtt',
-        schemaVersion: Number(body.schemaVersion ?? 1),
-        sequence: body.sequence == null ? undefined : Number(body.sequence),
-        observedAt: typeof body.observedAt === 'string' ? body.observedAt : new Date().toISOString(),
-        quality: typeof body.quality === 'string' ? body.quality : 'unknown',
-        data: body.data && typeof body.data === 'object' ? body.data : {},
-      });
+      if (telemetry) await telemetry.append({ tenantId, machineId, source: typeof body.source === 'string' ? body.source : 'mqtt', schemaVersion: Number(body.schemaVersion ?? 1), sequence: body.sequence == null ? undefined : Number(body.sequence), observedAt: typeof body.observedAt === 'string' ? body.observedAt : new Date().toISOString(), quality: typeof body.quality === 'string' ? body.quality : 'unknown', data: body.data && typeof body.data === 'object' ? body.data : {} });
       return;
     }
-
     if (kind === 'heartbeat') {
       const telemetry = this.moduleRef.get(TelemetryService, { strict: false });
       if (telemetry) await telemetry.heartbeat(tenantId, machineId);
       return;
     }
-
     if (kind === 'acks') {
       const commands = this.moduleRef.get(CommandService, { strict: false });
       const commandId = typeof body.commandId === 'string' ? body.commandId : '';
