@@ -2,10 +2,11 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/
 import { requirePermission } from '../auth/permissions';
 import { ConnectorService } from './connector.service';
 import { ConnectorRegistry } from './connector.registry';
+import { ConnectorSyncService } from './connector-sync.service';
 
 @Controller('api/connectors')
 export class ConnectorController {
-  constructor(private readonly connectors: ConnectorService, private readonly registry: ConnectorRegistry) {}
+  constructor(private readonly connectors: ConnectorService, private readonly registry: ConnectorRegistry, private readonly syncService: ConnectorSyncService) {}
 
   @Get('providers')
   providers(@Req() req: any) {
@@ -36,6 +37,13 @@ export class ConnectorController {
   async healthCheck(@Req() req: any, @Param('id') id: string) {
     const principal = requirePermission(req.principal, 'security.read');
     return this.connectors.healthCheck(principal.tenantId, principal.actorId, id);
+  }
+
+  @Post(':id/sync')
+  async sync(@Req() req: any, @Param('id') id: string, @Body() body: { machineId?: string }) {
+    const principal = requirePermission(req.principal, 'security.write');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal.actorId)) throw new Error('Connector synchronization requires a user session');
+    return this.syncService.sync(principal.tenantId, principal.actorId, id, body?.machineId);
   }
 
   @Patch(':id/status')
