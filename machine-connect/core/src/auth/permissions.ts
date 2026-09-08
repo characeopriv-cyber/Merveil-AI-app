@@ -1,27 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { Principal, PrincipalRole, requirePrincipal } from './principal';
-
-export type Permission =
-  | 'device.read' | 'device.control' | 'telemetry.read' | 'workflow.read' | 'workflow.execute'
-  | 'security.read' | 'security.scan' | 'security.write' | 'land.read' | 'land.transfer'
-  | 'ai.read' | 'ai.run' | 'ontology.read' | 'ontology.write' | 'graph.analyze';
-
-const ROLE_PERMISSIONS: Record<PrincipalRole, readonly Permission[] | '*'> = {
-  owner: '*', admin: '*',
-  operator: ['device.read','device.control','telemetry.read','workflow.read','workflow.execute','ontology.read'],
-  viewer: ['device.read','telemetry.read','workflow.read','ontology.read'],
-  security_analyst: ['security.read','security.scan','security.write','ontology.read','graph.analyze'],
-  land_registry_officer: ['land.read','land.transfer','ontology.read','graph.analyze'],
-  data_scientist: ['ai.read','ai.run','ontology.read','graph.analyze'],
-};
-
+export type Permission = 'device.read' | 'device.control' | 'telemetry.read' | 'workflow.read' | 'workflow.execute' | 'security.read' | 'security.scan' | 'security.write' | 'land.read' | 'land.transfer' | 'ai.read' | 'ai.run' | 'ontology.read' | 'ontology.write' | 'graph.analyze';
+const ROLE_PERMISSIONS: Record<PrincipalRole, readonly Permission[] | '*'> = { owner: '*', admin: '*', operator: ['device.read','device.control','telemetry.read','workflow.read','workflow.execute','ontology.read'], viewer: ['device.read','telemetry.read','workflow.read','ontology.read'], security_analyst: ['security.read','security.scan','security.write','ontology.read','graph.analyze'], land_registry_officer: ['land.read','land.transfer','ontology.read','graph.analyze'], data_scientist: ['ai.read','ai.run','ontology.read','graph.analyze'] };
 type ScopedPrincipal = Principal & { permissions?: Permission[] };
-export function hasPermission(principal: ScopedPrincipal, permission: Permission): boolean {
-  if (principal.permissions) return principal.permissions.includes(permission);
-  return principal.roles.some((role) => { const permissions = ROLE_PERMISSIONS[role]; return permissions === '*' || permissions.includes(permission); });
-}
-export function requirePermission(principal: Principal | undefined, permission: Permission): Principal {
-  const current = requirePrincipal(principal) as ScopedPrincipal;
-  if (!hasPermission(current, permission)) throw new ForbiddenException(`Missing permission: ${permission}`);
-  return current;
-}
+export function hasPermission(principal: ScopedPrincipal, permission: Permission): boolean { if (principal.permissions) return principal.permissions.includes(permission); return principal.roles.some((role) => { const permissions = ROLE_PERMISSIONS[role]; return permissions === '*' || permissions.includes(permission); }); }
+export function requirePermission(principal: Principal | undefined, permission: Permission): Principal { const current = requirePrincipal(principal) as ScopedPrincipal; if (!hasPermission(current, permission)) throw new ForbiddenException(`Missing permission: ${permission}`); return current; }
