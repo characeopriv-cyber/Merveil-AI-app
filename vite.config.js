@@ -6,6 +6,10 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 900,
     rollupOptions: {
+      input: {
+        app: "index.html",
+        machineConnect: "machine-connect.html",
+      },
       output: {
         manualChunks: {
           vendor: ["react", "react-dom"],
