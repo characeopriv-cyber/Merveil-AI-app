@@ -22,10 +22,11 @@ import { DocumentModule } from './graph/document.module';
 import { DocumentEntityModule } from './graph/document-entity.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { SecurityEventModule } from './security/security-event.module';
+import { ApiKeyModule } from './security/api-key.module';
 import { RateLimitMiddleware } from './security/rate-limit.middleware';
 
 @Module({
-  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, SecurityModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule, SecurityEventModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, SecurityModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule, SecurityEventModule, ApiKeyModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule {
