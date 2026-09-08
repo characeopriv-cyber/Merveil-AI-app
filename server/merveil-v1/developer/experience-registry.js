@@ -1,0 +1,10 @@
+export const EXPERIENCE_LEVELS = [
+  {id:'beginner',name:'Beginner',description:'Tell Merveil what you want to build. Merveil handles the technical decisions.',capabilities:{project_description:true,auto_sector_detection:true,auto_language:true,auto_framework:true,auto_provider_selection:true,auto_architecture:true,auto_scaffold:true,ai_code_generation:true,auto_dependencies:true,build_run_test:true,ai_error_fix:true,one_click_deploy:true,advanced_code_editor:false,manual_stack_selection:false,provider_configuration:false,custom_runtime:false,advanced_security:false,github_workflow:false,agent_builder:'guided'},ui:{showTechnicalChoices:false,showExplainations:true,mode:'guided'}},
+  {id:'intermediate',name:'Intermediate',description:'Choose your stack when you want, while Merveil recommends the best path.',capabilities:{project_description:true,auto_sector_detection:true,auto_language:true,auto_framework:true,auto_provider_selection:true,auto_architecture:true,auto_scaffold:true,ai_code_generation:true,auto_dependencies:true,build_run_test:true,ai_error_fix:true,one_click_deploy:true,advanced_code_editor:true,manual_stack_selection:true,provider_configuration:true,custom_runtime:true,advanced_security:true,github_workflow:true,agent_builder:'guided_plus'},ui:{showTechnicalChoices:true,showExplainations:true,mode:'assisted'}},
+  {id:'expert',name:'Expert',description:'Full engineering control with Merveil automation available whenever you want it.',capabilities:{project_description:true,auto_sector_detection:true,auto_language:true,auto_framework:true,auto_provider_selection:true,auto_architecture:true,auto_scaffold:true,ai_code_generation:true,auto_dependencies:true,build_run_test:true,ai_error_fix:true,one_click_deploy:true,advanced_code_editor:true,manual_stack_selection:true,provider_configuration:true,custom_runtime:true,advanced_security:true,github_workflow:true,agent_builder:'full'},ui:{showTechnicalChoices:true,showExplainations:false,mode:'expert'}}
+];
+
+export function experienceCatalog(level='') {
+  if (!level) return EXPERIENCE_LEVELS;
+  return EXPERIENCE_LEVELS.find(x=>x.id===String(level).toLowerCase()) || null;
+}
