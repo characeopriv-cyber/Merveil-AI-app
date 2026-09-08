@@ -4,7 +4,7 @@ import { ConnectorService } from './connector.service';
 describe('ConnectorService', () => {
   const db = {
     enabled: true,
-    request: jest.fn(async (_path: string, _init?: RequestInit) => [{ id: 'c1', provider: 'mqtt.edge', status: 'pending' }]),
+    request: jest.fn(async (_path: string, _init?: RequestInit) => [{ id: 'c1', provider: 'mqtt.edge', status: 'pending', protocol: 'https', endpoint: 'https://example.com', health_status: 'unknown' }]),
   } as any;
 
   beforeEach(() => jest.clearAllMocks());
@@ -26,5 +26,24 @@ describe('ConnectorService', () => {
     expect(db.request).toHaveBeenCalledTimes(2);
     expect(db.request.mock.calls[0][0]).toBe('machine_connect_connector_instances');
     expect(db.request.mock.calls[1][0]).toBe('machine_connect_connector_events');
+  });
+
+  it('blocks private and local HTTPS health destinations', async () => {
+    const service = new ConnectorService(db);
+    db.request.mockResolvedValueOnce([{ id: 'c1', protocol: 'https', endpoint: 'https://127.0.0.1:8080', status: 'active' }]);
+    await expect(service.healthCheck('org-1', 'actor-1', 'c1')).resolves.toMatchObject({ healthStatus: 'blocked', latencyMs: null });
+    expect(db.request).toHaveBeenCalledWith(expect.stringContaining('machine_connect_connector_instances?id=eq.c1'), expect.objectContaining({ method: 'PATCH' }));
+  });
+
+  it('does not follow redirects during health checks', async () => {
+    const service = new ConnectorService(db);
+    db.request.mockResolvedValueOnce([{ id: 'c1', protocol: 'https', endpoint: 'https://example.com', status: 'active' }]);
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.redirect).toBe('manual');
+      return new Response(null, { status: 204 });
+    }) as any;
+    await expect(service.healthCheck('org-1', 'actor-1', 'c1')).resolves.toMatchObject({ healthStatus: 'healthy' });
+    global.fetch = originalFetch;
   });
 });
