@@ -13,7 +13,9 @@ export class AuthMiddleware implements NestMiddleware {
 
   async use(req: RequestLike, _res: unknown, next: () => void) {
     const path = (req.url ?? '').split('?')[0];
-    if (path === '/api/health' || path === '/api/ready' || path === '/health' || path === '/ready') { next(); return; }
+    // EMQX calls this endpoint as a machine-to-server authentication request;
+    // it must not be forced through the human Supabase session flow.
+    if (path === '/api/health' || path === '/api/ready' || path === '/health' || path === '/ready' || path === '/api/mqtt/auth') { next(); return; }
 
     const machineRoute = path.match(/^\/api\/machines\/([^/]+)\/(?:commands\/[^/]+\/ack|sync\/telemetry)$/);
     const machineCredential = typeof req.headers['x-machine-credential'] === 'string' ? req.headers['x-machine-credential'].trim() : '';
