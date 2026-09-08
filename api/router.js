@@ -1061,7 +1061,14 @@ export default async function handler(req, res) {
         // Prefer full session; if refresh race left us without a live token,
         // still restore the UI from jwtSub via service role so the citizen
         // is not bounced to "Sign in" every few minutes.
-        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "") || decodeJwtSub(getRefreshToken(req) || "");
+        // NOTE: a prior edit added a `|| decodeJwtSub(getRefreshToken(req) || "")`
+        // fallback here, but getRefreshToken is not defined/imported anywhere
+        // in this file — every call with no live access token (token just
+        // rotated, common) threw ReferenceError and crashed this endpoint
+        // with a 500. That, in turn, broke merveilFetch's 401-retry path
+        // for the whole app. Removed; sessionResult.jwtSub already covers
+        // refresh-token-derived session resolution via getSession().
+        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "");
         if (!uid) return sendJson(res, 200, { user: null });
         let profile = null;
         if (user && token) {
