@@ -5,12 +5,11 @@ import { ProvenanceService } from './provenance.service';
 
 const provider = { generate: async () => ({ formName: 'Business License', fields: [{ name: 'business_name', label: 'Business name', type: 'text', required: true }] }) };
 
-// The test bypasses Nest DI intentionally; it verifies the domain service boundary.
 test('AI form builder validates generated schema', async () => {
   const service = new AiFormBuilderService(provider as never);
-  const schema = await service.generate('business license');
-  assert.equal(schema.version, 1);
-  assert.equal(schema.fields[0].name, 'business_name');
+  const form = await service.generate({ tenantId: 'tenant-a', actorId: 'user-a', prompt: 'business license' });
+  assert.equal(form.schema.version, 1);
+  assert.equal(form.schema.fields[0].name, 'business_name');
 });
 
 test('AI form builder rejects executable/schema-injection shapes', () => {

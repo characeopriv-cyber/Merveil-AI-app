@@ -7,5 +7,6 @@ test('missing authentication is rejected', () => {
 });
 
 test('authenticated principal is accepted', () => {
-  assert.deepEqual(requirePrincipal({ actorId: 'a', tenantId: 't', roles: ['operator'], authenticated: true }), { actorId: 'a', tenantId: 't', roles: ['operator'], authenticated: true });
+  const principal = { actorId: 'a', tenantId: 't', roles: ['operator' as const] };
+  assert.deepEqual(requirePrincipal(principal), principal);
 });
