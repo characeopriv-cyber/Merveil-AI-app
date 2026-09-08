@@ -64,6 +64,21 @@ export class MachineCredentialsService {
     return row.organization_id;
   }
 
+  async authenticateMqtt(machineIdentity: string, credential: string, clientId?: string): Promise<boolean> {
+    const identity = machineIdentity.trim();
+    const secret = credential.trim();
+    if (!identity || !secret.startsWith(PREFIX) || !this.db.enabled) return false;
+    if (clientId?.trim() && clientId.trim() !== identity) return false;
+
+    const machines = await this.db.request<Array<{ id: string; organization_id: string; state: string }>>(
+      `machine_connect_machines?machine_identity=eq.${encodeURIComponent(identity)}&limit=1&select=id,organization_id,state`,
+    );
+    const machine = machines[0];
+    if (!machine || machine.state === 'revoked' || machine.state === 'quarantined') return false;
+
+    return this.verify(machine.organization_id, machine.id, secret);
+  }
+
   async require(tenantId: string, machineId: string, credential: string): Promise<void> {
     if (!(await this.verify(tenantId, machineId, credential))) throw new UnauthorizedException('Invalid or revoked machine credential');
   }
