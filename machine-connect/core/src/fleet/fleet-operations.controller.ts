@@ -15,14 +15,20 @@ export class FleetOperationsController {
   @Post('rollouts')
   rollout(@Req() req: any, @Body() body: any) { return this.rollouts.create({ tenantId: this.tenant(req), actorId: this.actor(req), fleetId: body.fleetId, capability: body.capability, parameters: body.parameters ?? {}, safetyClass: body.safetyClass, stageSize: body.stageSize, maxConcurrency: body.maxConcurrency, idempotencyKey: body.idempotencyKey }); }
 
+  @Get('rollouts')
+  listRollouts(@Req() req: any, @Body() _unused: any) { return this.rollouts.list(this.tenant(req)); }
+
   @Get('rollouts/:rolloutId')
   rolloutStatus(@Req() req: any, @Param('rolloutId') id: string) { return this.rollouts.get(this.tenant(req), id); }
 
+  @Post('rollouts/:rolloutId/run')
+  run(@Req() req: any, @Param('rolloutId') id: string) { this.actor(req); return this.rollouts.run(this.tenant(req), id); }
+
   @Patch('rollouts/:rolloutId/pause')
-  pause(@Req() req: any, @Param('rolloutId') id: string) { return this.rollouts.pause(this.tenant(req), id); }
+  pause(@Req() req: any, @Param('rolloutId') id: string) { this.actor(req); return this.rollouts.pause(this.tenant(req), id); }
 
   @Patch('rollouts/:rolloutId/cancel')
-  cancel(@Req() req: any, @Param('rolloutId') id: string) { return this.rollouts.cancel(this.tenant(req), id); }
+  cancel(@Req() req: any, @Param('rolloutId') id: string) { this.actor(req); return this.rollouts.cancel(this.tenant(req), id); }
 
   @Get('audit/:fleetId')
   audit(@Req() req: any, @Param('fleetId') fleetId: string) {
