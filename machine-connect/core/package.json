@@ -4,14 +4,14 @@
   "version": "0.1.0",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/**/*.test.js dist/**/*.spec.js",
+    "test": "npm run build && files=$(find dist -type f \( -name '*.test.js' -o -name '*.spec.js' \) -print) && test -n \"$files\" && node --test $files",
     "audit:modules": "node audit-modules.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
-    "class-transformer": "^0.5.1",
+    "class-transformer": "^0.5.0",
     "class-validator": "^0.14.1",
     "uuid": "^11.0.0"
   },
