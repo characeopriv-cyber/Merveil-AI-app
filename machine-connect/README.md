@@ -24,10 +24,31 @@ request -> authentication -> authorization -> policy evaluation -> safety evalua
 
 Emergency stop is a dedicated high-priority safety path.
 
+## MQTT production transport
+
+The core includes an optional MQTT adapter. It activates only when `MACHINE_CONNECT_MQTT_URL` is configured. The server-side bridge uses QoS 1, reconnects automatically, and exposes transport state through `/ready`.
+
+Environment variables:
+
+- `MACHINE_CONNECT_MQTT_URL` — broker URL, preferably `mqtts://...`.
+- `MACHINE_CONNECT_MQTT_USERNAME` — broker service username.
+- `MACHINE_CONNECT_MQTT_PASSWORD` — broker service password.
+- `MACHINE_CONNECT_MQTT_CLIENT_ID` — optional stable bridge client ID.
+- `MACHINE_CONNECT_MQTT_TLS_INSECURE` — leave unset/false in production; true is development-only.
+
+Topic contract:
+
+- `machine-connect/{tenantId}/{machineId}/telemetry`
+- `machine-connect/{tenantId}/{machineId}/heartbeat`
+- `machine-connect/{tenantId}/{machineId}/commands`
+- `machine-connect/{tenantId}/{machineId}/acks`
+
+Machine telemetry, heartbeat, and ACK messages must contain the issued machine credential. The credential is verified against the active hashed credential in Supabase and is not persisted as telemetry data. Commands are correlated with `commandId` and use QoS 1 publication.
+
 ## Initial domain
 
 Tenant -> Machine -> Identity, Connection, Adapter, Capabilities, Telemetry, Events, Commands, Diagnostics, Evidence, Policies.
 
 ## Development rule
 
-All Machine Connect work stays on feature/machine-connect until build, test, security, integration, and end-to-end verification pass. Do not merge to main prematurely.
+All Machine Connect work should be built, tested, security-reviewed, integration-tested, and end-to-end verified before being treated as production-complete.
