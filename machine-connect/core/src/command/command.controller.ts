@@ -1,4 +1,5 @@
 import { Body, Controller, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
+import { CommandStatus } from '../domain/command';
 import { CommandService } from './command.service';
 import { Principal } from '../auth/principal';
 import { requirePermission } from '../auth/permissions';
@@ -51,9 +52,9 @@ export class CommandController {
   }
 
   @Post('commands/:commandId/transition')
-  transition(@Req() req: RequestWithPrincipal, @Param('commandId') commandId: string, @Body() body: { status: string }) {
+  transition(@Req() req: RequestWithPrincipal, @Param('commandId') commandId: string, @Body() body: { status: CommandStatus }) {
     const principal = requirePermission(req.user, 'device.control');
-    return this.commands.transition(principal.tenantId, commandId, body.status as never);
+    return this.commands.transition(principal.tenantId, commandId, body.status);
   }
 
   private header(req: RequestWithPrincipal, name: string): string | undefined {
