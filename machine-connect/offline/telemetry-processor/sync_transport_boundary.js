@@ -28,9 +28,8 @@ async function claimReadyRows(pool, batchSize = DEFAULT_BATCH_SIZE, leaseMs = DE
 async function handleTransportResult(pool, row, result, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
   const attempts = Number(row.attempts) || 0;
   if (result?.confirmed && !result.conflict && !result.rejected) {
-    await pool.query('UPDATE sync_queue SET synced = true, synced_at = now(), claimed_at = NULL, claim_id = NULL, last_error = NULL WHERE id = $1 AND claim_id = $2', [row.id, row.claim_id]);
-    await pool.query('UPDATE sync_checkpoints SET last_success_at = now(), last_queue_id = $1, last_error = NULL WHERE id = true', [row.id]);
-    return 'synced';
+    const confirmed = await pool.query('SELECT offline_confirm_sync($1, $2) AS confirmed', [row.id, row.claim_id]);
+    return confirmed.rows[0]?.confirmed ? 'synced' : 'stale-claim';
   }
   if (result?.conflict) {
     await pool.query('INSERT INTO sync_conflicts (sync_queue_id, table_name, record_id, local_data, remote_data, reason) VALUES ($1, $2, $3, $4, $5, $6)', [row.id, row.table_name, row.record_id, row.data ?? null, result.remote_data ?? null, result.reason || 'sync conflict']);
