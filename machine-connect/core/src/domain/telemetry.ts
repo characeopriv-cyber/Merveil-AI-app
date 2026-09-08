@@ -10,5 +10,5 @@ export interface TelemetryEnvelope {
   observedAt: string;
   receivedAt: string;
   quality: TelemetryQuality;
-  data: Record<string, unknown>;
+  data: unknown;
 }
