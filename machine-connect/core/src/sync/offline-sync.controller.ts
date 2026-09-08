@@ -50,7 +50,7 @@ export class OfflineSyncController {
         schemaVersion: Number(item.schema_version ?? 1),
         sequence: item.sequence_no,
         observedAt: item.observed_at,
-        quality: 'offline_sync',
+        quality: 'unknown',
         data: item.data,
       });
       results.push({ queue_id: item.queue_id, idempotency_key: item.idempotency_key, confirmed: true, record_id: record.id });
