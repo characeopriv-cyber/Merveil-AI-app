@@ -2,8 +2,7 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SupabaseRest } from '../persistence/supabase-rest';
 import { WorkflowService } from './workflow.service';
 
-/** Autonomous bounded worker. It only executes durable queued work; all authorization
- * and command safety remain inside WorkflowService -> ClosedLoopService -> CommandService. */
+/** Autonomous bounded worker. Durable claims and lease recovery remain authoritative in WorkflowService. */
 @Injectable()
 export class ExecutionWorkerService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
@@ -23,10 +22,11 @@ export class ExecutionWorkerService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  async tick(): Promise<{ claimed: number; attempted: number }> {
-    if (this.running || !this.db.enabled) return { claimed: 0, attempted: 0 };
+  async tick(): Promise<{ recovered: number; claimed: number; attempted: number }> {
+    if (this.running || !this.db.enabled) return { recovered: 0, claimed: 0, attempted: 0 };
     this.running = true;
     try {
+      const recovered = await this.workflows.recoverExpiredExecutions(50);
       const now = new Date().toISOString();
       const rows = await this.db.request<any[]>(
         `machine_connect_workflow_executions?status=eq.queued&available_at=lte.${encodeURIComponent(now)}&order=available_at.asc&limit=10`,
@@ -38,11 +38,10 @@ export class ExecutionWorkerService implements OnModuleInit, OnModuleDestroy {
         try {
           await this.workflows.runExecution(row.organization_id, row.id);
         } catch {
-          // WorkflowService owns durable failure/retry state. One bad item must not
-          // prevent the remaining bounded batch from being attempted.
+          // WorkflowService owns durable failure/retry state. One item cannot stop the batch.
         }
       }
-      return { claimed: rows.length, attempted };
+      return { recovered, claimed: rows.length, attempted };
     } finally {
       this.running = false;
     }
