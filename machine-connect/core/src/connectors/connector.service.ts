@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { SupabaseRest } from '../persistence/supabase-rest';
 
 export type ConnectorStatus = 'disabled' | 'pending' | 'active' | 'error' | 'revoked';
 export type ConnectorProtocol = 'https' | 'mqtt' | 'websocket' | 'tcp' | 'udp' | 'modbus' | 'opcua' | 'custom';
 export type ConnectorAuthMode = 'managed' | 'api_key' | 'oauth2' | 'mtls' | 'machine_credential' | 'none';
+export type ConnectorHealth = 'unknown' | 'healthy' | 'degraded' | 'unreachable' | 'blocked';
 
 export interface ConnectorInput {
   name: string;
@@ -36,7 +38,7 @@ export class ConnectorService {
   async list(organizationId: string, limit = 100): Promise<unknown[]> {
     if (!this.db.enabled) return [];
     const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit || 100)));
-    return this.db.request<any[]>(`machine_connect_connector_instances?organization_id=eq.${encodeURIComponent(organizationId)}&select=id,name,provider,protocol,status,endpoint,auth_mode,secret_ref,capabilities,configuration,last_error,last_connected_at,created_by,created_at,updated_at&order=updated_at.desc&limit=${safeLimit}`);
+    return this.db.request<any[]>(`machine_connect_connector_instances?organization_id=eq.${encodeURIComponent(organizationId)}&select=id,name,provider,protocol,status,endpoint,auth_mode,secret_ref,capabilities,configuration,last_error,last_connected_at,last_health_check_at,last_latency_ms,health_status,created_by,created_at,updated_at&order=updated_at.desc&limit=${safeLimit}`);
   }
 
   async get(organizationId: string, id: string): Promise<any> {
@@ -65,6 +67,61 @@ export class ConnectorService {
     const eventType = status === 'active' ? 'enabled' : status === 'disabled' ? 'disabled' : status === 'revoked' ? 'revoked' : status === 'error' ? 'failed' : 'connected';
     await this.event(organizationId, id, eventType, actorId, error ? { error } : {});
     return connector;
+  }
+
+  async healthCheck(organizationId: string, actorId: string, id: string): Promise<{ id: string; healthStatus: ConnectorHealth; latencyMs: number | null }> {
+    const connector = await this.get(organizationId, id);
+    const checkedAt = new Date().toISOString();
+    if (connector.status === 'revoked' || connector.status === 'disabled') {
+      await this.persistHealth(organizationId, id, 'blocked', null, checkedAt, 'connector_disabled_or_revoked');
+      return { id, healthStatus: 'blocked', latencyMs: null };
+    }
+    if (connector.protocol !== 'https' || !connector.endpoint) {
+      await this.persistHealth(organizationId, id, 'unknown', null, checkedAt, 'active_health_probe_not_supported_for_protocol');
+      return { id, healthStatus: 'unknown', latencyMs: null };
+    }
+
+    const url = new URL(connector.endpoint);
+    if (url.protocol !== 'https:') {
+      await this.persistHealth(organizationId, id, 'blocked', null, checkedAt, 'health_probe_requires_https');
+      return { id, healthStatus: 'blocked', latencyMs: null };
+    }
+    const host = url.hostname.toLowerCase();
+    if (this.isPrivateHost(host)) {
+      await this.persistHealth(organizationId, id, 'blocked', null, checkedAt, 'private_or_local_destination_blocked');
+      return { id, healthStatus: 'blocked', latencyMs: null };
+    }
+
+    const started = Date.now();
+    try {
+      const response = await fetch(url, { method: 'HEAD', redirect: 'manual', headers: { 'user-agent': 'Machine-Connect-Health/1.0' }, signal: AbortSignal.timeout(5000) });
+      const latencyMs = Date.now() - started;
+      const healthStatus: ConnectorHealth = response.status >= 200 && response.status < 400 ? (latencyMs > 1500 ? 'degraded' : 'healthy') : response.status >= 400 && response.status < 500 ? 'degraded' : 'unreachable';
+      await this.persistHealth(organizationId, id, healthStatus, latencyMs, checkedAt, `http_${response.status}`);
+      await this.event(organizationId, id, healthStatus === 'healthy' ? 'connected' : healthStatus === 'unreachable' ? 'disconnected' : 'failed', actorId, { status: response.status, latency_ms: latencyMs });
+      return { id, healthStatus, latencyMs };
+    } catch (error) {
+      const latencyMs = Date.now() - started;
+      await this.persistHealth(organizationId, id, 'unreachable', latencyMs, checkedAt, error instanceof Error ? error.message.slice(0, 200) : 'health_probe_failed');
+      await this.event(organizationId, id, 'failed', actorId, { latency_ms: latencyMs });
+      return { id, healthStatus: 'unreachable', latencyMs };
+    }
+  }
+
+  private async persistHealth(organizationId: string, id: string, healthStatus: ConnectorHealth, latencyMs: number | null, checkedAt: string, error?: string): Promise<void> {
+    if (!this.db.enabled) return;
+    await this.db.request(`machine_connect_connector_instances?id=eq.${encodeURIComponent(id)}&organization_id=eq.${encodeURIComponent(organizationId)}`, { method: 'PATCH', body: JSON.stringify({ health_status: healthStatus, last_latency_ms: latencyMs, last_health_check_at: checkedAt, last_error: healthStatus === 'healthy' ? null : error ?? null, updated_at: checkedAt }) });
+  }
+
+  private isPrivateHost(host: string): boolean {
+    if (host === 'localhost' || host.endsWith('.localhost') || host === '0.0.0.0' || host === '::' || host === '::1') return true;
+    const ipVersion = isIP(host);
+    if (ipVersion === 4) {
+      const [a, b] = host.split('.').map(Number);
+      return a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+    }
+    if (ipVersion === 6) return host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe8') || host.startsWith('fe9') || host.startsWith('fea') || host.startsWith('feb');
+    return false;
   }
 
   async remove(organizationId: string, actorId: string, id: string): Promise<{ id: string; revoked: true }> {
