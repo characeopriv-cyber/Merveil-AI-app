@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { SupabaseRest } from '../persistence/supabase-rest';
 import { SecurityEventService } from './security-event.service';
@@ -16,7 +16,12 @@ export class ApiKeyService {
     this.assertUuid(organizationId); this.assertUuid(createdBy);
     const cleanName = String(name ?? '').trim();
     if (!cleanName) throw new BadRequestException('name is required');
-    if (expiresAt && Number.isNaN(Date.parse(expiresAt))) throw new BadRequestException('Invalid expiresAt');
+    if (cleanName.length > 120) throw new BadRequestException('name is too long');
+    if (expiresAt) {
+      const parsed = Date.parse(expiresAt);
+      if (Number.isNaN(parsed)) throw new BadRequestException('Invalid expiresAt');
+      if (parsed <= Date.now()) throw new BadRequestException('expiresAt must be in the future');
+    }
     const secret = `mc_${randomBytes(32).toString('base64url')}`;
     const prefix = secret.slice(0, 15);
     const hash = createHash('sha256').update(secret).digest('hex');
@@ -29,7 +34,10 @@ export class ApiKeyService {
   }
 
   async revoke(organizationId: string, id: string, actorId?: string) {
-    this.assertUuid(organizationId); this.assertUuid(id);
+    this.assertUuid(organizationId); this.assertUuid(id); if (actorId) this.assertUuid(actorId);
+    const existing = await this.db.request<any[]>(`machine_connect_api_keys?id=eq.${id}&organization_id=eq.${organizationId}&select=id,enabled&limit=1`);
+    if (!existing?.length) throw new NotFoundException('API key not found');
+    if (!existing[0].enabled) return existing;
     const result = await this.db.request<any[]>(`machine_connect_api_keys?id=eq.${id}&organization_id=eq.${organizationId}`, {
       method: 'PATCH', body: JSON.stringify({ enabled: false, revoked_at: new Date().toISOString() }),
     });
@@ -39,10 +47,13 @@ export class ApiKeyService {
 
   async rotate(organizationId: string, id: string, actorId: string) {
     this.assertUuid(organizationId); this.assertUuid(id); this.assertUuid(actorId);
-    const rows = await this.db.request<any[]>(`machine_connect_api_keys?id=eq.${id}&organization_id=eq.${organizationId}&select=name&limit=1`);
-    if (!rows?.length) throw new BadRequestException('API key not found');
+    const rows = await this.db.request<any[]>(`machine_connect_api_keys?id=eq.${id}&organization_id=eq.${organizationId}&select=name,enabled&limit=1`);
+    if (!rows?.length) throw new NotFoundException('API key not found');
+    if (!rows[0].enabled) throw new BadRequestException('Cannot rotate a revoked API key');
     await this.revoke(organizationId, id, actorId);
-    return this.create(organizationId, actorId, String(rows[0].name ?? 'rotated-key'));
+    const rotated = await this.create(organizationId, actorId, String(rows[0].name ?? 'rotated-key'));
+    await this.securityEvents.record({ organizationId, actorId, eventType: 'api_key.rotated', severity: 'info', resourceType: 'api_key', resourceId: id, metadata: { replacementKeyId: rotated.metadata?.id ?? null } });
+    return rotated;
   }
 
   private assertUuid(value: string) {
