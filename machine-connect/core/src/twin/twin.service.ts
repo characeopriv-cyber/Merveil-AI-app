@@ -17,8 +17,11 @@ export class TwinService {
     const cached = this.cache.get(`${tenantId}:${machineId}`);
     if (cached) return cached;
     if (!this.db.enabled) return null;
-    const rows = await this.db.request<any[]>(`machine_connect_twin_snapshots?organization_id=eq.${encodeURIComponent(tenantId)}&machine_id=eq.${encodeURIComponent(machineId)}&order=observed_at.desc&limit=1`);
-    return rows.length ? this.fromRow(rows[0]) : null;
+    const rows = await this.db.request<any[]>(`machine_connect_twin_snapshots?organization_id=eq.${encodeURIComponent(tenantId)}&machine_id=eq.${encodeURIComponent(machineId)}&order=version.desc&limit=1`);
+    if (!rows.length) return null;
+    const twin = this.fromRow(rows[0]);
+    this.cache.set(`${tenantId}:${machineId}`, twin);
+    return twin;
   }
 
   async reconcile(input: TwinReconcileInput): Promise<DeviceTwin> {
@@ -32,16 +35,15 @@ export class TwinService {
     if (input.expectedVersion != null && input.expectedVersion !== previousVersion) {
       throw new BadRequestException(`Twin version conflict: expected ${input.expectedVersion}, current ${previousVersion}`);
     }
-    const sameState = previous && JSON.stringify(previous.state) === JSON.stringify(input.reportedState);
+    const sameState = Boolean(previous && JSON.stringify(previous.state) === JSON.stringify(input.reportedState));
     const twin: DeviceTwin = {
       id: randomUUID(), tenantId: input.tenantId, machineId: input.machineId,
       twinType: 'machine', observedAt, state: input.reportedState,
-      twinState: sameState ? 'synchronized' : previous ? 'synchronized' : 'unknown',
-      version: previousVersion + 1, createdAt: new Date().toISOString(),
+      twinState: 'synchronized', version: previousVersion + 1, createdAt: new Date().toISOString(),
     };
     if (this.db.enabled) {
-      await this.db.request('machine_connect_twin_snapshots', { method: 'POST', body: JSON.stringify({ id: twin.id, organization_id: twin.tenantId, machine_id: twin.machineId, twin_type: twin.twinType, observed_at: twin.observedAt, state: twin.state, created_at: twin.createdAt }) });
-      await this.db.request(`machine_connect_events`, { method: 'POST', body: JSON.stringify({ id: randomUUID(), organization_id: twin.tenantId, machine_id: twin.machineId, event_type: 'twin.reconciled', actor_id: null, payload: { twinId: twin.id, version: twin.version, source: input.source ?? 'reported_state', changed: !sameState } }) });
+      await this.db.request('machine_connect_twin_snapshots', { method: 'POST', body: JSON.stringify({ id: twin.id, organization_id: twin.tenantId, machine_id: twin.machineId, twin_type: twin.twinType, observed_at: twin.observedAt, state: twin.state, version: twin.version, source: input.source ?? 'reported_state', created_by: input.tenantId, created_at: twin.createdAt }) });
+      await this.db.request('machine_connect_events', { method: 'POST', body: JSON.stringify({ id: randomUUID(), organization_id: twin.tenantId, machine_id: twin.machineId, event_type: 'twin.reconciled', actor_id: null, payload: { twinId: twin.id, version: twin.version, source: input.source ?? 'reported_state', changed: !sameState } }) });
     }
     this.cache.set(key, twin);
     return twin;
@@ -49,12 +51,12 @@ export class TwinService {
 
   async history(tenantId: string, machineId: string, limit = 50): Promise<DeviceTwin[]> {
     const bounded = Math.max(1, Math.min(100, Number.isFinite(limit) ? Math.floor(limit) : 50));
+    await this.machines.get(tenantId, machineId);
     if (!this.db.enabled) {
       const current = this.cache.get(`${tenantId}:${machineId}`);
       return current ? [current] : [];
     }
-    await this.machines.get(tenantId, machineId);
-    const rows = await this.db.request<any[]>(`machine_connect_twin_snapshots?organization_id=eq.${encodeURIComponent(tenantId)}&machine_id=eq.${encodeURIComponent(machineId)}&order=observed_at.desc&limit=${bounded}`);
+    const rows = await this.db.request<any[]>(`machine_connect_twin_snapshots?organization_id=eq.${encodeURIComponent(tenantId)}&machine_id=eq.${encodeURIComponent(machineId)}&order=version.desc&limit=${bounded}`);
     return rows.map((row) => this.fromRow(row));
   }
 
@@ -74,7 +76,7 @@ export class TwinService {
     return {
       id: row.id, tenantId: row.organization_id, machineId: row.machine_id,
       twinType: row.twin_type, observedAt: row.observed_at, state: row.state ?? {},
-      simulation: row.simulation ?? undefined, twinState: 'synchronized', version: Number(row.state?.__version ?? 1), createdAt: row.created_at,
+      simulation: row.simulation ?? undefined, twinState: 'synchronized', version: Number(row.version ?? 1), createdAt: row.created_at,
     };
   }
 }
