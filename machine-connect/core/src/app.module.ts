@@ -15,16 +15,13 @@ import { RealtimeModule } from './persistence/realtime.module';
 import { SyncModule } from './sync/sync.module';
 import { HealthController } from './health/health.controller';
 import { AdaptersModule } from './adapters/adapters.module';
+import { GraphModule } from './graph/graph.module';
 import { AdvancedAnalyticsModule } from './graph/advanced-analytics.module';
 import { DocumentModule } from './graph/document.module';
 import { DocumentEntityModule } from './graph/document-entity.module';
 
 @Module({
-  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule],
   controllers: [HealthController],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(AuthMiddleware).forRoutes({ path: 'api/(.*)', method: RequestMethod.ALL });
-  }
-}
+export class AppModule implements NestModule { configure(consumer:MiddlewareConsumer){consumer.apply(AuthMiddleware).forRoutes({path:'api/(.*)',method:RequestMethod.ALL});} }
