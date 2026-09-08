@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Req } from '@nestjs/common';
 import { FleetIntelligenceService } from './fleet-intelligence.service';
 
 @Controller('api/fleet-intelligence')
@@ -26,6 +26,8 @@ export class FleetIntelligenceController {
   }
 
   private tenant(req: any): string {
-    return req.principal?.tenantId ?? req.user?.tenantId ?? req.body?.tenantId;
+    const tenantId = req.principal?.tenantId ?? req.user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Authenticated tenant context is required');
+    return tenantId;
   }
 }
