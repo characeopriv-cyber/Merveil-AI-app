@@ -1,0 +1,84 @@
+services:
+  emqx:
+    image: emqx/emqx:5.8.6
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "8083:8083"
+      - "18083:18083"
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcpass}
+      POSTGRES_DB: ${POSTGRES_DB:-machineconnect}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mc} -d ${POSTGRES_DB:-machineconnect}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  core:
+    build:
+      context: ../core
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MACHINE_CONNECT_PORT: 4100
+      OFFLINE_MODE: "true"
+      MQTT_URL: mqtt://emqx:1883
+    ports:
+      - "4100:4100"
+    depends_on:
+      emqx:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  simulator:
+    build:
+      context: ./simulator
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: emqx
+      MQTT_PORT: 1883
+      DEVICE_ID: sensor-001
+      PUBLISH_INTERVAL_SECONDS: 5
+    depends_on:
+      emqx:
+        condition: service_healthy
+
+  nodered:
+    image: nodered/node-red:4.1.0
+    restart: unless-stopped
+    profiles: ["automation"]
+    ports:
+      - "1880:1880"
+    volumes:
+      - nodered-data:/data
+    environment:
+      MQTT_URL: mqtt://emqx:1883
+    depends_on:
+      emqx:
+        condition: service_healthy
+
+volumes:
+  emqx-data:
+  emqx-log:
+  postgres-data:
+  nodered-data:
