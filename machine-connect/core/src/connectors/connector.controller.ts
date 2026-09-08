@@ -40,10 +40,11 @@ export class ConnectorController {
   }
 
   @Post(':id/sync')
-  async sync(@Req() req: any, @Param('id') id: string, @Body() body: { machineId?: string }) {
+  async sync(@Req() req: any, @Param('id') id: string, @Body() body: { machineId?: string; idempotencyKey?: string }) {
     const principal = requirePermission(req.principal, 'security.write');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(principal.actorId)) throw new Error('Connector synchronization requires a user session');
-    return this.syncService.sync(principal.tenantId, principal.actorId, id, body?.machineId);
+    const idempotencyKey = body?.idempotencyKey ?? req.headers?.['x-idempotency-key'];
+    return this.syncService.sync(principal.tenantId, principal.actorId, id, body?.machineId, idempotencyKey);
   }
 
   @Patch(':id/status')
