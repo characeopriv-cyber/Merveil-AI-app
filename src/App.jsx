@@ -10455,8 +10455,9 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
   const [rot, setRot] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [focusLayer, setFocusLayer] = useState(null); // { identity, itemIndex }
   const [itemIndex, setItemIndex] = useState(0);
+  const [superBusy, setSuperBusy] = useState(false);
+  const [whoOpen, setWhoOpen] = useState(null); // { statusId, kind: 'view'|'super', people: [] }
   const dragRef = useRef({ x: 0, startRot: 0, moved: false });
   const mediaRef = useRef(null);
   const rotRef = useRef(0);
@@ -10475,7 +10476,6 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
       if (data.server_time) sinceRef.current = data.server_time;
 
       let list = Array.isArray(data.identities) ? data.identities : [];
-      // Backward compat: build identities from statuses[]
       if (!list.length && Array.isArray(data.statuses)) {
         const map = new Map();
         for (const st of data.statuses) {
@@ -10485,7 +10485,6 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
         }
         list = [...map.values()];
       }
-      // Always ensure You first
       const youIdx = list.findIndex((x) => String(x.user_id) === meId);
       if (youIdx > 0) {
         const [you] = list.splice(youIdx, 1);
@@ -10501,10 +10500,9 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
         });
       }
       if (soft && list.length) {
-        // Merge soft delta into existing identities by user_id
         setIdentities((prev) => {
-          const by = new Map(prev.map((p) => [String(p.user_id), p]));
-          for (const n of list) by.set(String(n.user_id), n);
+          const by = new Map(prev.map((x) => [String(x.user_id), x]));
+          for (const idn of list) by.set(String(idn.user_id), { ...(by.get(String(idn.user_id)) || {}), ...idn });
           const merged = [...by.values()];
           const yi = merged.findIndex((x) => String(x.user_id) === meId);
           if (yi > 0) {
@@ -10517,7 +10515,7 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
         setIdentities(list);
       }
     } catch (e) {
-      console.warn("Status load", e);
+      console.warn("[status load]", e?.message || e);
       if (!soft) {
         setIdentities([{
           user_id: meId,
@@ -10534,122 +10532,70 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
   }, [meId, currentUser?.name, currentUser?.avatar_url]);
 
   useEffect(() => { load(false); }, [load]);
-  // Soft realtime — status state only, not full Connect reload
   useEffect(() => {
-    if (!meId) return undefined;
     const t = setInterval(() => load(true), 12000);
     return () => clearInterval(t);
-  }, [meId, load]);
+  }, [load]);
 
-  const n = Math.max(identities.length, 1);
-  const ringSlots = Math.max(n, 8);
-  const angleStep = (Math.PI * 2) / ringSlots;
+  const n = Math.max(1, identities.length);
+  const step = (Math.PI * 2) / n;
 
-  useEffect(() => { rotRef.current = rot; }, [rot]);
-  useEffect(() => { focalRef.current = focal; }, [focal]);
-
-  const snapTo = useCallback((idx) => {
+  const snapTo = (idx) => {
     const i = ((idx % n) + n) % n;
     setFocal(i);
-    setRot(-i * angleStep);
+    focalRef.current = i;
     setItemIndex(0);
-  }, [n, angleStep]);
+    const target = -i * step;
+    setRot(target);
+    rotRef.current = target;
+  };
+
+  // Count view when focal changes to someone else's status
+  useEffect(() => {
+    const idn = identities[focal];
+    if (!idn?.has_status) return;
+    const st = (idn.items && idn.items[itemIndex]) || idn.primary;
+    if (!st?.id) return;
+    if (String(idn.user_id) === meId) return;
+    merveilFetch("/api/status?action=view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status_id: st.id }),
+    }).catch(() => {});
+  }, [focal, itemIndex, identities, meId]);
+
+  // Autoplay media inside focal circle when identity/item changes
+  useEffect(() => {
+    const el = mediaRef.current;
+    if (!el) return;
+    try {
+      el.currentTime = 0;
+      const p = el.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch { /* */ }
+    return () => {
+      try { el.pause(); } catch { /* */ }
+    };
+  }, [focal, itemIndex, identities]);
 
   const onPointerDown = (e) => {
-    if (focusLayer) return; // rotation paused while focus layer open — use side identities
-    const x = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-    dragRef.current = { x, startRot: rotRef.current, moved: false };
+    dragRef.current = { x: e.clientX, startRot: rotRef.current, moved: false };
     setDragging(true);
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* */ }
   };
-
-  useEffect(() => {
-    if (!dragging) return undefined;
-    const onMove = (e) => {
-      const x = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-      const dx = x - dragRef.current.x;
-      if (Math.abs(dx) > 4) dragRef.current.moved = true;
-      setRot(dragRef.current.startRot + dx * 0.011);
-    };
-    const onUp = () => {
-      setDragging(false);
-      const r = rotRef.current;
-      let idx = Math.round(-r / angleStep);
-      idx = ((idx % n) + n) % n;
-      setFocal(idx);
-      setRot(-idx * angleStep);
-      setItemIndex(0);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onUp);
-    };
-  }, [dragging, n, angleStep]);
-
-  const openFocus = (idx) => {
-    const idn = identities[idx];
-    if (!idn) return;
-    const isYou = String(idn.user_id) === meId;
-    if (!idn.has_status || !idn.items?.length) {
-      if (isYou) setShowCreate(true);
-      return;
-    }
-    setFocal(idx);
-    setRot(-idx * angleStep);
-    setItemIndex(0);
-    setFocusLayer({ identity: idn, itemIndex: 0 });
-    const st = idn.items[0] || idn.primary;
-    if (st?.id && !isYou) {
-      merveilFetch("/api/status?action=view", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status_id: st.id }),
-      }).catch(() => {});
-    }
+  const onPointerMove = (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - dragRef.current.x;
+    if (Math.abs(dx) > 6) dragRef.current.moved = true;
+    const next = dragRef.current.startRot + dx * 0.008;
+    rotRef.current = next;
+    setRot(next);
   };
-
-  const closeFocus = () => {
-    try {
-      if (mediaRef.current) {
-        mediaRef.current.pause();
-        mediaRef.current.removeAttribute("src");
-        mediaRef.current.load();
-      }
-    } catch { /* */ }
-    setFocusLayer(null);
-    setItemIndex(0);
-  };
-
-  // Advance to next status item or next identity (spatial recycle)
-  const advanceFocus = () => {
-    if (!focusLayer) return;
-    const idn = focusLayer.identity;
-    const items = idn.items || [];
-    const nextItem = (focusLayer.itemIndex || 0) + 1;
-    if (nextItem < items.length) {
-      setFocusLayer({ identity: idn, itemIndex: nextItem });
-      setItemIndex(nextItem);
-      return;
-    }
-    // next citizen on the ring
-    const curIdx = identities.findIndex((x) => String(x.user_id) === String(idn.user_id));
-    let next = (curIdx + 1) % n;
-    for (let k = 0; k < n; k++) {
-      const cand = identities[next];
-      if (cand?.has_status && cand.items?.length) {
-        openFocus(next);
-        return;
-      }
-      next = (next + 1) % n;
-    }
-    closeFocus();
+  const onPointerUp = () => {
+    if (!dragging) return;
+    setDragging(false);
+    const idx = Math.round(-rotRef.current / step);
+    snapTo(idx);
   };
 
   const createStatus = async (payload) => {
@@ -10668,103 +10614,131 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
     await load(false);
     setFocal(0);
     setRot(0);
+    setItemIndex(0);
     return data.status;
   };
 
-  // Active media only when focus layer open
-  const activeItem = focusLayer
-    ? (focusLayer.identity.items?.[focusLayer.itemIndex] || focusLayer.identity.primary)
-    : null;
+  const focalIdn = identities[focal] || identities[0];
+  const focalItems = focalIdn?.items?.length ? focalIdn.items : (focalIdn?.primary ? [focalIdn.primary] : []);
+  const activeStatus = focalItems[Math.min(itemIndex, Math.max(0, focalItems.length - 1))] || null;
+  const isYouFocal = focalIdn && String(focalIdn.user_id) === meId;
+  const viewCount = activeStatus?.view_count || 0;
+  const superCount = activeStatus?.super_count || activeStatus?.reaction_counts?.super || 0;
 
-  if (!meId) {
-    return (
-      <div className="px-3 py-4 text-center text-[13px]" style={{ color: CT.sub, background: "linear-gradient(180deg,#E8F4F6 0%,#F7F5F1 100%)" }}>
-        Sign in to see Status from people relevant to you.
-      </div>
-    );
-  }
+  const doSuper = async () => {
+    if (!activeStatus?.id || isYouFocal || superBusy) return;
+    setSuperBusy(true);
+    try {
+      await merveilFetch("/api/status?action=react", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status_id: activeStatus.id, reaction: "super" }),
+      });
+      setIdentities((prev) => prev.map((idn) => {
+        if (String(idn.user_id) !== String(focalIdn.user_id)) return idn;
+        const patch = (st) => st?.id === activeStatus.id
+          ? { ...st, super_count: (st.super_count || 0) + 1 }
+          : st;
+        return {
+          ...idn,
+          primary: patch(idn.primary),
+          items: (idn.items || []).map(patch),
+        };
+      }));
+    } catch { /* */ }
+    setSuperBusy(false);
+  };
 
-  const maxSec = config.max_video_seconds || STATUS_MAX_SEC;
+  const openWho = async (kind) => {
+    if (!isYouFocal || !activeStatus?.id) return;
+    try {
+      const res = await merveilFetch(`/api/status?action=audience&status_id=${encodeURIComponent(activeStatus.id)}&kind=${kind}`);
+      const data = await res.json().catch(() => ({}));
+      setWhoOpen({ statusId: activeStatus.id, kind, people: data.people || [] });
+    } catch {
+      setWhoOpen({ statusId: activeStatus.id, kind, people: [] });
+    }
+  };
+
+  const radius = 118;
+  const CT = { line: "rgba(18,22,28,0.08)", ink: "#12161C", sub: "#5C6570", accent: "#0E9AA7" };
 
   return (
     <div
       className="relative overflow-hidden"
       style={{
         background: "linear-gradient(175deg,#0A1218 0%,#121C24 45%,#1A242E 100%)",
-        minHeight: focusLayer ? 200 : 168,
+        minHeight: 200,
         marginTop: 0,
         paddingTop: "max(6px, env(safe-area-inset-top))",
-        /* soft bottom edge into Connect — not a hard rectangular rule */
         borderRadius: "0 0 28px 28px",
         boxShadow: "0 12px 28px rgba(0,0,0,0.12)",
       }}
     >
       <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 120%, rgba(255,255,255,0.06) 0%, transparent 55%)" }} />
-      <div className="pointer-events-none absolute inset-0 opacity-20" style={{ background: "radial-gradient(circle at 15% 25%, rgba(255,255,255,0.12), transparent 40%)" }} />
 
-      {!focusLayer && (
-        <div className="relative px-3 pt-1.5 pb-0.5 flex items-center justify-between z-10">
-          <div>
-            <div className="text-[10px] font-bold tracking-[0.14em] uppercase" style={{ color: "rgba(255,255,255,0.48)" }}>3D Status</div>
-            <div className="text-[12px] font-semibold" style={{ color: "#E8F4F6" }}>People relevant to you</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 text-[12px] font-semibold px-3.5 py-1.5 min-h-[36px]"
-            style={{ background: "rgba(255,255,255,0.12)", color: "#F4F1EC", borderRadius: 999, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)" }}
-          >
-            <span className="text-base leading-none">+</span> Your Status
-          </button>
+      <div className="relative px-3 pt-1.5 pb-0.5 flex items-center justify-between z-10">
+        <div>
+          <div className="text-[10px] font-bold tracking-[0.14em] uppercase" style={{ color: "rgba(255,255,255,0.48)" }}>3D Status</div>
+          <div className="text-[12px] font-semibold" style={{ color: "#E8F4F6" }}>People relevant to you</div>
         </div>
-      )}
+        <button
+          type="button"
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5"
+          style={{
+            background: "rgba(255,255,255,0.12)",
+            color: "#F4F1EC",
+            borderRadius: 999,
+            border: "none",
+            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)",
+          }}
+        >
+          <Plus size={14} /> Your Status
+        </button>
+      </div>
 
-      {/* Layer A — Identity ring (always present; shrinks slightly under focus layer) */}
+      {/* Spatial ring — content plays IN the focal circle (no separate page) */}
       <div
-        className="relative select-none"
+        className="relative mx-auto touch-none select-none"
         style={{
-          height: focusLayer ? 80 : 120,
+          height: 150,
           perspective: "1200px",
-          perspectiveOrigin: "50% 40%",
-          cursor: focusLayer ? "default" : (dragging ? "grabbing" : "grab"),
-          touchAction: "none",
-          transition: "height 0.35s ease",
+          perspectiveOrigin: "50% 45%",
         }}
         onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         role="list"
-        aria-label="3D Status World — rotate citizen identities"
+        aria-label="Status ring"
       >
-        {loading && !identities.length && (
-          <div className="absolute inset-0 flex items-center justify-center text-[12px] z-20" style={{ color: "rgba(255,255,255,0.5)" }}>Loading Status…</div>
-        )}
-        <div className="pointer-events-none absolute left-[12%] right-[12%] bottom-2 h-px opacity-25" style={{ background: "linear-gradient(90deg,transparent,rgba(14,154,167,0.7),transparent)" }} />
-
         <div
-          className="absolute left-1/2 top-[46%] w-0 h-0"
+          className="absolute left-1/2 top-[58%]"
           style={{
             transformStyle: "preserve-3d",
-            transform: `translate(-50%,-50%) rotateX(${focusLayer ? 14 : 8}deg) rotateY(${rot}rad)`,
+            transform: `translate(-50%, -50%) rotateY(${rot}rad)`,
             transition: dragging ? "none" : "transform 0.5s cubic-bezier(0.22,1,0.36,1)",
+            width: 0,
+            height: 0,
           }}
         >
           {identities.map((idn, i) => {
-            const ang = i * angleStep;
+            const ang = i * step;
             const isFocal = i === focal;
-            const radius = focusLayer ? 100 : 132;
-            // Layer B depth: non-focal sit lower/back
-            const yLift = isFocal ? (focusLayer ? -6 : 0) : (focusLayer ? 18 : 12);
             const u = idn.user || {};
             const isYou = String(idn.user_id) === meId;
             const has = !!idn.has_status && (idn.items?.length > 0 || idn.primary);
             const thumb = idn.primary?.thumbnail_url
               || (idn.primary?.content_type === "photo" ? idn.primary?.media_url : null)
               || u.avatar_url;
-            const size = focusLayer ? (isFocal ? 48 : 34) : (isFocal ? 72 : 50);
+            const size = isFocal ? 88 : 52;
             const ring = isFocal
               ? "2.5px solid rgba(255,255,255,0.92)"
               : has
-                ? "2px solid rgba(255,255,255,0.45)"
+                ? "2px solid rgba(14,154,167,0.65)"
                 : "2px dashed rgba(255,255,255,0.28)";
+            const showLive = isFocal && has && activeStatus;
             return (
               <button
                 key={idn.user_id || i}
@@ -10773,20 +10747,21 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
                 className="absolute flex flex-col items-center outline-none"
                 style={{
                   width: size + 10,
-                  transform: `rotateY(${ang}rad) translateZ(${radius}px) translateY(${yLift}px) rotateY(${-ang - rot}rad)`,
+                  transform: `rotateY(${ang}rad) translateZ(${radius}px) translateY(${isFocal ? 0 : 10}px) rotateY(${-ang - rot}rad)`,
                   marginLeft: -(size + 10) / 2,
                   marginTop: -(size / 2 + 10),
                   zIndex: isFocal ? 10 : 2,
                   transition: dragging ? "none" : "transform 0.5s cubic-bezier(0.22,1,0.36,1)",
-                  opacity: focusLayer && !isFocal ? 0.55 : (isFocal ? 1 : 0.82),
+                  opacity: isFocal ? 1 : 0.78,
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (dragRef.current.moved) return;
-                  if (isFocal) openFocus(i);
-                  else {
+                  if (isFocal) {
+                    if (isYou && !has) setShowCreate(true);
+                    else if (focalItems.length > 1) setItemIndex((x) => (x + 1) % focalItems.length);
+                  } else {
                     snapTo(i);
-                    if (focusLayer) openFocus(i);
                   }
                 }}
                 aria-label={`${isYou ? "Your" : (u.name || "Citizen")} Status`}
@@ -10798,161 +10773,159 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
                     height: size,
                     border: ring,
                     boxShadow: isFocal
-                      ? "0 0 0 4px rgba(14,154,167,0.2), 0 10px 24px rgba(0,0,0,0.4)"
+                      ? "0 0 0 4px rgba(14,154,167,0.28), 0 10px 24px rgba(0,0,0,0.4)"
                       : "0 5px 14px rgba(0,0,0,0.28)",
-                    background: "linear-gradient(145deg,#1a3a44,#0E9AA7)",
-                    transform: isFocal && !focusLayer ? "scale(1.06)" : "scale(1)",
+                    background: "#0E1A22",
+                    animation: isFocal && has ? "statusBreathe 2.8s ease-in-out infinite" : undefined,
                   }}
                 >
-                  {thumb ? (
-                    <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" draggable={false} />
+                  {showLive && activeStatus.content_type === "video" && activeStatus.media_url ? (
+                    <video
+                      ref={mediaRef}
+                      key={activeStatus.id}
+                      src={activeStatus.media_url}
+                      className="w-full h-full object-cover"
+                      muted
+                      playsInline
+                      loop
+                      autoPlay
+                    />
+                  ) : showLive && activeStatus.content_type === "photo" && activeStatus.media_url ? (
+                    <img src={activeStatus.media_url} alt="" className="w-full h-full object-cover" />
+                  ) : showLive && (activeStatus.content_type === "text" || activeStatus.content_type === "activity") ? (
+                    <div className="w-full h-full flex items-center justify-center p-2 text-center text-[10px] font-medium leading-tight" style={{ color: "#E8F4F6", background: "linear-gradient(145deg,#1a3a44,#0E9AA7)" }}>
+                      {(activeStatus.body_text || activeStatus.activity_label || "").slice(0, 60)}
+                    </div>
+                  ) : showLive && activeStatus.content_type === "voice" ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-1" style={{ background: "#122028" }}>
+                      <span className="text-lg">🎙️</span>
+                      <audio ref={mediaRef} key={activeStatus.id} src={activeStatus.media_url} autoPlay loop />
+                    </div>
+                  ) : thumb ? (
+                    <img src={thumb} alt="" className="w-full h-full object-cover" />
+                  ) : isYou ? (
+                    <div className="w-full h-full flex items-center justify-center" style={{ background: "linear-gradient(145deg,#1a3a44,#0E9AA7)" }}>
+                      <Plus size={isFocal ? 28 : 18} color="#fff" />
+                    </div>
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-white font-bold" style={{ fontSize: size * 0.32 }}>
-                      {(u.name || "?").slice(0, 1).toUpperCase()}
+                    <div className="w-full h-full flex items-center justify-center text-xs font-bold" style={{ background: "#1a2a34", color: "#9BB" }}>
+                      {(u.name || "?")[0]}
                     </div>
                   )}
-                  {has && isFocal && !focusLayer && (
-                    <span className="absolute inset-0 rounded-full pointer-events-none" style={{ animation: "statusBreathe 2.4s ease-in-out infinite" }} />
-                  )}
-                  {isYou && !has && (
-                    <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-xl font-light">+</span>
-                  )}
                 </div>
-                {!focusLayer && (
-                  <span
-                    className="mt-1.5 text-[10px] font-semibold truncate text-center"
-                    style={{ maxWidth: size + 14, color: isFocal ? "#fff" : "rgba(255,255,255,0.6)", textShadow: "0 1px 4px rgba(0,0,0,0.55)" }}
-                  >
-                    {isYou ? "You" : (u.name || "Citizen").split(" ")[0]}
-                  </span>
-                )}
+                <div className="mt-1 text-[10px] font-semibold truncate max-w-[72px]" style={{ color: isFocal ? "#E8F4F6" : "rgba(255,255,255,0.55)" }}>
+                  {isYou ? "You" : (u.name || "Citizen").split(" ")[0]}
+                </div>
               </button>
             );
           })}
         </div>
       </div>
 
-      {!focusLayer && (
-        <div className="px-3 pb-2.5 flex justify-center gap-1.5 flex-wrap">
-          {identities.slice(0, 16).map((_, i) => (
+      {/* Super + View on focal status — counts for everyone; who-list only for poster */}
+      {activeStatus && (
+        <div className="relative z-10 flex items-center justify-center gap-3 pb-3 pt-0.5">
+          <button
+            type="button"
+            onClick={() => (isYouFocal ? openWho("view") : null)}
+            className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5"
+            style={{
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.1)",
+              color: "#E8F4F6",
+              border: "none",
+              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.14)",
+              cursor: isYouFocal ? "pointer" : "default",
+            }}
+            aria-label="Views"
+          >
+            <Eye size={13} style={{ color: CT.accent }} />
+            <span>{viewCount}</span>
+          </button>
+          <button
+            type="button"
+            disabled={isYouFocal || superBusy}
+            onClick={doSuper}
+            className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5"
+            style={{
+              borderRadius: 999,
+              background: "rgba(14,154,167,0.22)",
+              color: "#E8F4F6",
+              border: "none",
+              boxShadow: "inset 0 0 0 1px rgba(14,154,167,0.45)",
+              opacity: isYouFocal ? 0.85 : 1,
+            }}
+            aria-label="Super"
+          >
+            <Sparkles size={13} style={{ color: CT.accent }} />
+            <span>Super {superCount > 0 ? superCount : ""}</span>
+          </button>
+          {isYouFocal && (
             <button
-              key={i}
               type="button"
-              aria-label={`Focus citizen ${i + 1}`}
-              onClick={() => snapTo(i)}
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ background: i === focal ? "#F4F1EC" : "rgba(255,255,255,0.22)", transform: i === focal ? "scale(1.4)" : "scale(1)", borderRadius: 999 }}
-            />
-          ))}
+              onClick={() => openWho("super")}
+              className="text-[10px] font-medium px-2 py-1"
+              style={{ color: "rgba(255,255,255,0.55)", borderRadius: 999 }}
+            >
+              Who
+            </button>
+          )}
         </div>
       )}
 
-      {/* 3D Status Focus Layer — content emerges; ring stays spatially present above */}
-      {focusLayer && activeItem && (
-        <div className="relative z-20 px-3 pb-3 pt-1">
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center text-[11px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+          Loading…
+        </div>
+      )}
+
+      {whoOpen && (
+        <div
+          className="fixed inset-0 z-[150] flex items-end justify-center"
+          style={{ background: "rgba(10,14,18,0.45)" }}
+          onClick={() => setWhoOpen(null)}
+        >
           <div
-            className="rounded-2xl overflow-hidden mx-auto"
+            className="w-full max-w-md p-4"
             style={{
-              maxWidth: 420,
-              background: "rgba(8,22,28,0.92)",
-              border: "none",
-              borderRadius: 28,
-              boxShadow: "0 24px 60px rgba(0,0,0,0.5)",
+              background: "#F4F1EC",
+              borderRadius: "28px 28px 0 0",
+              maxHeight: "50vh",
+              overflow: "auto",
             }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-2 px-3 py-2.5">
-              <button type="button" onClick={closeFocus} className="text-[12px] font-medium px-2.5 py-1.5 rounded-lg min-h-[36px]" style={{ color: "rgba(255,255,255,0.8)", background: "rgba(255,255,255,0.08)" }}>
-                Close
-              </button>
-              <button type="button" onClick={() => onOpenProfile?.(focusLayer.identity.user_id)} className="flex-1 min-w-0 text-left">
-                <div className="text-white text-sm font-semibold truncate">{focusLayer.identity.user?.name || "Citizen"}</div>
-                <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-                  {activeItem.content_type}
-                  {activeItem.created_at ? ` · ${timeAgo(activeItem.created_at)}` : ""}
-                  {(focusLayer.identity.items?.length || 0) > 1 ? ` · ${focusLayer.itemIndex + 1}/${focusLayer.identity.items.length}` : ""}
-                </div>
-              </button>
-              {String(focusLayer.identity.user_id) !== meId && (
-                <button
-                  type="button"
-                  onClick={() => { onMessage?.(focusLayer.identity.user || { id: focusLayer.identity.user_id }); closeFocus(); }}
-                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-full min-h-[36px]"
-                  style={{ background: "#F4F1EC", color: "#12161C", borderRadius: 999 }}
-                >
-                  Message
-                </button>
-              )}
+            <div className="text-[13px] font-semibold mb-2" style={{ color: CT.ink }}>
+              {whoOpen.kind === "super" ? "Who Super'd" : "Who viewed"} · only you see this
             </div>
-            <div className="flex items-center justify-center px-3 pb-3 min-h-[180px] max-h-[52vh]">
-              {activeItem.content_type === "video" && activeItem.media_url && (
-                <video
-                  key={activeItem.id}
-                  ref={mediaRef}
-                  src={activeItem.media_url}
-                  controls
-                  playsInline
-                  autoPlay
-                  className="max-h-[48vh] w-full rounded-xl object-contain bg-black"
-                  onEnded={advanceFocus}
-                />
-              )}
-              {activeItem.content_type === "photo" && activeItem.media_url && (
-                <img src={activeItem.media_url} alt="" className="max-h-[48vh] w-full rounded-xl object-contain" onClick={advanceFocus} />
-              )}
-              {(activeItem.content_type === "text" || activeItem.content_type === "activity") && (
-                <button type="button" onClick={advanceFocus} className="w-full rounded-xl p-6 text-center" style={{ background: "rgba(255,255,255,0.06)" }}>
-                  <p className="text-white text-lg font-medium leading-relaxed" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
-                    {activeItem.body_text || activeItem.activity_label}
-                  </p>
-                </button>
-              )}
-              {activeItem.content_type === "location" && (
-                <button type="button" onClick={advanceFocus} className="w-full rounded-xl p-6 text-center" style={{ background: "rgba(255,255,255,0.06)" }}>
-                  <MapPin className="mx-auto mb-2 text-teal-300" size={28} />
-                  <p className="text-white text-base font-semibold">{activeItem.location_label || activeItem.body_text || "Location"}</p>
-                </button>
-              )}
-              {activeItem.content_type === "voice" && activeItem.media_url && (
-                <audio key={activeItem.id} ref={mediaRef} src={activeItem.media_url} controls autoPlay className="w-full" onEnded={advanceFocus} />
-              )}
-            </div>
-            <div className="px-3 pb-3 flex flex-col gap-2">
-              <div className="flex items-center justify-center gap-2 flex-wrap">
-                <button type="button" className="text-[11px] font-semibold px-3 py-2 min-h-[36px]"
-                  style={{ background: "rgba(255,255,255,0.1)", color: "#F4F1EC", borderRadius: 999 }}
-                  onClick={() => {
-                    if (!activeItem?.id) return;
-                    merveilFetch("/api/status?action=react", {
-                      method: "POST", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ status_id: activeItem.id, reaction: "super" }),
-                    }).catch(() => {});
-                  }}>Super</button>
-                <button type="button" className="text-[11px] font-semibold px-3 py-2 min-h-[36px]"
-                  style={{ background: "rgba(255,255,255,0.1)", color: "#F4F1EC", borderRadius: 999 }}
-                  onClick={() => {
-                    if (!activeItem?.id) return;
-                    merveilFetch("/api/status?action=save", {
-                      method: "POST", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ status_id: activeItem.id }),
-                    }).catch(() => {});
-                  }}>Save</button>
-                <button type="button" className="text-[11px] font-semibold px-3 py-2 min-h-[36px]"
-                  style={{ background: "rgba(255,255,255,0.1)", color: "#F4F1EC", borderRadius: 999 }}
-                  onClick={async () => {
-                    const url = activeItem?.media_url || window.location.href;
-                    try {
-                      if (navigator.share) await navigator.share({ title: "Merveil Status", url });
-                      else { await navigator.clipboard.writeText(url); }
-                    } catch { /* */ }
-                  }}>Share</button>
-                <button type="button" className="text-[11px] font-semibold px-3 py-2 min-h-[36px]"
-                  style={{ background: "rgba(255,255,255,0.1)", color: "#F4F1EC", borderRadius: 999 }}
-                  onClick={advanceFocus}>Next</button>
+            {(whoOpen.people || []).length === 0 ? (
+              <div className="text-[12px] py-6 text-center" style={{ color: CT.sub }}>No one yet</div>
+            ) : (
+              <div className="flex flex-wrap gap-3 justify-center py-2">
+                {whoOpen.people.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="flex flex-col items-center w-16"
+                    onClick={() => onOpenProfile?.(p.id)}
+                  >
+                    <div className="w-12 h-12 rounded-full overflow-hidden" style={{ boxShadow: "inset 0 0 0 2px rgba(14,154,167,0.35)" }}>
+                      {p.avatar_url ? (
+                        <img src={p.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-sm font-bold" style={{ background: "#D8D0C4", color: CT.ink }}>
+                          {(p.name || "?")[0]}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-[10px] mt-1 truncate w-full text-center" style={{ color: CT.sub }}>{(p.name || "").split(" ")[0]}</div>
+                  </button>
+                ))}
               </div>
-              <div className="text-center text-[10px]" style={{ color: "rgba(255,255,255,0.35)" }}>
-                Views {activeItem.view_count || 0} · ring stays in space
-              </div>
-            </div>
+            )}
+            <button type="button" onClick={() => setWhoOpen(null)} className="w-full mt-2 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 999, background: CT.ink, color: "#fff" }}>
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -10960,17 +10933,17 @@ function StatusWorld3D({ currentUser, onOpenProfile, onMessage }) {
       {showCreate && (
         <StatusCreateSheet
           currentUser={currentUser}
-          maxSec={maxSec}
-          defaultExpiresHours={config.default_expires_hours || 24}
           onClose={() => setShowCreate(false)}
           onSubmit={createStatus}
+          maxSec={config.max_video_seconds || STATUS_MAX_SEC}
+          defaultExpiresHours={config.default_expires_hours || 24}
         />
       )}
 
       <style>{`
         @keyframes statusBreathe {
-          0%, 100% { box-shadow: inset 0 0 0 2px rgba(14,154,167,0.3); }
-          50% { box-shadow: inset 0 0 0 3px rgba(14,154,167,0.75); }
+          0%, 100% { box-shadow: 0 0 0 4px rgba(14,154,167,0.18), 0 10px 24px rgba(0,0,0,0.35); }
+          50% { box-shadow: 0 0 0 6px rgba(14,154,167,0.42), 0 12px 28px rgba(0,0,0,0.4); }
         }
       `}</style>
     </div>
@@ -11163,54 +11136,58 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
     } catch { /* */ }
   };
 
-  /** Reliable upload — session restore first, then signed PUT + multipart + people (known-good) */
+  /** Same upload path as Pulse / Creator / Invest — /api/people?action=upload */
   const uploadMedia = async (f) => {
-    const name = f.name || `status-${Date.now()}`;
+    if (!f) throw new Error("No file");
+    try { await fetch("/api/auth/session", { credentials: "include" }); } catch { /* */ }
+
+    // 1) Known-good multipart (Pulse / Creator / Invest)
     try {
-      await fetch("/api/auth/session", { credentials: "include" });
-    } catch { /* */ }
-
-    const trySigned = async (endpoint) => {
-      const urlRes = await merveilFetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: name }),
-      });
-      const urlData = await urlRes.json().catch(() => ({}));
-      if (!urlRes.ok || !urlData.signedUrl || !urlData.publicUrl) return null;
-      setProgress("Uploading…");
-      const put = await fetch(urlData.signedUrl, {
-        method: "PUT",
-        headers: { "Content-Type": f.type || "application/octet-stream" },
-        body: f,
-      });
-      return put.ok ? urlData.publicUrl : null;
-    };
-
-    const tryMultipart = async (endpoint) => {
       const fd = new FormData();
       fd.append("file", f);
       fd.append("folder", "status");
-      const res = await merveilFetch(endpoint, { method: "POST", body: fd });
+      const res = await merveilFetch("/api/people?action=upload", { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
       if (res.ok && (data.url || data.publicUrl)) return data.url || data.publicUrl;
-      return null;
-    };
+    } catch (e) {
+      console.warn("people upload", e);
+    }
 
-    let url =
-      (await trySigned("/api/status?action=upload-url").catch(() => null)) ||
-      (await trySigned("/api/world?action=video-upload-url").catch(() => null)) ||
-      (await trySigned("/api/people?action=video-upload-url").catch(() => null));
-    if (url) return url;
+    // 2) Signed URL via people
+    try {
+      const urlRes = await merveilFetch("/api/people?action=video-upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: f.name || `status-${Date.now()}` }),
+      });
+      const urlData = await urlRes.json().catch(() => ({}));
+      if (urlRes.ok && urlData.signedUrl && urlData.publicUrl) {
+        setProgress("Uploading…");
+        const put = await fetch(urlData.signedUrl, {
+          method: "PUT",
+          headers: { "Content-Type": f.type || "application/octet-stream" },
+          body: f,
+        });
+        if (put.ok) return urlData.publicUrl;
+      }
+    } catch (e) {
+      console.warn("people signed", e);
+    }
 
-    url =
-      (await tryMultipart("/api/status?action=upload").catch(() => null)) ||
-      (await tryMultipart("/api/world?action=upload").catch(() => null)) ||
-      (await tryMultipart("/api/people?action=upload").catch(() => null));
-    if (url) return url;
+    // 3) Status multipart fallback
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("folder", "status");
+      const res = await merveilFetch("/api/status?action=upload", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data.url || data.publicUrl)) return data.url || data.publicUrl;
+    } catch (e) {
+      console.warn("status multipart", e);
+    }
 
-    // Small files: data URL (text/photo/short voice) so Status still posts
-    if (f.size < 900000) {
+    // 4) Small image/audio as data URL last resort
+    if (f.size < 900000 && (f.type.startsWith("image/") || f.type.startsWith("audio/"))) {
       setProgress("Encoding…");
       return await new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -11219,7 +11196,7 @@ function StatusCreateSheet({ currentUser, onClose, onSubmit, maxSec = STATUS_MAX
         r.readAsDataURL(f);
       });
     }
-    throw new Error("Upload failed — create storage bucket `uploads` in Supabase (public read) or try a smaller file.");
+    throw new Error("Upload failed — use the same storage as Pulse (uploads bucket). Try a smaller file.");
   };
 
   const effectiveDuration = () => {
@@ -11926,7 +11903,11 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
       </div>
       <div className="overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: "calc(var(--nav-h) + var(--safe-bottom) + 24px)" }}>
         {loading && <div className="px-4 py-6 text-xs" style={{ color: CT.sub }}>{t("connect.scanning")}</div>}
-        {!loading && rows.length === 0 && <div className="px-4 py-6 text-xs text-center" style={{ color: CT.sub }}>{t("connect.noMatch")}</div>}
+        {!loading && rows.length === 0 && (
+          <div className="px-4 py-6 text-xs text-center" style={{ color: CT.sub }}>
+            {query.trim() ? t("connect.noMatch") : "No citizens loaded yet — pull to refresh or check back shortly."}
+          </div>
+        )}
         {(() => {
           const connected = rows.filter((r) => (r.contactRank || 0) > 0);
           const rest = rows.filter((r) => !(r.contactRank > 0));
