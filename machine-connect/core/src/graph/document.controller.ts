@@ -8,20 +8,23 @@ export class DocumentController {
 
   @Get()
   async list(@Req() req: any, @Query('limit') limit?: string) {
-    requirePermission(req, 'ontology.read');
-    return this.documents.list(req.principal.organizationId, Number(limit ?? 100));
+    const principal = requirePermission(req.principal, 'ontology.read');
+    return this.documents.list(principal.tenantId, Number(limit ?? 100));
   }
 
   @Get(':documentId')
   async get(@Req() req: any, @Param('documentId') documentId: string) {
-    requirePermission(req, 'ontology.read');
-    return this.documents.get(req.principal.organizationId, documentId);
+    const principal = requirePermission(req.principal, 'ontology.read');
+    return this.documents.get(principal.tenantId, documentId);
   }
 
   @Post()
   async create(@Req() req: any, @Body() body: { fileName?: string; storagePath?: string; mimeType?: string; byteSize?: number }) {
-    requirePermission(req, 'ontology.write');
-    return this.documents.create(req.principal.organizationId, req.principal.userId, {
+    const principal = requirePermission(req.principal, 'ontology.write');
+    if (principal.actorId.startsWith('machine:')) {
+      throw new Error('machine principals cannot create ontology documents');
+    }
+    return this.documents.create(principal.tenantId, principal.actorId, {
       fileName: body?.fileName ?? '',
       storagePath: body?.storagePath ?? '',
       mimeType: body?.mimeType ?? '',
