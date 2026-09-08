@@ -1,0 +1,13 @@
+{
+  "name": "@merveil/machine-connect-offline-sync",
+  "private": true,
+  "version": "0.1.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node sync_processor.js",
+    "check": "node --check sync_processor.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}
