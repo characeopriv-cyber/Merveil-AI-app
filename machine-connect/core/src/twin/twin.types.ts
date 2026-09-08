@@ -20,4 +20,5 @@ export interface TwinReconcileInput {
   observedAt?: string;
   source?: string;
   expectedVersion?: number;
+  correlationId?: string;
 }
