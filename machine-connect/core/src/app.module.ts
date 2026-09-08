@@ -17,9 +17,10 @@ import { HealthController } from './health/health.controller';
 import { AdaptersModule } from './adapters/adapters.module';
 import { AdvancedAnalyticsModule } from './graph/advanced-analytics.module';
 import { DocumentModule } from './graph/document.module';
+import { DocumentEntityModule } from './graph/document-entity.module';
 
 @Module({
-  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, AdvancedAnalyticsModule, DocumentModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule {
