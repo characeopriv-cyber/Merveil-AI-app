@@ -7,11 +7,14 @@ import { FleetController } from './fleet.controller';
 import { FleetService } from './fleet.service';
 import { FleetIntelligenceController } from './fleet-intelligence.controller';
 import { FleetIntelligenceService } from './fleet-intelligence.service';
+import { RemediationService } from './remediation.service';
+import { RolloutService } from './rollout.service';
+import { FleetOperationsController } from './fleet-operations.controller';
 
 @Module({
   imports: [PersistenceModule, MachineModule, CommandModule, TelemetryModule],
-  controllers: [FleetController, FleetIntelligenceController],
-  providers: [FleetService, FleetIntelligenceService],
-  exports: [FleetService, FleetIntelligenceService],
+  controllers: [FleetController, FleetIntelligenceController, FleetOperationsController],
+  providers: [FleetService, FleetIntelligenceService, RemediationService, RolloutService],
+  exports: [FleetService, FleetIntelligenceService, RemediationService, RolloutService],
 })
 export class FleetModule {}
