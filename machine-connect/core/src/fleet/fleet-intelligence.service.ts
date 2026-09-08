@@ -46,6 +46,30 @@ export class FleetIntelligenceService {
     return this.db.request<any[]>(`machine_connect_health_snapshots?organization_id=eq.${encodeURIComponent(tenantId)}&fleet_id=eq.${encodeURIComponent(fleetId)}&order=measured_at.desc&limit=${safe}`);
   }
 
+  async risk(tenantId: string, fleetId: string) {
+    const current = await this.health(tenantId, fleetId, false);
+    const history = (await this.history(tenantId, fleetId, 100)).reverse();
+    const byMachine = new Map<string, any[]>();
+    for (const row of history) byMachine.set(row.machine_id, [...(byMachine.get(row.machine_id) ?? []), row]);
+
+    const machines = current.machines.map((machine: any) => {
+      const samples = byMachine.get(machine.machineId) ?? [];
+      const scores = samples.map(row => Number(row.health_score)).filter(Number.isFinite);
+      const baseline = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : machine.score;
+      const recent = scores.length >= 3 ? scores.slice(-3) : scores;
+      const slope = recent.length >= 2 ? (recent[recent.length - 1] - recent[0]) / (recent.length - 1) : 0;
+      const trendRisk = Math.min(40, Math.max(0, -slope * 8));
+      const anomalyRisk = Math.min(30, Number(machine.anomalyScore ?? 0) * 30);
+      const operationalRisk = machine.status === 'critical' ? 30 : machine.status === 'degraded' ? 15 : machine.connectionState === 'offline' ? 25 : 0;
+      const riskScore = Math.round(Math.min(100, Math.max(0, trendRisk + anomalyRisk + operationalRisk)));
+      const level = riskScore >= 70 ? 'critical' : riskScore >= 40 ? 'high' : riskScore >= 20 ? 'medium' : 'low';
+      return { machineId: machine.machineId, name: machine.name, riskScore, level, baselineHealth: Math.round(baseline), currentHealth: machine.score, trendPerSample: Number(slope.toFixed(2)), samples: scores.length, signals: machine.signals };
+    });
+    machines.sort((a: any, b: any) => b.riskScore - a.riskScore);
+    const fleetRisk = machines.length ? Math.round(machines.reduce((sum: number, item: any) => sum + item.riskScore, 0) / machines.length) : 0;
+    return { fleetId, riskScore: fleetRisk, level: fleetRisk >= 70 ? 'critical' : fleetRisk >= 40 ? 'high' : fleetRisk >= 20 ? 'medium' : 'low', machines, generatedAt: new Date().toISOString() };
+  }
+
   async acknowledgeAlert(tenantId: string, alertId: string, actor: string) {
     if (!this.db.enabled) throw new BadRequestException('Persistent storage is required');
     const rows = await this.db.request<any[]>(`machine_connect_fleet_alerts?id=eq.${encodeURIComponent(alertId)}&organization_id=eq.${encodeURIComponent(tenantId)}&limit=1`);
