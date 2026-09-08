@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && files=$(find dist -type f \( -name '*.test.js' -o -name '*.spec.js' \) -print) && test -n \"$files\" && node --test $files",
+    "test": "npm run build && node --test dist",
     "audit:modules": "node audit-modules.mjs"
   },
   "dependencies": {
