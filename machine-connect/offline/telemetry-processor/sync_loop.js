@@ -11,10 +11,35 @@ function createSyncLoop({ pool, transport, intervalMs = 2000, batchSize = 100, m
     try {
       const rows = await claimReadyRows(pool, batchSize);
       if (!rows.length) return;
-      const envelopes = rows.map(buildSyncEnvelope);
-      const result = await transport.pushTelemetry(envelopes);
+
+      // Validate rows independently so one malformed queue item cannot strand
+      // an otherwise valid batch behind its claim lease.
+      const envelopes = [];
+      const invalid = [];
+      for (const row of rows) {
+        try {
+          envelopes.push(buildSyncEnvelope(row));
+        } catch (error) {
+          invalid.push({ row, result: { confirmed: false, reason: error.message || 'invalid sync queue row' } });
+        }
+      }
+
+      for (const item of invalid) {
+        await handleTransportResult(pool, item.row, item.result, maxAttempts);
+      }
+
+      if (!envelopes.length) return;
+
+      let result;
+      try {
+        result = await transport.pushTelemetry(envelopes);
+      } catch (error) {
+        result = { confirmed: false, reason: error.message || 'offline sync transport failed' };
+      }
+
       const confirmations = new Map((result.items || []).map((item) => [String(item.queue_id), item]));
       for (const row of rows) {
+        if (invalid.some((item) => item.row.id === row.id)) continue;
         const item = confirmations.get(String(row.id));
         await handleTransportResult(pool, row, item ? { confirmed: item.confirmed === true } : result, maxAttempts);
       }
