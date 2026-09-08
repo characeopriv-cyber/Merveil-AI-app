@@ -2002,11 +2002,24 @@ export default async function handler(req, res) {
         try { svcDir = adminClient(); } catch (e) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
-        const { data: people, error } = await svcDir.from("profiles")
-          .select("id,name,avatar_url,role_label,profession,passport_tier,discoverable,last_seen_at,created_at")
-          .neq("id", callerId)
-          .limit(500);
-        if (error) return sendJson(res, 400, { error: error.message });
+        let people = [];
+        {
+          const q1 = await svcDir.from("profiles")
+            .select("id,name,avatar_url,role_label,profession,passport_tier,discoverable,last_seen_at,created_at")
+            .neq("id", callerId)
+            .limit(500);
+          if (q1.error) {
+            // Column mismatch fallback
+            const q2 = await svcDir.from("profiles")
+              .select("id,name,avatar_url,role_label,profession,passport_tier,created_at")
+              .neq("id", callerId)
+              .limit(500);
+            if (q2.error) return sendJson(res, 400, { error: q2.error.message });
+            people = q2.data || [];
+          } else {
+            people = q1.data || [];
+          }
+        }
         // null/undefined discoverable = visible (only explicit false hides)
         const visible = (people || []).filter((p) => p.discoverable !== false);
         const ids = visible.map((p) => p.id);
@@ -10861,7 +10874,7 @@ export default async function handler(req, res) {
 
       // GET list — returns identity nodes (one primary circle per citizen) + items[]
       if (method === "GET" && (!action || action === "list")) {
-        if (!me) return sendJson(res, 200, { identities: [], mine: null, config: { max_video_seconds: 40 } });
+        if (!me) return sendJson(res, 200, { identities: [], mine: null, config: { max_video_seconds: 60 } });
         const cfg = await loadStatusConfig();
         const nowIso = new Date().toISOString();
         const limit = Math.min(80, Math.max(1, parseInt(req.query.limit || "48", 10) || 48));
@@ -10915,10 +10928,28 @@ export default async function handler(req, res) {
           for (const p of profs || []) profiles[p.id] = p;
         }
 
+        // Super counts for all status rows in this page
+        const allStatusIds = visible.map((r) => r.id).filter(Boolean);
+        const superByStatus = {};
+        if (allStatusIds.length) {
+          try {
+            const { data: rx } = await svc
+              .from("status_reactions")
+              .select("status_id")
+              .in("status_id", allStatusIds)
+              .eq("reaction", "super");
+            for (const row of rx || []) {
+              const sid = row.status_id;
+              superByStatus[sid] = (superByStatus[sid] || 0) + 1;
+            }
+          } catch { /* table may not exist */ }
+        }
+        const decorate = (st) => st ? { ...st, super_count: superByStatus[st.id] || 0 } : st;
+
         // Order: me first, then by latest status created_at
         const identities = [...byUser.entries()]
           .map(([uid, items]) => {
-            const sorted = items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            const sorted = items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(decorate);
             const primary = sorted[0];
             return {
               user_id: uid,
@@ -11107,6 +11138,44 @@ export default async function handler(req, res) {
         );
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
+      }
+
+      // Poster-only: who viewed / who Super'd (circular people list)
+      if (method === "GET" && action === "audience") {
+        if (!me) return sendJson(res, 401, { error: "Sign in required" });
+        const statusId = req.query.status_id || req.query.id;
+        const kind = String(req.query.kind || "view").toLowerCase();
+        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
+        const { data: st } = await svc.from("citizen_status").select("id,user_id").eq("id", statusId).maybeSingle();
+        if (!st) return sendJson(res, 404, { error: "Status not found" });
+        if (String(st.user_id) !== String(me)) {
+          return sendJson(res, 403, { error: "Only the poster can see who viewed or Super'd." });
+        }
+        let ids = [];
+        if (kind === "super" || kind === "reaction") {
+          const { data: rows } = await svc
+            .from("status_reactions")
+            .select("citizen_id")
+            .eq("status_id", statusId)
+            .eq("reaction", "super")
+            .limit(200);
+          ids = (rows || []).map((r) => r.citizen_id).filter(Boolean);
+        } else {
+          const { data: rows } = await svc
+            .from("status_views")
+            .select("viewer_id")
+            .eq("status_id", statusId)
+            .order("viewed_at", { ascending: false })
+            .limit(200);
+          ids = (rows || []).map((r) => r.viewer_id).filter(Boolean);
+        }
+        let people = [];
+        if (ids.length) {
+          const { data: profs } = await svc.from("profiles").select("id,name,avatar_url").in("id", ids);
+          const map = Object.fromEntries((profs || []).map((p) => [p.id, p]));
+          people = ids.map((id) => map[id] || { id, name: "Citizen" });
+        }
+        return sendJson(res, 200, { people, kind });
       }
 
       // Signed upload URL for Status media (same pattern as world video-upload-url)
