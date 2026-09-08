@@ -1,10 +1,17 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { requirePermission } from '../auth/permissions';
 import { ConnectorService } from './connector.service';
+import { ConnectorRegistry } from './connector.registry';
 
 @Controller('api/connectors')
 export class ConnectorController {
-  constructor(private readonly connectors: ConnectorService) {}
+  constructor(private readonly connectors: ConnectorService, private readonly registry: ConnectorRegistry) {}
+
+  @Get('providers')
+  providers(@Req() req: any) {
+    requirePermission(req.principal, 'security.read');
+    return this.registry.list();
+  }
 
   @Get()
   async list(@Req() req: any) {
