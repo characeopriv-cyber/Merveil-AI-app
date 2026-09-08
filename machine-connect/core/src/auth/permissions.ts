@@ -12,16 +12,19 @@ export type Permission =
   | 'land.read'
   | 'land.transfer'
   | 'ai.read'
-  | 'ai.run';
+  | 'ai.run'
+  | 'ontology.read'
+  | 'ontology.write'
+  | 'graph.analyze';
 
 const ROLE_PERMISSIONS: Record<PrincipalRole, readonly Permission[] | '*'> = {
   owner: '*',
   admin: '*',
-  operator: ['device.read', 'device.control', 'telemetry.read', 'workflow.read', 'workflow.execute'],
-  viewer: ['device.read', 'telemetry.read', 'workflow.read'],
-  security_analyst: ['security.read', 'security.scan'],
-  land_registry_officer: ['land.read', 'land.transfer'],
-  data_scientist: ['ai.read', 'ai.run'],
+  operator: ['device.read', 'device.control', 'telemetry.read', 'workflow.read', 'workflow.execute', 'ontology.read'],
+  viewer: ['device.read', 'telemetry.read', 'workflow.read', 'ontology.read'],
+  security_analyst: ['security.read', 'security.scan', 'ontology.read', 'graph.analyze'],
+  land_registry_officer: ['land.read', 'land.transfer', 'ontology.read', 'graph.analyze'],
+  data_scientist: ['ai.read', 'ai.run', 'ontology.read', 'graph.analyze'],
 };
 
 export function hasPermission(principal: Principal, permission: Permission): boolean {
