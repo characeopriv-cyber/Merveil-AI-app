@@ -13,6 +13,14 @@ import {
   getAccessToken,
 } from "../lib/supabaseServer.js";
 
+// Presence "connected" window — Facebook-style: a citizen is considered
+// connected/online for as long as their session is realistically still
+// open, not just for a few minutes of polling. Real disconnects (tab
+// close, app kill) send an explicit "offline" beacon immediately, so this
+// long window is purely a safety net for sessions that crashed without
+// getting to send that beacon.
+const PRESENCE_STALE_MS = 24 * 60 * 60 * 1000; // 24h
+
 // Server-side FCM (native) + Web Push (PWA). Path works when pushSend.js
 // sits next to the API router or under lib/.
 let pushSendMod = null;
@@ -1913,17 +1921,24 @@ export default async function handler(req, res) {
         if (!ids.length) return sendJson(res, 200, { presence: {} });
         const { data } = await sb.from("presence").select("*").in("user_id", ids);
         const presence = {};
-        // 300s window — clients beat ~30s when visible / ~90s when away;
-        // tolerates several missed beats (background tab, flaky network).
-        const cutoff = Date.now() - 300 * 1000;
+        // Facebook-style presence: a citizen stays "connected" for as long as
+        // their session is open — no short polling window flips them offline.
+        // The client sends an explicit "offline" beacon on real disconnect
+        // (tab close / app kill), so that's the primary offline signal.
+        // PRESENCE_STALE_MS is only a safety net for crashed/killed sessions
+        // that never got to send that beacon.
+        const cutoff = Date.now() - PRESENCE_STALE_MS;
         for (const row of data || []) {
           const fresh = row.updated_at && new Date(row.updated_at).getTime() > cutoff;
           const st = (row.status || "online").toLowerCase();
-          if (!fresh || st === "offline" || st === "away") {
+          if (!fresh || st === "offline") {
             presence[row.user_id] = "offline";
           } else if (st === "busy") {
             presence[row.user_id] = "busy";
           } else {
+            // "away" (backgrounded tab) still counts as connected/online —
+            // matches directory's handling below, and matches "as long as
+            // citizen is connected" rather than penalizing a minimized app.
             presence[row.user_id] = "online";
           }
         }
@@ -2024,7 +2039,7 @@ export default async function handler(req, res) {
         const visible = (people || []).filter((p) => p.discoverable !== false);
         const ids = visible.map((p) => p.id);
         let presenceMap = {};
-        const cutoff = Date.now() - 300 * 1000;
+        const cutoff = Date.now() - PRESENCE_STALE_MS;
         if (ids.length) {
           const { data: pres } = await svcDir.from("presence").select("*").in("user_id", ids);
           for (const row of pres || []) {
