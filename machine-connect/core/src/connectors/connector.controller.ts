@@ -32,6 +32,12 @@ export class ConnectorController {
     return this.connectors.create(principal.tenantId, principal.actorId, body ?? {});
   }
 
+  @Post(':id/health-check')
+  async healthCheck(@Req() req: any, @Param('id') id: string) {
+    const principal = requirePermission(req.principal, 'security.read');
+    return this.connectors.healthCheck(principal.tenantId, principal.actorId, id);
+  }
+
   @Patch(':id/status')
   async status(@Req() req: any, @Param('id') id: string, @Body() body: { status?: any; error?: string }) {
     const principal = requirePermission(req.principal, 'security.write');
