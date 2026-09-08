@@ -1,290 +1,131 @@
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  Activity,
-  AlertTriangle,
-  BarChart3,
-  Bell,
-  Blocks,
-  Bot,
-  Building2,
-  ChevronDown,
-  ChevronRight,
-  CircleHelp,
-  ClipboardList,
-  CloudCog,
-  Code2,
-  Database,
-  FileKey2,
-  Globe2,
-  KeyRound,
-  Layers3,
-  LayoutDashboard,
-  LockKeyhole,
-  Map,
-  Menu,
-  Network,
-  Search,
-  ServerCog,
-  Settings,
-  ShieldCheck,
-  SlidersHorizontal,
-  Users,
-  Workflow,
-  X,
-  Zap,
-} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, AlertTriangle, ChevronDown, ChevronRight, CircleDot, ClipboardCheck, Cpu, Database, Gauge, LayoutDashboard, Network, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Terminal, Wrench, X, Zap } from "lucide-react";
+import ChrysalisUpgrade from "./ChrysalisUpgrade";
+import "./machineConnectLive.css";
 
-const NAV_GROUPS = [
-  {
-    key: "device",
-    label: "Device Management",
-    icon: Network,
-    items: ["Devices", "Telemetry", "Rules Engine", "Protocol Adapters"],
-  },
-  {
-    key: "security",
-    label: "Security Operations",
-    icon: ShieldCheck,
-    items: ["Threat Intelligence", "IDS / IPS", "Vulnerability Management", "SOAR Playbooks", "Audit Logs"],
-  },
-  {
-    key: "nation",
-    label: "Digital Nation",
-    icon: Building2,
-    items: ["Workflows", "Service Requests", "Land Registry", "Licenses & Permits", "Civic Engagement"],
-  },
-  {
-    key: "ai",
-    label: "AI & Analytics",
-    icon: Bot,
-    items: ["FormGenAI", "FedLearn", "Predictive Analytics", "Digital Twins"],
-  },
-  {
-    key: "blockchain",
-    label: "Blockchain",
-    icon: Blocks,
-    items: ["LandChain", "VoteChain", "Data Provenance"],
-  },
-  {
-    key: "admin",
-    label: "Administration",
-    icon: Settings,
-    items: ["Users & Roles", "Organization", "Billing & Usage", "API Keys & Integrations"],
-  },
+const NAV = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "machines", label: "Machines", icon: Network },
+  { key: "telemetry", label: "Telemetry", icon: Activity },
+  { key: "commands", label: "Commands", icon: Terminal },
+  { key: "chrysalis", label: "CHRYSALIS", icon: Wrench },
 ];
 
-const PLAN_DATA = {
-  Free: { price: "$0", devices: "5", storage: "1 GB", api: "10k" },
-  Pro: { price: "$49", devices: "50", storage: "10 GB", api: "100k" },
-  Business: { price: "$299", devices: "500", storage: "100 GB", api: "Custom" },
-  Enterprise: { price: "Custom", devices: "Unlimited", storage: "Custom", api: "Custom" },
-};
+const COMMANDS = ["START", "STOP", "PAUSE", "RESUME", "RETURN HOME", "RESTART"];
 
-function Status({ children, tone = "neutral" }) {
-  return <span className={`mc-status mc-status-${tone}`}>{children}</span>;
+function apiBase() {
+  return String(import.meta.env.VITE_MACHINE_CONNECT_API_URL || "").replace(/\/$/, "");
 }
 
-function KpiCard({ icon: Icon, label, value, detail, tone = "blue" }) {
-  return (
-    <div className="mc-kpi-card">
-      <div className={`mc-kpi-icon mc-kpi-${tone}`}><Icon size={18} /></div>
-      <div className="mc-kpi-copy">
-        <div className="mc-kpi-label">{label}</div>
-        <div className="mc-kpi-value">{value}</div>
-        <div className="mc-kpi-detail">{detail}</div>
-      </div>
-    </div>
-  );
+async function api(path, options = {}) {
+  const base = apiBase();
+  if (!base) throw new Error("Machine Connect API is not configured");
+  const response = await fetch(`${base}${path}`, { credentials: "include", headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+  const text = await response.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!response.ok) throw new Error(typeof body === "string" ? body : body?.message || `HTTP ${response.status}`);
+  return body;
 }
 
-export default function MachineConnectPlatform({ initialPlan = "Pro" }) {
-  const [active, setActive] = useState("Dashboard");
-  const [expanded, setExpanded] = useState(() => new Set(NAV_GROUPS.map((group) => group.key)));
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [orgOpen, setOrgOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [plan, setPlan] = useState(initialPlan);
-  const [snapshot, setSnapshot] = useState(null);
-  const [connectionState, setConnectionState] = useState("checking");
+function Status({ state }) {
+  const tone = state === "online" || state === "active" ? "online" : state === "offline" || state === "revoked" || state === "quarantined" ? "offline" : "unknown";
+  return <span className={`mc-live-status ${tone}`}><CircleDot size={11} />{String(state || "unknown").toUpperCase()}</span>;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    const base = import.meta.env.VITE_MACHINE_CONNECT_API_URL;
-    if (!base) {
-      setConnectionState("not-configured");
-      return undefined;
-    }
-    fetch(`${base.replace(/\/$/, "")}/api/machines`, { credentials: "include" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const machines = await response.json();
-        if (!cancelled) {
-          setSnapshot({ machines: Array.isArray(machines) ? machines : [] });
-          setConnectionState("connected");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setConnectionState("unavailable");
-      });
-    return () => { cancelled = true; };
+export default function MachineConnectPlatform() {
+  const [active, setActive] = useState("dashboard");
+  const [machines, setMachines] = useState([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [telemetry, setTelemetry] = useState([]);
+  const [status, setStatus] = useState("checking");
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [commandResult, setCommandResult] = useState(null);
+
+  const selected = useMemo(() => machines.find((machine) => machine.id === selectedId) || machines[0] || null, [machines, selectedId]);
+
+  const loadMachines = useCallback(async () => {
+    setRefreshing(true); setError("");
+    try {
+      const data = await api("/api/machines");
+      const list = Array.isArray(data) ? data : [];
+      setMachines(list);
+      setSelectedId((current) => list.some((m) => m.id === current) ? current : list[0]?.id || "");
+      setStatus("connected");
+    } catch (err) {
+      setStatus("unavailable"); setError(err.message || "Unable to reach Machine Connect Core");
+    } finally { setRefreshing(false); }
   }, []);
 
-  const visibleGroups = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return NAV_GROUPS;
-    return NAV_GROUPS.map((group) => ({
-      ...group,
-      items: group.items.filter((item) => item.toLowerCase().includes(q) || group.label.toLowerCase().includes(q)),
-    })).filter((group) => group.items.length);
-  }, [search]);
+  const loadTelemetry = useCallback(async (machineId) => {
+    if (!machineId) { setTelemetry([]); return; }
+    try { setTelemetry((await api(`/api/telemetry/${encodeURIComponent(machineId)}?limit=100`)) || []); }
+    catch (err) { setError(err.message || "Unable to load telemetry"); setTelemetry([]); }
+  }, []);
 
-  const machineCount = snapshot?.machines?.length;
-  const dashboardValue = connectionState === "connected" ? String(machineCount ?? 0) : "—";
-  const connectionLabel = connectionState === "connected" ? "Core API connected" : connectionState === "not-configured" ? "Core API not configured" : connectionState === "unavailable" ? "Core API unavailable" : "Connecting to Core API";
+  useEffect(() => { loadMachines(); }, [loadMachines]);
+  useEffect(() => { loadTelemetry(selected?.id); }, [selected?.id, loadTelemetry]);
 
-  function toggleGroup(key) {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return machines;
+    return machines.filter((m) => [m.name, m.id, m.type, m.manufacturer, m.model, m.lifecycleState, m.connectionState].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)));
+  }, [machines, query]);
+
+  async function sendCommand(capability) {
+    if (!selected) return;
+    setCommandResult(null); setError("");
+    try {
+      const created = await api(`/api/machines/${encodeURIComponent(selected.id)}/commands`, { method: "POST", body: JSON.stringify({ capability: capability.toLowerCase().replaceAll(" ", "_"), parameters: {}, idempotencyKey: crypto.randomUUID(), safetyClass: capability === "STOP" || capability === "RESTART" ? "critical" : "control" }) });
+      setCommandResult(created);
+    } catch (err) { setError(err.message || "Command request failed"); }
   }
 
-  function activate(item) {
-    setActive(item);
-    setNotificationsOpen(false);
-  }
+  return <div className="mc-live-shell">
+    <aside className="mc-live-sidebar">
+      <div className="mc-live-brand"><div className="mc-live-mark">MC</div><div><strong>Machine Connect</strong><span>Live control plane</span></div></div>
+      <nav>{NAV.map(({ key, label, icon: Icon }) => <button key={key} className={active === key ? "active" : ""} onClick={() => setActive(key)}><Icon size={17} /><span>{label}</span></button>)}</nav>
+      <div className="mc-live-foot"><ShieldCheck size={14} /> Server-side authorization</div>
+    </aside>
 
-  return (
-    <div className="mc-shell">
-      <aside className={`mc-sidebar ${sidebarOpen ? "mc-sidebar-open" : "mc-sidebar-collapsed"}`}>
-        <div className="mc-brand">
-          <div className="mc-brand-mark"><HexLogo /></div>
-          {sidebarOpen && <div><div className="mc-brand-name">Machine Connect</div><div className="mc-brand-tag">Connect. Secure. Govern.</div></div>}
-        </div>
+    <main className="mc-live-main">
+      <header className="mc-live-header"><div className="mc-live-title"><span>Machine Connect</span><ChevronRight size={14} /><strong>{NAV.find((item) => item.key === active)?.label}</strong></div><div className="mc-live-header-actions"><div className="mc-live-search"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search real machines…" />{query && <button onClick={() => setQuery("")}><X size={13} /></button>}</div><button className="mc-live-refresh" onClick={loadMachines} disabled={refreshing}><RefreshCw className={refreshing ? "spin" : ""} size={16} /></button></div></header>
 
-        <nav className="mc-nav" aria-label="Machine Connect navigation">
-          <button className={`mc-nav-main ${active === "Dashboard" ? "is-active" : ""}`} onClick={() => activate("Dashboard")}>
-            <LayoutDashboard size={17} /> {sidebarOpen && <span>Dashboard</span>}
-          </button>
-          {visibleGroups.map((group) => {
-            const Icon = group.icon;
-            const isExpanded = expanded.has(group.key);
-            return (
-              <div className="mc-nav-group" key={group.key}>
-                <button className="mc-nav-group-title" onClick={() => toggleGroup(group.key)} title={group.label}>
-                  <Icon size={16} />
-                  {sidebarOpen && <><span>{group.label}</span><ChevronDown className={isExpanded ? "rotate" : ""} size={14} /></>}
-                </button>
-                {sidebarOpen && isExpanded && group.items.map((item) => (
-                  <button key={item} className={`mc-nav-item ${active === item ? "is-active" : ""}`} onClick={() => activate(item)}>
-                    <span className="mc-nav-dot" />{item}
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
+      <section className="mc-live-content">
+        {error && <div className="mc-live-error"><AlertTriangle size={16} /><span>{error}</span></div>}
+        <div className="mc-live-connection"><span className={`dot ${status}`} /> Core API: <strong>{status === "connected" ? "CONNECTED" : status.toUpperCase()}</strong><span className="muted">No simulated machine state is used.</span></div>
 
-        {sidebarOpen && (
-          <div className="mc-sidebar-footer">
-            <div className="mc-secure-row"><LockKeyhole size={14} /> RBAC protected</div>
-            <div className="mc-sidebar-version">Machine Connect · Platform</div>
-          </div>
-        )}
-      </aside>
-
-      <section className="mc-main">
-        <header className="mc-topbar">
-          <button className="mc-icon-button mc-menu" onClick={() => setSidebarOpen((v) => !v)} aria-label="Toggle navigation"><Menu size={19} /></button>
-          <div className="mc-org-wrap">
-            <button className="mc-org-switcher" onClick={() => setOrgOpen((v) => !v)}>
-              <div className="mc-org-avatar">MC</div>
-              <div className="mc-org-copy"><strong>Machine Connect</strong><span>Organization workspace</span></div>
-              <ChevronDown size={16} />
-            </button>
-            {orgOpen && <div className="mc-popover mc-org-menu"><button>Machine Connect</button><button>Switch organization</button><button>Create organization</button></div>}
-          </div>
-          <div className="mc-search">
-            <Search size={16} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search services, devices, incidents…" />
-            {search && <button onClick={() => setSearch("")}><X size={14} /></button>}
-          </div>
-          <div className="mc-top-actions">
-            <button className="mc-icon-button" onClick={() => setNotificationsOpen((v) => !v)} aria-label="Notifications"><Bell size={18} /><span className="mc-notification-dot" /></button>
-            <button className="mc-user-menu"><div className="mc-user-avatar">MC</div><span>Operator</span><ChevronDown size={14} /></button>
-          </div>
-          {notificationsOpen && <div className="mc-popover mc-notifications"><strong>Notifications</strong><p>No live alerts are available from Core API.</p></div>}
-        </header>
-
-        <main className="mc-content">
-          <div className="mc-breadcrumb"><span>Machine Connect</span><ChevronRight size={13} /><strong>{active}</strong></div>
-          {active === "Dashboard" ? (
-            <DashboardContent dashboardValue={dashboardValue} connectionLabel={connectionLabel} plan={plan} setPlan={setPlan} />
-          ) : (
-            <ModulePlaceholder active={active} connectionState={connectionState} />
-          )}
-        </main>
+        {active === "dashboard" && <Dashboard machines={machines} selected={selected} telemetry={telemetry} onSelect={setSelectedId} onNavigate={setActive} />}
+        {active === "machines" && <Machines machines={filtered} selected={selected} onSelect={setSelectedId} />}
+        {active === "telemetry" && <Telemetry machine={selected} rows={telemetry} onRefresh={() => loadTelemetry(selected?.id)} />}
+        {active === "commands" && <Commands machine={selected} result={commandResult} onCommand={sendCommand} />}
+        {active === "chrysalis" && <ChrysalisUpgrade machineId={selected?.id || ""} />}
       </section>
+    </main>
+  </div>;
+}
+
+function Dashboard({ machines, selected, telemetry, onSelect, onNavigate }) {
+  const online = machines.filter((m) => m.connectionState === "online").length;
+  return <>
+    <div className="mc-live-heading"><div><span className="eyebrow">REAL INFRASTRUCTURE</span><h1>Machine Connect</h1><p>Operate only against machines registered in the Machine Connect Core.</p></div><div className="mc-live-kpis"><Metric icon={Cpu} label="MACHINES" value={machines.length} /><Metric icon={Activity} label="ONLINE" value={online} /><Metric icon={Gauge} label="TELEMETRY" value={telemetry.length} /></div></div>
+    <div className="mc-live-grid">
+      <section className="mc-live-panel wide"><PanelHead title="Registered machines" action="Open machines" onClick={() => onNavigate("machines")} />{machines.length ? <div className="mc-machine-list">{machines.slice(0, 8).map((machine) => <button key={machine.id} className={`mc-machine-row ${selected?.id === machine.id ? "selected" : ""}`} onClick={() => onSelect(machine.id)}><div><strong>{machine.name}</strong><span>{machine.type} · {machine.manufacturer || "Manufacturer unknown"} {machine.model || ""}</span></div><Status state={machine.connectionState} /><ChevronRight size={15} /></button>)}</div> : <Empty title="No machines registered" text="Register a real machine to begin. No example assets are displayed." />}</section>
+      <section className="mc-live-panel"><PanelHead title="Selected machine" />{selected ? <MachineSummary machine={selected} /> : <Empty title="No machine selected" text="Select a registered machine from the Machines view." />}</section>
     </div>
-  );
+  </>;
 }
 
-function DashboardContent({ dashboardValue, connectionLabel, plan, setPlan }) {
-  return (
-    <>
-      <div className="mc-page-heading">
-        <div><div className="mc-eyebrow">OPERATIONS WORKSPACE</div><h1>Machine Connect</h1><p>One control plane for connected machines, security, governance and intelligence.</p></div>
-        <div className="mc-heading-actions"><button className="mc-button secondary"><CloudCog size={16} /> Infrastructure</button><button className="mc-button primary"><Zap size={16} /> Connect machine</button></div>
-      </div>
+function Machines({ machines, selected, onSelect }) { return <section className="mc-live-panel"><PanelHead title="Machines" /><div className="mc-machine-list">{machines.length ? machines.map((machine) => <button key={machine.id} className={`mc-machine-row ${selected?.id === machine.id ? "selected" : ""}`} onClick={() => onSelect(machine.id)}><div><strong>{machine.name}</strong><span>{machine.id} · {machine.type}</span><span>{machine.manufacturer || "—"} · {machine.model || "—"} · FW {machine.firmwareVersion || "—"}</span></div><Status state={machine.connectionState} /><ChevronRight size={15} /></button>) : <Empty title="No matching machines" text="The registry returned no machine matching this search." />}</div></section>; }
 
-      <div className="mc-system-banner"><div className="mc-system-status"><span className={`mc-live-dot ${connectionLabel === "Core API connected" ? "online" : ""}`} /><span>{connectionLabel}</span></div><span>Live state is sourced from Machine Connect Core; no demo telemetry is shown.</span></div>
+function Telemetry({ machine, rows, onRefresh }) { return <section className="mc-live-panel"><PanelHead title="Telemetry" action={machine ? "Refresh" : undefined} onClick={onRefresh} />{machine ? <><div className="mc-selected-bar"><strong>{machine.name}</strong><span>{machine.id}</span><Status state={machine.connectionState} /></div>{rows.length ? <div className="mc-telemetry-table"><div className="head"><span>Observed</span><span>Source</span><span>Quality</span><span>Data</span></div>{rows.map((row, index) => <div className="row" key={row.id || `${row.observedAt}-${index}`}><span>{row.observedAt || "—"}</span><span>{row.source || "—"}</span><span>{row.quality || "—"}</span><code>{JSON.stringify(row.data || {})}</code></div>)}</div> : <Empty title="No telemetry received" text="This machine has no telemetry records in Core yet." />}</> : <Empty title="No machine selected" text="Select a registered machine first." />}</section>; }
 
-      <section className="mc-kpi-grid">
-        <KpiCard icon={Network} label="CONNECTED DEVICES" value={dashboardValue} detail="From Core API" tone="blue" />
-        <KpiCard icon={ShieldCheck} label="OPEN INCIDENTS" value="—" detail="Security API not connected" tone="red" />
-        <KpiCard icon={ClipboardList} label="PENDING REQUESTS" value="—" detail="Workflow data not connected" tone="amber" />
-        <KpiCard icon={Activity} label="ONLINE RATE" value="—" detail="Telemetry stream not connected" tone="mint" />
-      </section>
+function Commands({ machine, result, onCommand }) { return <section className="mc-live-panel"><PanelHead title="Commands" />{machine ? <><div className="mc-command-warning"><ShieldCheck size={17} /><span>Every command is sent to the real server-side authorization, safety, dispatch and ACK pipeline. A command is not considered successful until the machine acknowledges it.</span></div><div className="mc-selected-bar"><strong>{machine.name}</strong><span>{machine.id}</span><Status state={machine.lifecycleState} /></div><div className="mc-command-grid">{COMMANDS.map((command) => <button key={command} disabled={machine.lifecycleState !== "active"} onClick={() => onCommand(command)} className={command === "STOP" || command === "RESTART" ? "critical" : ""}><Zap size={15} />{command}</button>)}</div>{machine.lifecycleState !== "active" && <p className="mc-live-note">Commands are disabled because the registered machine is not in the active lifecycle state.</p>}{result && <pre className="mc-result">{JSON.stringify(result, null, 2)}</pre>}</> : <Empty title="No machine selected" text="Select a registered machine before requesting a command." />}</section>; }
 
-      <div className="mc-dashboard-grid">
-        <section className="mc-panel mc-panel-wide">
-          <div className="mc-panel-head"><div><h2>Operations overview</h2><p>Connected infrastructure and service health.</p></div><button className="mc-link-button">View infrastructure <ChevronRight size={14} /></button></div>
-          <div className="mc-empty-state"><div className="mc-empty-icon"><ServerCog size={22} /></div><strong>No live infrastructure snapshot</strong><span>Connect the Core API to populate machines, telemetry, incidents and workflow metrics.</span></div>
-        </section>
-        <section className="mc-panel">
-          <div className="mc-panel-head"><div><h2>Security posture</h2><p>Control-plane protection.</p></div><ShieldCheck size={18} /></div>
-          <div className="mc-security-list"><div><span>RBAC</span><Status tone="mint">ENFORCED</Status></div><div><span>Tenant isolation</span><Status tone="mint">SERVER-SIDE</Status></div><div><span>Command safety</span><Status tone="mint">PIPELINED</Status></div><div><span>Audit trail</span><Status tone="amber">CORE DEPENDENCY</Status></div></div>
-        </section>
-      </div>
-
-      <div className="mc-dashboard-grid mc-bottom-grid">
-        <section className="mc-panel">
-          <div className="mc-panel-head"><div><h2>Service marketplace</h2><p>Activate capabilities for this organization.</p></div><Layers3 size={18} /></div>
-          <div className="mc-service-grid"><ServiceTile icon={Network} title="Device Management" /><ServiceTile icon={ShieldCheck} title="Security Operations" /><ServiceTile icon={Building2} title="Digital Nation" /><ServiceTile icon={Bot} title="AI & Analytics" /><ServiceTile icon={Blocks} title="Blockchain" /><ServiceTile icon={Workflow} title="Workflow Engine" /></div>
-        </section>
-        <PricingCard plan={plan} setPlan={setPlan} />
-      </div>
-    </>
-  );
-}
-
-function ServiceTile({ icon: Icon, title }) {
-  return <button className="mc-service-tile"><span className="mc-service-icon"><Icon size={17} /></span><span>{title}</span><ChevronRight size={14} /></button>;
-}
-
-function PricingCard({ plan, setPlan }) {
-  const data = PLAN_DATA[plan];
-  return <section className="mc-panel mc-pricing-panel"><div className="mc-panel-head"><div><h2>Plan & usage</h2><p>Commercial controls for the workspace.</p></div><SlidersHorizontal size={18} /></div><div className="mc-plan-select"><span>Current plan</span><select value={plan} onChange={(e) => setPlan(e.target.value)}>{Object.keys(PLAN_DATA).map((name) => <option key={name}>{name}</option>)}</select></div><div className="mc-price"><strong>{data.price}</strong><span>{data.price === "Custom" ? "contract" : "/ month"}</span></div><div className="mc-plan-facts"><div><span>Devices</span><b>{data.devices}</b></div><div><span>Telemetry</span><b>{data.storage}</b></div><div><span>API calls</span><b>{data.api}</b></div></div><button className="mc-button secondary full"><Database size={15} /> Manage usage</button></section>;
-}
-
-function ModulePlaceholder({ active, connectionState }) {
-  const icons = { Devices: Network, Telemetry: Activity, "Threat Intelligence": Globe2, "Vulnerability Management": AlertTriangle, Workflows: Workflow, "Service Requests": ClipboardList, "Land Registry": Map, FormGenAI: Bot, "Digital Twins": Layers3, "Users & Roles": Users, "API Keys & Integrations": KeyRound };
-  const Icon = icons[active] || Code2;
-  return <div className="mc-module-page"><div className="mc-module-icon"><Icon size={28} /></div><div className="mc-eyebrow">MACHINE CONNECT MODULE</div><h1>{active}</h1><p>This workspace is reserved for live {active.toLowerCase()} data and controls. The UI will not fabricate operational state.</p><div className="mc-module-card"><div><strong>Core connection</strong><span>{connectionState === "connected" ? "Connected" : connectionState === "not-configured" ? "Not configured" : "Unavailable"}</span></div><Status tone={connectionState === "connected" ? "mint" : "amber"}>{connectionState.toUpperCase()}</Status></div></div>;
-}
-
-function HexLogo() {
-  return <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.8 27.4 9.4v13.2L16 29.2 4.6 22.6V9.4L16 2.8Z" fill="none" stroke="currentColor" strokeWidth="1.7"/><circle cx="16" cy="8.5" r="2.2" fill="currentColor"/><circle cx="9.2" cy="20.1" r="2.2" fill="currentColor"/><circle cx="22.8" cy="20.1" r="2.2" fill="currentColor"/><path d="m16 10.7-5.5 7.4m5.5-7.4 5.5 7.4m-9.9 2h8.8" stroke="currentColor" strokeWidth="1.4"/></svg>;
-}
+function ChrysalisUpgradeGate({ machineId }) { return <ChrysalisUpgrade machineId={machineId} />; }
+function MachineSummary({ machine }) { return <div className="mc-summary"><Status state={machine.connectionState} /><div><span>Lifecycle</span><strong>{machine.lifecycleState}</strong></div><div><span>Type</span><strong>{machine.type}</strong></div><div><span>Manufacturer</span><strong>{machine.manufacturer || "—"}</strong></div><div><span>Model</span><strong>{machine.model || "—"}</strong></div><div><span>Firmware</span><strong>{machine.firmwareVersion || "—"}</strong></div><div><span>Adapter</span><strong>{machine.adapterId || "—"}</strong></div><div><span>Capabilities</span><strong>{machine.capabilities?.length ? machine.capabilities.join(", ") : "None registered"}</strong></div><div><span>Last heartbeat</span><strong>{machine.lastHeartbeatAt || "Never"}</strong></div></div>; }
+function Metric({ icon: Icon, label, value }) { return <div className="mc-live-metric"><Icon size={17} /><div><span>{label}</span><strong>{value}</strong></div></div>; }
+function PanelHead({ title, action, onClick }) { return <div className="mc-live-panel-head"><div><h2>{title}</h2></div>{action && <button onClick={onClick}>{action}<ChevronRight size={14} /></button>}</div>; }
+function Empty({ title, text }) { return <div className="mc-live-empty"><Database size={22} /><strong>{title}</strong><span>{text}</span></div>; }
