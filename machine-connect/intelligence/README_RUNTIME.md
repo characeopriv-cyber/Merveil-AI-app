@@ -31,5 +31,5 @@ The token must be supplied through the deployment environment, never committed t
 ## Test
 
 ```bash
-python -m unittest runtime_server.test.py
+python -m unittest runtime_server.test
 ```
