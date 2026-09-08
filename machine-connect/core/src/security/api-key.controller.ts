@@ -14,14 +14,21 @@ export class ApiKeyController {
 
   @Post()
   create(@Req() req: any, @Body() body: any) {
-    const principal = requirePermission(req.user, 'security.write' as any);
+    const principal = requirePermission(req.user, 'security.write');
     return this.service.create(principal.tenantId, principal.actorId, String(body?.name ?? ''), body?.expiresAt);
+  }
+
+  @Post(':id/rotate')
+  rotate(@Req() req: any, @Param('id') id: string) {
+    const principal = requirePermission(req.user, 'security.write');
+    if (!id) throw new BadRequestException('id is required');
+    return this.service.rotate(principal.tenantId, id, principal.actorId);
   }
 
   @Delete(':id')
   revoke(@Req() req: any, @Param('id') id: string) {
-    const principal = requirePermission(req.user, 'security.write' as any);
+    const principal = requirePermission(req.user, 'security.write');
     if (!id) throw new BadRequestException('id is required');
-    return this.service.revoke(principal.tenantId, id);
+    return this.service.revoke(principal.tenantId, id, principal.actorId);
   }
 }
