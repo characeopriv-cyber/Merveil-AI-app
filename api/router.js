@@ -3740,7 +3740,7 @@ export default async function handler(req, res) {
         const apiKey = process.env.AI_API_KEY || process.env.XAI_API_KEY || process.env.OPENAI_API_KEY || "";
         // Prefer env model; fall back through known-good xAI ids if upstream rejects the name
         const preferredModel = process.env.AI_MODEL || process.env.XAI_MODEL || "grok-3";
-        const modelFallbacks = [preferredModel, "grok-3", "grok-2-1212", "grok-2-latest"].filter(
+        const modelFallbacks = [preferredModel, "grok-3", "grok-2-1212", "grok-4.6"].filter(
           (m, i, arr) => m && arr.indexOf(m) === i
         );
         if (!apiKey) return sendJson(res, 503, { error: "AI_API_KEY / XAI_API_KEY not configured on server." });
@@ -4790,7 +4790,7 @@ export default async function handler(req, res) {
 
       const apiUrl = (process.env.AI_API_URL || process.env.XAI_API_URL || "").replace(/\/$/, "");
       const apiKey = process.env.AI_API_KEY || process.env.XAI_API_KEY || "";
-      const model = process.env.AI_MODEL || process.env.XAI_MODEL || "grok-2-latest";
+      const model = process.env.AI_MODEL || process.env.XAI_MODEL || "grok-4.6";
 
       if (!apiUrl || !apiKey) {
         return sendJson(res, 500, {
