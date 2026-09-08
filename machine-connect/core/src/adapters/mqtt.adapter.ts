@@ -40,7 +40,8 @@ export class MqttAdapter implements Adapter, OnModuleInit, OnModuleDestroy {
       rejectUnauthorized: process.env.MACHINE_CONNECT_MQTT_TLS_INSECURE !== 'true',
     });
     this.client.on('connect', () => {
-      this.logger.log(`MQTT connected: ${url.replace(/\\/\\/.*@/, '//***@')}`);
+      const safeUrl = url.replace(/\/\/[^/]*@/, '//***@');
+      this.logger.log(`MQTT connected: ${safeUrl}`);
       void this.client?.subscribe('machine-connect/+/+/telemetry', { qos: 1 });
       void this.client?.subscribe('machine-connect/+/+/heartbeat', { qos: 1 });
       void this.client?.subscribe('machine-connect/+/+/acks', { qos: 1 });
