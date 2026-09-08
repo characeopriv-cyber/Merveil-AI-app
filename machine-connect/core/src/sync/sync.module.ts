@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { OfflineSyncController } from './offline-sync.controller';
 import { TelemetryModule } from '../telemetry/telemetry.module';
-import { RealtimeModule } from '../persistence/realtime.module';
+import { PersistenceModule } from '../persistence/persistence.module';
 
-@Module({ imports: [TelemetryModule, RealtimeModule], controllers: [OfflineSyncController] })
+@Module({ imports: [TelemetryModule, PersistenceModule], controllers: [OfflineSyncController] })
 export class SyncModule {}
