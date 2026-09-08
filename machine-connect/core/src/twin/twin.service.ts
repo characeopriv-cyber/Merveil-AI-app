@@ -42,7 +42,7 @@ export class TwinService {
       twinState: 'synchronized', version: previousVersion + 1, createdAt: new Date().toISOString(),
     };
     if (this.db.enabled) {
-      await this.db.request('machine_connect_twin_snapshots', { method: 'POST', body: JSON.stringify({ id: twin.id, organization_id: twin.tenantId, machine_id: twin.machineId, twin_type: twin.twinType, observed_at: twin.observedAt, state: twin.state, version: twin.version, source: input.source ?? 'reported_state', created_by: input.tenantId, created_at: twin.createdAt }) });
+      await this.db.request('machine_connect_twin_snapshots', { method: 'POST', body: JSON.stringify({ id: twin.id, organization_id: twin.tenantId, machine_id: twin.machineId, twin_type: twin.twinType, observed_at: twin.observedAt, state: twin.state, version: twin.version, source: input.source ?? 'reported_state', created_at: twin.createdAt }) });
       await this.db.request('machine_connect_events', { method: 'POST', body: JSON.stringify({ id: randomUUID(), organization_id: twin.tenantId, machine_id: twin.machineId, event_type: 'twin.reconciled', actor_id: null, payload: { twinId: twin.id, version: twin.version, source: input.source ?? 'reported_state', changed: !sameState } }) });
     }
     this.cache.set(key, twin);
