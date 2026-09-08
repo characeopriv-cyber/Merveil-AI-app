@@ -1,7 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
+import { MqttAdapter } from '../adapters/mqtt.adapter';
 
 @Controller()
 export class HealthController {
+  constructor(private readonly mqtt: MqttAdapter) {}
+
   @Get('health')
   health() {
     return {
@@ -16,11 +19,18 @@ export class HealthController {
     const supabaseConfigured = Boolean(
       process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY,
     );
+    const mqttConfigured = Boolean(process.env.MACHINE_CONNECT_MQTT_URL);
+    const mqttConnected = this.mqtt.isConnected();
+    const persistenceReady = supabaseConfigured;
+    const transportReady = !mqttConfigured || mqttConnected;
 
     return {
-      status: supabaseConfigured ? 'ready' : 'degraded',
+      status: persistenceReady && transportReady ? 'ready' : 'degraded',
       service: 'machine-connect-core',
-      persistence: supabaseConfigured ? 'configured' : 'not-configured',
+      persistence: persistenceReady ? 'configured' : 'not-configured',
+      transport: {
+        mqtt: mqttConfigured ? (mqttConnected ? 'connected' : 'disconnected') : 'not-configured',
+      },
       timestamp: new Date().toISOString(),
     };
   }
