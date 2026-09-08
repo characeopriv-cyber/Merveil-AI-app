@@ -19,9 +19,10 @@ import { GraphModule } from './graph/graph.module';
 import { AdvancedAnalyticsModule } from './graph/advanced-analytics.module';
 import { DocumentModule } from './graph/document.module';
 import { DocumentEntityModule } from './graph/document-entity.module';
+import { ComplianceModule } from './compliance/compliance.module';
 
 @Module({
-  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule, AdvancedAnalyticsModule, DocumentModule, DocumentEntityModule, ComplianceModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule { configure(consumer:MiddlewareConsumer){consumer.apply(AuthMiddleware).forRoutes({path:'api/(.*)',method:RequestMethod.ALL});} }
