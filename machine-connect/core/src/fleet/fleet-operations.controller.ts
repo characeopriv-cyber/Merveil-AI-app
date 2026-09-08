@@ -16,7 +16,7 @@ export class FleetOperationsController {
   rollout(@Req() req: any, @Body() body: any) { return this.rollouts.create({ tenantId: this.tenant(req), actorId: this.actor(req), fleetId: body.fleetId, capability: body.capability, parameters: body.parameters ?? {}, safetyClass: body.safetyClass, stageSize: body.stageSize, maxConcurrency: body.maxConcurrency, idempotencyKey: body.idempotencyKey }); }
 
   @Get('rollouts')
-  listRollouts(@Req() req: any, @Body() _unused: any) { return this.rollouts.list(this.tenant(req)); }
+  listRollouts(@Req() req: any) { return this.rollouts.list(this.tenant(req), typeof req.query?.fleetId === 'string' ? req.query.fleetId : undefined); }
 
   @Get('rollouts/:rolloutId')
   rolloutStatus(@Req() req: any, @Param('rolloutId') id: string) { return this.rollouts.get(this.tenant(req), id); }
