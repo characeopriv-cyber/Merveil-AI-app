@@ -15,6 +15,11 @@ export class FleetIntelligenceController {
     return this.intelligence.summary(this.tenant(req), fleetId);
   }
 
+  @Get('risk/:fleetId')
+  risk(@Req() req: any, @Param('fleetId') fleetId: string) {
+    return this.intelligence.risk(this.tenant(req), fleetId);
+  }
+
   @Get('history/:fleetId')
   history(@Req() req: any, @Param('fleetId') fleetId: string) {
     return this.intelligence.history(this.tenant(req), fleetId, Number(req.query?.limit ?? 100));
