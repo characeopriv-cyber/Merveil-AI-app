@@ -10,11 +10,12 @@ import { FleetIntelligenceService } from './fleet-intelligence.service';
 import { RemediationService } from './remediation.service';
 import { RolloutService } from './rollout.service';
 import { FleetOperationsController } from './fleet-operations.controller';
+import { OperationalSchedulerService } from './operational-scheduler.service';
 
 @Module({
   imports: [PersistenceModule, MachineModule, CommandModule, TelemetryModule],
   controllers: [FleetController, FleetIntelligenceController, FleetOperationsController],
-  providers: [FleetService, FleetIntelligenceService, RemediationService, RolloutService],
-  exports: [FleetService, FleetIntelligenceService, RemediationService, RolloutService],
+  providers: [FleetService, FleetIntelligenceService, RemediationService, RolloutService, OperationalSchedulerService],
+  exports: [FleetService, FleetIntelligenceService, RemediationService, RolloutService, OperationalSchedulerService],
 })
 export class FleetModule {}
