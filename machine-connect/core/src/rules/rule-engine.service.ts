@@ -21,7 +21,7 @@ export class RuleEngineService {
   }
 
   private topicMatches(pattern: string, value: string) {
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\+/g, '[^/]+');
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\+/g, '[^/]+').replace(/\*/g, '.*');
     return new RegExp(`^${escaped}$`).test(value);
   }
 
