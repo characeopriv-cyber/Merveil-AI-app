@@ -6,11 +6,12 @@ import { ConnectorController } from './connector.controller';
 import { ConnectorService } from './connector.service';
 import { ConnectorRegistry } from './connector.registry';
 import { ConnectorSyncService } from './connector-sync.service';
+import { ConnectorSyncLedgerService } from './connector-sync-ledger.service';
 
 @Module({
   imports: [PersistenceModule, TelemetryModule, IntelligenceModule],
   controllers: [ConnectorController],
-  providers: [ConnectorService, ConnectorRegistry, ConnectorSyncService],
-  exports: [ConnectorService, ConnectorRegistry, ConnectorSyncService],
+  providers: [ConnectorService, ConnectorRegistry, ConnectorSyncService, ConnectorSyncLedgerService],
+  exports: [ConnectorService, ConnectorRegistry, ConnectorSyncService, ConnectorSyncLedgerService],
 })
 export class ConnectorModule {}
