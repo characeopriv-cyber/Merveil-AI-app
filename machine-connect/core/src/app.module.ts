@@ -15,9 +15,10 @@ import { RealtimeModule } from './persistence/realtime.module';
 import { SyncModule } from './sync/sync.module';
 import { HealthController } from './health/health.controller';
 import { AdaptersModule } from './adapters/adapters.module';
+import { GraphModule } from './graph/graph.module';
 
 @Module({
-  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule],
+  imports: [AdaptersModule, MachineCredentialsModule, MachineModule, CommandModule, TelemetryModule, AuditModule, EmergencyStopModule, OffensiveSecurityModule, RemediationModule, AdvancedModule, WorkflowModule, ServiceRequestModule, RealtimeModule, SyncModule, GraphModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule {
