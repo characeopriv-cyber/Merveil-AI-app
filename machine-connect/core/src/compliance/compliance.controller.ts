@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Req, Body, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Req, Body, Query, Param, BadRequestException } from '@nestjs/common';
 import { ComplianceService } from './compliance.service';
 import { EvidenceIntegrityService } from './evidence-integrity.service';
 import { requirePermission } from '../auth/permissions';
@@ -18,17 +18,13 @@ export class ComplianceController {
   }
   @Get('evidence') evidence(@Req() req: any) { requirePermission(req.user, 'ontology.read'); return this.service.evidence(req.user.tenantId); }
 
-  @Post('evidence/:evidenceId/integrity') recordIntegrity(@Req() req: any, @Query('evidenceId') queryEvidenceId: string | undefined, @Body() body: any) {
+  @Post('evidence/:evidenceId/integrity') recordIntegrity(@Req() req: any, @Param('evidenceId') evidenceId: string) {
     requirePermission(req.user, 'security.write');
-    const evidenceId = String(body?.evidenceId ?? queryEvidenceId ?? '');
-    if (!evidenceId) throw new BadRequestException('evidenceId is required');
     return this.integrity.record(req.user.tenantId, evidenceId);
   }
 
-  @Get('evidence/:evidenceId/verify') verifyIntegrity(@Req() req: any, @Query('evidenceId') queryEvidenceId: string | undefined, @Body() body: any) {
+  @Get('evidence/:evidenceId/verify') verifyIntegrity(@Req() req: any, @Param('evidenceId') evidenceId: string) {
     requirePermission(req.user, 'security.read');
-    const evidenceId = String(body?.evidenceId ?? queryEvidenceId ?? '');
-    if (!evidenceId) throw new BadRequestException('evidenceId is required');
     return this.integrity.verify(req.user.tenantId, evidenceId);
   }
 }
