@@ -20,22 +20,10 @@ export class OperationsService {
   async publish(input: Omit<OperationalEvent, 'id' | 'correlationId'> & { correlationId?: string; causationId?: string }): Promise<OperationalEvent> {
     if (!input.tenantId || !input.eventType || !input.source) throw new BadRequestException('tenant, eventType and source are required');
     if (input.machineId) await this.machines.get(input.tenantId, input.machineId);
-    const event: OperationalEvent = {
-      ...input,
-      id: randomUUID(),
-      correlationId: input.correlationId ?? randomUUID(),
-      schemaVersion: input.schemaVersion || 1,
-      occurredAt: new Date(input.occurredAt || new Date().toISOString()).toISOString(),
-      payload: input.payload ?? {},
-    };
+    const event: OperationalEvent = { ...input, id: randomUUID(), correlationId: input.correlationId ?? randomUUID(), schemaVersion: input.schemaVersion || 1, occurredAt: new Date(input.occurredAt || new Date().toISOString()).toISOString(), payload: input.payload ?? {} };
     const duplicateKey = `${event.tenantId}:${event.machineId ?? ''}:${event.eventType}:${event.causationId ?? event.id}`;
     if (this.events.has(duplicateKey)) return this.events.get(duplicateKey)!;
-    if (this.db.enabled) {
-      await this.db.request('machine_connect_operational_events', {
-        method: 'POST',
-        body: JSON.stringify({ id: event.id, organization_id: event.tenantId, machine_id: event.machineId ?? null, event_type: event.eventType, source: event.source, occurred_at: event.occurredAt, correlation_id: event.correlationId, causation_id: event.causationId ?? null, schema_version: event.schemaVersion, payload: event.payload }),
-      });
-    }
+    if (this.db.enabled) await this.db.request('machine_connect_operational_events', { method: 'POST', body: JSON.stringify({ id: event.id, organization_id: event.tenantId, machine_id: event.machineId ?? null, event_type: event.eventType, source: event.source, occurred_at: event.occurredAt, correlation_id: event.correlationId, causation_id: event.causationId ?? null, schema_version: event.schemaVersion, payload: event.payload }) });
     this.events.set(duplicateKey, event);
     await this.evaluate(event);
     return event;
@@ -61,15 +49,16 @@ export class OperationsService {
       const matched = rule.conditions.every(c => this.matches(event.payload, c));
       const result: RuleEvaluationResult = { ruleId: rule.id, matched };
       if (matched) {
+        this.triggered.set(`${event.tenantId}:${rule.id}`, Date.now());
         if (!rule.action) { results.push({ ...result, reason: 'matched_no_action' }); continue; }
         if (!event.machineId) { results.push({ ...result, reason: 'matched_requires_machine' }); continue; }
         try {
           const execution = await this.workflows.enqueueExecution({ tenantId: event.tenantId, rule, event });
-          this.triggered.set(`${event.tenantId}:${rule.id}`, Date.now());
           result.executionId = execution.id;
           result.reason = 'queued';
           if (this.db.enabled) await this.db.request('machine_connect_operational_rule_runs', { method: 'POST', body: JSON.stringify({ id: randomUUID(), organization_id: event.tenantId, rule_id: rule.id, event_id: event.id, correlation_id: event.correlationId, execution_id: execution.id, status: 'queued', created_at: new Date().toISOString() }) });
         } catch (error) {
+          this.triggered.delete(`${event.tenantId}:${rule.id}`);
           result.reason = error instanceof Error ? `queue_failed:${error.message}` : 'queue_failed';
           if (this.db.enabled) await this.db.request('machine_connect_operational_rule_runs', { method: 'POST', body: JSON.stringify({ id: randomUUID(), organization_id: event.tenantId, rule_id: rule.id, event_id: event.id, correlation_id: event.correlationId, status: 'failed', created_at: new Date().toISOString() }) });
         }
