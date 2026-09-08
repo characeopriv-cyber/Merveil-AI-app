@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { DocumentService } from './document.service';
 import { requirePermission } from '../auth/permissions';
 
@@ -19,10 +19,13 @@ export class DocumentController {
   }
 
   @Post()
-  async create(@Req() req: any, @Query('title') title?: string, @Query('storagePath') storagePath?: string, @Query('mimeType') mimeType?: string, @Query('sizeBytes') sizeBytes?: string) {
+  async create(@Req() req: any, @Body() body: { title?: string; storagePath?: string; mimeType?: string; sizeBytes?: number }) {
     requirePermission(req, 'ontology.write');
     return this.documents.create(req.principal.organizationId, req.principal.userId, {
-      title: title ?? '', storagePath: storagePath ?? '', mimeType: mimeType ?? '', sizeBytes: Number(sizeBytes ?? 0),
+      title: body?.title ?? '',
+      storagePath: body?.storagePath ?? '',
+      mimeType: body?.mimeType ?? '',
+      sizeBytes: Number(body?.sizeBytes ?? 0),
     });
   }
 }
