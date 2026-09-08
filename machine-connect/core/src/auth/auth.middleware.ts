@@ -22,12 +22,7 @@ export class AuthMiddleware implements NestMiddleware {
     const machineCredential = typeof req.headers['x-machine-credential'] === 'string' ? req.headers['x-machine-credential'].trim() : '';
     if (machineRoute && machineCredential) {
       const machineId = machineRoute[1];
-      const credentialRows = await this.machineCredentials['db'].request<Array<{ organization_id?: string }>>(
-        `machine_connect_credentials?select=organization_id&machine_id=eq.${encodeURIComponent(machineId)}&revoked_at=is.null&order=created_at.desc&limit=1`,
-      );
-      const tenantId = credentialRows[0]?.organization_id;
-      if (!tenantId) throw new UnauthorizedException('Invalid or revoked machine credential');
-      await this.machineCredentials.require(tenantId, machineId, machineCredential);
+      const tenantId = await this.machineCredentials.authenticate(machineId, machineCredential);
       req.user = { actorId: `machine:${machineId}`, tenantId, roles: ['operator'], authenticated: true };
       next(); return;
     }
