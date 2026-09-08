@@ -5,7 +5,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node offline_telemetry_processor.js",
-    "check": "node --check offline_telemetry_processor.js"
+    "check": "node --check offline_telemetry_processor.js && node --check sync_transport_boundary.js && node --test sync_transport_boundary.test.js"
   },
   "dependencies": {
     "mqtt": "^5.14.1",
