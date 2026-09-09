@@ -2,7 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import MerveilEntry from "./MerveilEntry.jsx";
 import "./index.css";
-import "./machine-connect.css";
 
 // Merveil now opens through one private owner experience.
 // The existing App remains the product workspace behind the entry doorway.

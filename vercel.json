@@ -13,8 +13,6 @@
     { "source": "/api/v1/(.*)", "destination": "/api/v1?route=$1" },
     { "source": "/api/v1", "destination": "/api/v1?route=health" },
     { "source": "/api/pulse-intelligence", "destination": "/api/pulse-intelligence" },
-    { "source": "/api/machine-connect/(.*)", "destination": "/api/machine-connect?path=$1" },
-    { "source": "/api/machine-connect", "destination": "/api/machine-connect" },
     { "source": "/api/(.*)", "destination": "/api/router" },
     { "source": "/developer", "destination": "/developer-portal/console.html" },
     { "source": "/developer/", "destination": "/developer-portal/console.html" },
@@ -34,10 +32,7 @@
     { "source": "/onboarding", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
     { "source": "/onboarding/", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/$1" },
-    { "source": "/", "has": [{ "type": "host", "value": "machine.connect.junction.technology" }], "destination": "/machine-connect.html" },
-    { "source": "/api/(.*)", "has": [{ "type": "host", "value": "machine.connect.junction.technology" }], "destination": "/api/$1" },
-    { "source": "/(.*)", "has": [{ "type": "host", "value": "machine.connect.junction.technology" }], "destination": "/machine-connect.html" },
-    { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/|developer(?:/|$)|developer-portal(?:/|$)|interface(?:/|$)|admin(?:/|$)|merveil-admin-x9k2(?:/|$)|onboarding(?:/|$)|machine-connect\\.html(?:/|$)).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/|developer(?:/|$)|developer-portal(?:/|$)|interface(?:/|$)|admin(?:/|$)|merveil-admin-x9k2(?:/|$)).*)", "destination": "/index.html" }
   ],
   "headers": [
     { "source": "/api/v1/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
