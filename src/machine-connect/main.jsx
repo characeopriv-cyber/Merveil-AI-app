@@ -1,8 +1,9 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import MachineConnect from "./MachineConnect.jsx";
-import "./machine-connect.css";
+import MachineConnectPlatform from "../MachineConnectPlatform.jsx";
 
 createRoot(document.getElementById("machine-connect-root")).render(
-  <React.StrictMode><MachineConnect /></React.StrictMode>
+  <React.StrictMode>
+    <MachineConnectPlatform />
+  </React.StrictMode>
 );
