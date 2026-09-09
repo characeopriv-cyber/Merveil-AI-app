@@ -74,16 +74,10 @@ export default async function handler(req, res) {
 
   if (action === "health") {
     const checks = [];
-    const seen = new Set();
     for (const layer of LAYER_CONTRACTS) {
-      const tableChecks = [];
-      for (const table of layer.tables) {
-        if (seen.has(table)) continue;
-        seen.add(table);
-        tableChecks.push(await tableHealth(client, table));
-      }
-      const available = tableChecks.length ? tableChecks.every((c) => c.ok) : false;
-      checks.push({ ...layer, database: tableChecks, status: layer.kind === "runtime" ? (available ? "BACKEND_REACHABLE" : "BACKEND_UNVERIFIED") : "NOT_RUNTIME_ENDPOINT" });
+      const database = await Promise.all(layer.tables.map((table) => tableHealth(client, table)));
+      const available = database.length > 0 && database.every((c) => c.ok);
+      checks.push({ ...layer, database, status: layer.kind === "runtime" ? (available ? "BACKEND_REACHABLE" : "BACKEND_UNVERIFIED") : "NOT_RUNTIME_ENDPOINT" });
     }
     return sendJson(res, 200, { ok: true, service: "pulse-intelligence", mode: "layer_contract_health", generatedAt: new Date().toISOString(), layers: checks });
   }
@@ -113,20 +107,13 @@ export default async function handler(req, res) {
     rows.push(summarizeMachine(machine, telemetryResult.data || [], twinResult.data?.[0] || null));
   }
 
-  const summary = {
-    machineCount: rows.length,
-    connectedCount: rows.filter((m) => m.connection === "connected").length,
-    withTelemetry: rows.filter((m) => !!m.latestTelemetry).length,
-    withTwin: rows.filter((m) => !!m.twinObservedAt).length,
-    generatedAt: new Date().toISOString(),
-  };
-
-  if (action === "overview") return sendJson(res, 200, { ok: true, service: "pulse-intelligence", version: "1.1", mode: "evidence_only", summary, machines: rows });
+  const summary = { machineCount: rows.length, connectedCount: rows.filter((m) => m.connection === "connected").length, withTelemetry: rows.filter((m) => !!m.latestTelemetry).length, withTwin: rows.filter((m) => !!m.twinObservedAt).length, generatedAt: new Date().toISOString() };
+  if (action === "overview") return sendJson(res, 200, { ok: true, service: "pulse-intelligence", version: "1.0", mode: "evidence_only", summary, machines: rows });
   const target = rows[0];
   if (!target) return sendJson(res, 409, { error: "no_machine_context", message: "No authorized machine context is available for analysis." });
   const critical = target.findings.filter((f) => f.level === "critical").length;
   const warnings = target.findings.filter((f) => f.level === "warning").length;
   const riskScore = clamp(critical * 45 + warnings * 15, 0, 100);
   const decision = riskScore >= 70 ? "REVIEW_REQUIRED" : riskScore >= 35 ? "CAUTION" : "NO_BLOCKING_FINDING";
-  return sendJson(res, 200, { ok: true, service: "pulse-intelligence", version: "1.1", mode: "evidence_only", analysis: { machineId: target.id, identity: target.identity, confidence: target.confidence, riskScore, decision, findings: target.findings, evidence: target.evidence, recommendation: decision === "REVIEW_REQUIRED" ? "Do not execute control actions. Complete machine identity and evidence review first." : decision === "CAUTION" ? "Improve missing machine evidence before relying on automated reasoning." : "Machine context is internally consistent enough for read-only intelligence; control remains governed by authorization and safety layers." } });
+  return sendJson(res, 200, { ok: true, service: "pulse-intelligence", version: "1.0", mode: "evidence_only", analysis: { machineId: target.id, identity: target.identity, confidence: target.confidence, riskScore, decision, findings: target.findings, evidence: target.evidence, recommendation: decision === "REVIEW_REQUIRED" ? "Do not execute control actions. Complete machine identity and evidence review first." : decision === "CAUTION" ? "Improve missing machine evidence before relying on automated reasoning." : "Machine context is internally consistent enough for read-only intelligence; control remains governed by authorization and safety layers." } });
 }
