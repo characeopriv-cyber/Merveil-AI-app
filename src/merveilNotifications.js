@@ -11,7 +11,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 let state = { userId: null, notifications: [], unreadCount: 0, status: "DISCONNECTED" };
 let channel = null;
 let started = false;
+let starting = false;
 let token = null;
+let refreshTimer = null;
 
 function emit() {
   if (typeof window === "undefined") return;
@@ -36,6 +38,20 @@ async function getRealtimeToken() {
   if (!response.ok || !body?.access_token || !body?.user_id) return null;
   token = body.access_token;
   return body;
+}
+
+function scheduleTokenRefresh() {
+  if (typeof window === "undefined") return;
+  if (refreshTimer) window.clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(async () => {
+    refreshTimer = null;
+    try {
+      const auth = await getRealtimeToken();
+      if (!auth || !state.userId || auth.user_id !== state.userId) return;
+      await supabase.realtime.setAuth(auth.access_token);
+      await subscribe(auth.user_id);
+    } catch {}
+  }, 45 * 60 * 1000);
 }
 
 async function load(userId) {
@@ -80,17 +96,22 @@ async function subscribe(userId) {
     .subscribe((status) => {
       state.status = status;
       emit();
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        setTimeout(() => startMerveilNotifications(), 1500);
+      }
     });
+  scheduleTokenRefresh();
 }
 
 export async function startMerveilNotifications() {
-  if (started || typeof window === "undefined") return;
-  started = true;
-
+  if (typeof window === "undefined" || starting) return;
+  if (started && channel) return;
+  starting = true;
   try {
     const auth = await getRealtimeToken();
     if (!auth) return;
     state.userId = auth.user_id;
+    started = true;
     await load(auth.user_id);
     await subscribe(auth.user_id);
     await registerMerveilPush(false);
@@ -98,11 +119,13 @@ export async function startMerveilNotifications() {
     state.status = "ERROR";
     emit();
     console.warn("Merveil notifications unavailable", error);
+  } finally {
+    starting = false;
   }
 }
 
 export async function markMerveilNotificationRead(id) {
-  if (!id) return;
+  if (!id || !state.userId) return;
   await supabase.from("merveil_notification_events").update({ read_at: new Date().toISOString(), status: "read" }).eq("id", id).eq("user_id", state.userId);
 }
 
@@ -112,7 +135,7 @@ export async function markAllMerveilNotificationsRead() {
 }
 
 export async function deleteMerveilNotification(id) {
-  if (!id) return;
+  if (!id || !state.userId) return;
   await supabase.from("merveil_notification_events").delete().eq("id", id).eq("user_id", state.userId);
 }
 
@@ -155,6 +178,17 @@ export async function registerMerveilPush(requestPermission = false) {
     }),
   });
   return response.ok;
+}
+
+// Permission prompts must be user-initiated. The app only auto-registers an
+// already-granted subscription; call registerMerveilPush(true) from the
+// notification settings/enable button to request permission.
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => startMerveilNotifications());
+  window.addEventListener("focus", () => startMerveilNotifications());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") startMerveilNotifications();
+  });
 }
 
 export function getMerveilNotifications() {
