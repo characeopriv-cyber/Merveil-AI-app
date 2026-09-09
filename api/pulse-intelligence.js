@@ -1,13 +1,28 @@
 import { getSession, userClient, sendJson } from "../lib/supabaseServer.js";
 
 const MAX_BODY = 32 * 1024;
-const ALLOWED_ACTIONS = new Set(["overview", "analyze"]);
+const ALLOWED_ACTIONS = new Set(["overview", "analyze", "health"]);
 
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 function normalizeAction(value) {
   const action = String(value || "overview").trim().toLowerCase();
   return ALLOWED_ACTIONS.has(action) ? action : null;
 }
+
+const LAYER_CONTRACTS = [
+  { id: "intelligence", name: "PULSE Intelligence", kind: "runtime", tables: ["machine_connect_machines", "machine_connect_telemetry", "machine_connect_twin_snapshots"] },
+  { id: "dna", name: "Machine DNA", kind: "runtime", tables: ["machine_connect_machines"] },
+  { id: "shield", name: "PULSE Shield", kind: "runtime", tables: ["machine_connect_commands"] },
+  { id: "procedure", name: "Procedure Execution", kind: "runtime", tables: [] },
+  { id: "machine-connect", name: "Machine Connect", kind: "runtime", tables: ["machine_connect_machines", "machine_connect_telemetry", "machine_connect_commands"] },
+  { id: "fleet", name: "Fleet", kind: "runtime", tables: ["organizations", "machine_connect_machines"] },
+  { id: "digital-twin", name: "Digital Twin", kind: "runtime", tables: ["machine_connect_twin_snapshots"] },
+  { id: "edge", name: "PULSE Edge", kind: "local_runtime", tables: [] },
+  { id: "graph", name: "Physical Knowledge Graph", kind: "runtime", tables: ["ontology_documents"] },
+  { id: "developer", name: "PULSE Developer API / SDK", kind: "contract", tables: [] },
+  { id: "synapse", name: "SYNAPSE", kind: "surface", tables: [] },
+  { id: "find", name: "PULSE FIND", kind: "surface", tables: [] },
+];
 
 function summarizeMachine(machine, telemetry, twin) {
   const caps = Array.isArray(machine.capabilities) ? machine.capabilities : [];
@@ -23,7 +38,6 @@ function summarizeMachine(machine, telemetry, twin) {
   if (latest) evidence.push("telemetry");
   if (twin) evidence.push("digital_twin_snapshot");
   if (machine.last_heartbeat_at) evidence.push("heartbeat");
-
   let confidence = 0.35;
   confidence += machine.machine_identity ? 0.2 : 0;
   confidence += (machine.manufacturer || machine.model) ? 0.1 : 0;
@@ -31,7 +45,6 @@ function summarizeMachine(machine, telemetry, twin) {
   confidence += latest ? 0.1 : 0;
   confidence += twin ? 0.05 : 0;
   confidence += heartbeatFresh ? 0.05 : 0;
-
   const findings = [];
   if (!machine.machine_identity) findings.push({ level: "critical", code: "MISSING_IDENTITY", message: "Machine identity is missing." });
   if (!machine.model) findings.push({ level: "warning", code: "MISSING_MODEL", message: "Model is not recorded." });
@@ -40,30 +53,12 @@ function summarizeMachine(machine, telemetry, twin) {
   if (!latest) findings.push({ level: "info", code: "NO_TELEMETRY", message: "No telemetry evidence is available yet." });
   if (!twin) findings.push({ level: "info", code: "NO_TWIN", message: "No digital-twin snapshot is available yet." });
   if (!heartbeatFresh) findings.push({ level: "info", code: "HEARTBEAT_NOT_FRESH", message: "A fresh heartbeat is not available." });
+  return { id: machine.id, identity: machine.machine_identity, name: machine.name, type: machine.machine_type, manufacturer: machine.manufacturer, model: machine.model, firmwareVersion: machine.firmware_version, state, connection, capabilities: caps, latestTelemetry: latest ? { metric: latest.metric_name, value: latest.metric_value, unit: latest.unit, recordedAt: latest.recorded_at, source: latest.source } : null, twinObservedAt: twin?.observed_at || null, confidence: Number(clamp(confidence, 0, 1).toFixed(2)), evidence, findings };
+}
 
-  return {
-    id: machine.id,
-    identity: machine.machine_identity,
-    name: machine.name,
-    type: machine.machine_type,
-    manufacturer: machine.manufacturer,
-    model: machine.model,
-    firmwareVersion: machine.firmware_version,
-    state,
-    connection,
-    capabilities: caps,
-    latestTelemetry: latest ? {
-      metric: latest.metric_name,
-      value: latest.metric_value,
-      unit: latest.unit,
-      recordedAt: latest.recorded_at,
-      source: latest.source,
-    } : null,
-    twinObservedAt: twin?.observed_at || null,
-    confidence: Number(clamp(confidence, 0, 1).toFixed(2)),
-    evidence,
-    findings,
-  };
+async function tableHealth(client, table) {
+  const { error } = await client.from(table).select("*").limit(1);
+  return { table, ok: !error, error: error ? error.message : null };
 }
 
 export default async function handler(req, res) {
@@ -77,14 +72,27 @@ export default async function handler(req, res) {
   const action = normalizeAction(req.method === "GET" ? "overview" : req.body?.action);
   if (!action) return sendJson(res, 400, { error: "unsupported_action" });
 
+  if (action === "health") {
+    const checks = [];
+    const seen = new Set();
+    for (const layer of LAYER_CONTRACTS) {
+      const tableChecks = [];
+      for (const table of layer.tables) {
+        if (seen.has(table)) continue;
+        seen.add(table);
+        tableChecks.push(await tableHealth(client, table));
+      }
+      const available = tableChecks.length ? tableChecks.every((c) => c.ok) : false;
+      checks.push({ ...layer, database: tableChecks, status: layer.kind === "runtime" ? (available ? "BACKEND_REACHABLE" : "BACKEND_UNVERIFIED") : "NOT_RUNTIME_ENDPOINT" });
+    }
+    return sendJson(res, 200, { ok: true, service: "pulse-intelligence", mode: "layer_contract_health", generatedAt: new Date().toISOString(), layers: checks });
+  }
+
   let machineId = null;
   if (req.method === "GET") {
-    const url = new URL(req.url, "http://localhost");
-    machineId = url.searchParams.get("machineId");
+    machineId = new URL(req.url, "http://localhost").searchParams.get("machineId");
   } else {
-    if (!req.body && req.headers["content-length"] && Number(req.headers["content-length"]) > MAX_BODY) {
-      return sendJson(res, 413, { error: "request_too_large" });
-    }
+    if (!req.body && req.headers["content-length"] && Number(req.headers["content-length"]) > MAX_BODY) return sendJson(res, 413, { error: "request_too_large" });
     machineId = req.body?.machineId ? String(req.body.machineId) : null;
   }
 
@@ -113,42 +121,12 @@ export default async function handler(req, res) {
     generatedAt: new Date().toISOString(),
   };
 
-  if (action === "overview") {
-    return sendJson(res, 200, {
-      ok: true,
-      service: "pulse-intelligence",
-      version: "1.0",
-      mode: "evidence_only",
-      summary,
-      machines: rows,
-    });
-  }
-
+  if (action === "overview") return sendJson(res, 200, { ok: true, service: "pulse-intelligence", version: "1.1", mode: "evidence_only", summary, machines: rows });
   const target = rows[0];
   if (!target) return sendJson(res, 409, { error: "no_machine_context", message: "No authorized machine context is available for analysis." });
   const critical = target.findings.filter((f) => f.level === "critical").length;
   const warnings = target.findings.filter((f) => f.level === "warning").length;
   const riskScore = clamp(critical * 45 + warnings * 15, 0, 100);
   const decision = riskScore >= 70 ? "REVIEW_REQUIRED" : riskScore >= 35 ? "CAUTION" : "NO_BLOCKING_FINDING";
-
-  return sendJson(res, 200, {
-    ok: true,
-    service: "pulse-intelligence",
-    version: "1.0",
-    mode: "evidence_only",
-    analysis: {
-      machineId: target.id,
-      identity: target.identity,
-      confidence: target.confidence,
-      riskScore,
-      decision,
-      findings: target.findings,
-      evidence: target.evidence,
-      recommendation: decision === "REVIEW_REQUIRED"
-        ? "Do not execute control actions. Complete machine identity and evidence review first."
-        : decision === "CAUTION"
-          ? "Improve missing machine evidence before relying on automated reasoning."
-          : "Machine context is internally consistent enough for read-only intelligence; control remains governed by authorization and safety layers.",
-    },
-  });
+  return sendJson(res, 200, { ok: true, service: "pulse-intelligence", version: "1.1", mode: "evidence_only", analysis: { machineId: target.id, identity: target.identity, confidence: target.confidence, riskScore, decision, findings: target.findings, evidence: target.evidence, recommendation: decision === "REVIEW_REQUIRED" ? "Do not execute control actions. Complete machine identity and evidence review first." : decision === "CAUTION" ? "Improve missing machine evidence before relying on automated reasoning." : "Machine context is internally consistent enough for read-only intelligence; control remains governed by authorization and safety layers." } });
 }
