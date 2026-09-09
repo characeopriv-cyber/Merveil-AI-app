@@ -12,6 +12,7 @@
     { "source": "/merveil-admin-x9k2/(.*)", "destination": "/admin/index.html" },
     { "source": "/api/v1/(.*)", "destination": "/api/v1?route=$1" },
     { "source": "/api/v1", "destination": "/api/v1?route=health" },
+    { "source": "/api/pulse-intelligence", "destination": "/api/pulse-intelligence" },
     { "source": "/api/machine-connect/(.*)", "destination": "/api/machine-connect?path=$1" },
     { "source": "/api/machine-connect", "destination": "/api/machine-connect" },
     { "source": "/api/(.*)", "destination": "/api/router" },
@@ -40,6 +41,7 @@
   ],
   "headers": [
     { "source": "/api/v1/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
+    { "source": "/api/pulse-intelligence", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
     { "source": "/.well-known/assetlinks.json", "headers": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Cache-Control", "value": "public, max-age=300" }] },
     { "source": "/manifest.webmanifest", "headers": [{ "key": "Content-Type", "value": "application/manifest+json" }, { "key": "Cache-Control", "value": "public, max-age=3600" }] },
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }, { "key": "Service-Worker-Allowed", "value": "/" }] }
