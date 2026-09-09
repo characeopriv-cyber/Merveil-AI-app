@@ -1,5 +1,5 @@
 /* Merveil AI service worker — push + force-fresh navigations + Arena audio guard. */
-const CACHE_VER = "merveil-v2-2026-09-02-arena-audio";
+const CACHE_VER = "merveil-v3-2026-09-09-notifications";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -33,18 +33,13 @@ self.addEventListener("fetch", (event) => {
         const response = await fetch(req, { cache: "no-store" });
         const isArena = /^\/arena\/(sahra|burj-rise|connecta)\.html$/i.test(url.pathname);
         if (!isArena || !response.ok) return response;
-
-        // Inject after the page's inline ArenaAudio engine so the guard can use it.
         const type = response.headers.get("content-type") || "";
         if (!type.includes("text/html")) return response;
         const html = await response.text();
         if (html.includes("arena-audio-guard.js")) {
           return new Response(html, { status: response.status, statusText: response.statusText, headers: response.headers });
         }
-        const patched = html.replace(
-          /<\/body>/i,
-          '<script src="/arena/arena-audio-guard.js" defer></script></body>'
-        );
+        const patched = html.replace(/<\/body>/i, '<script src="/arena/arena-audio-guard.js" defer></script></body>');
         const headers = new Headers(response.headers);
         headers.set("cache-control", "no-store, max-age=0");
         return new Response(patched, { status: response.status, statusText: response.statusText, headers });
@@ -64,15 +59,16 @@ self.addEventListener("push", (event) => {
   } catch {
     try { payload.body = event.data ? event.data.text() : payload.body; } catch {}
   }
+  const data = payload.data || {};
   const opts = {
     body: payload.body || "",
-    tag: payload.tag || payload.data?.tag || "merveil",
+    tag: payload.tag || data.tag || `merveil:${data.notification_id || "activity"}`,
     requireInteraction: !!payload.urgent,
     renotify: true,
-    data: payload.data || {},
+    data,
     vibrate: payload.urgent ? [200, 100, 200, 100, 200] : [120, 60, 120],
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
+    icon: "/merveil-mark.svg",
+    badge: "/merveil-mark.svg",
   };
   event.waitUntil(self.registration.showNotification(payload.title || "Merveil AI", opts));
 });
@@ -80,16 +76,21 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const data = event.notification.data || {};
-  const url = data.url || "/";
+  const target = data.url || data.action_url || "/";
+  const absolute = new URL(target, self.location.origin).href;
+
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clientList) => {
       for (const client of clientList) {
-        if ("focus" in client) {
+        if (client.url.startsWith(self.location.origin) && "focus" in client) {
+          try {
+            if ("navigate" in client && client.url !== absolute) await client.navigate(absolute);
+          } catch {}
           client.postMessage({ type: "merveil:notification-click", data });
           return client.focus();
         }
       }
-      if (self.clients.openWindow) return self.clients.openWindow(url);
+      if (self.clients.openWindow) return self.clients.openWindow(absolute);
     })
   );
 });
