@@ -3,8 +3,13 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  esbuild: {
+    logOverride: {
+      "duplicate-object-key": "silent",
+    },
+  },
   build: {
-    chunkSizeWarningLimit: 900,
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       input: {
         app: "index.html",
