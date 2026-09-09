@@ -31,45 +31,34 @@ let activeUserId = null;
 
 // Only citizen-facing Merveil AI data belongs here.
 // Machine Connect tables stay in the separate Machine Connect architecture.
-// High-volume telemetry/view/usage tables are deliberately excluded; they
-// should use dedicated streams/analytics rather than fan-out Postgres Changes.
+// High-volume telemetry/view/usage tables are deliberately excluded.
 const TABLES = [
-  // Passport / identity / citizen state
   "profiles",
   "presence",
-  "citizen_status",
   "relationships",
   "connections",
-
-  // Connect / messaging / calls
   "conversations",
   "messages",
   "calls",
+  "conversation_unread_counts",
   "devices",
   "e2ee_call_sessions",
   "merveil_call_signaling",
   "merveil_e2ee_conversations",
   "merveil_e2ee_devices",
-
-  // World / PULSE
   "world_posts",
+  "world_post_views",
   "world_likes",
   "world_reactions",
   "world_saves",
   "world_supers",
-
-  // Circles / communities
   "circles",
   "circle_members",
   "circle_posts",
   "entities",
   "forum_posts",
-
-  // Investor feed
   "invest_posts",
   "invest_likes",
-
-  // Arena / Merveil credits / rewards
   "arena_progress",
   "credit_ledger",
   "credit_wallets",
@@ -77,12 +66,8 @@ const TABLES = [
   "reward_claims",
   "user_wallets",
   "wallet_ledger",
-
-  // Date Me
   "date_me_profiles",
   "date_me_introductions",
-
-  // Property / services / jobs
   "properties",
   "property_likes",
   "property_supers",
@@ -93,18 +78,12 @@ const TABLES = [
   "jobs",
   "job_likes",
   "job_applications",
-
-  // Events
   "events",
   "event_likes",
   "event_rsvps",
-
-  // Sounds / media interactions
   "sounds",
   "sound_interactions",
   "sound_usage",
-
-  // Citizen-visible notifications and support
   "merveil_notification_events",
   "merveil_notification_channels",
   "support_tickets",
@@ -114,8 +93,6 @@ const scheduleUiRefresh = () => {
   if (typeof window === "undefined" || refreshEventTimer) return;
   refreshEventTimer = window.setTimeout(() => {
     refreshEventTimer = null;
-    // Existing Merveil screens use focus/online refresh paths. Coalescing the
-    // event avoids a network refresh for every individual database change.
     window.dispatchEvent(new Event("focus"));
   }, 100);
 };
@@ -162,9 +139,6 @@ const scheduleReconnect = (delay = 1500) => {
 const scheduleTokenRefresh = () => {
   if (typeof window === "undefined") return;
   if (refreshTimer) window.clearTimeout(refreshTimer);
-
-  // Refresh before a normal short-lived JWT can expire. The refreshed token is
-  // explicitly sent to Realtime so the existing WebSocket stays authorized.
   refreshTimer = window.setTimeout(() => {
     refreshTimer = null;
     connect(true);
@@ -183,19 +157,13 @@ const scheduleHealthCheck = () => {
 
 async function connect(force = false) {
   if (connecting || typeof window === "undefined" || !navigator.onLine) return;
-
-  // A healthy channel does not need another HTTP session request. This is
-  // important because realtime events can be frequent.
   if (channel && !force) {
     scheduleTokenRefresh();
     return;
   }
 
   connecting = true;
-
   try {
-    // One Merveil login/session. No re-login and no browser-local duplicate
-    // Supabase Auth session is required for Realtime.
     const response = await fetch("/api/session?kind=realtime", {
       credentials: "include",
       cache: "no-store",
@@ -223,7 +191,6 @@ async function connect(force = false) {
     }
 
     const next = supabase.channel(`merveil:citizen:${userId}`);
-
     for (const table of TABLES) {
       next.on(
         "postgres_changes",
@@ -241,7 +208,6 @@ async function connect(force = false) {
 
     next.subscribe((status) => {
       lastStatus = status;
-
       if (status === "SUBSCRIBED") {
         channel = next;
         notify({
@@ -251,7 +217,6 @@ async function connect(force = false) {
         });
         scheduleTokenRefresh();
       }
-
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         if (channel === next) channel = null;
         scheduleReconnect(status === "TIMED_OUT" ? 2500 : 1500);
@@ -268,15 +233,12 @@ async function connect(force = false) {
 export function startMerveilRealtime() {
   if (started || typeof window === "undefined") return;
   started = true;
-
   connect();
   scheduleHealthCheck();
-
   window.addEventListener("online", () => connect(true));
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") connect();
   });
-
   window.addEventListener("beforeunload", () => {
     clearTimers();
     removeChannel();
