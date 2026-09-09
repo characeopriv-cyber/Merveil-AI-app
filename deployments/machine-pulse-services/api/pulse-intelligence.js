@@ -1,9 +1,29 @@
 import { getSession, userClient, sendJson } from "../lib/supabaseServer.js";
 
 const MAX_BODY = 32 * 1024;
-const ALLOWED_ACTIONS = new Set(["overview", "analyze"]);
+const ALLOWED_ACTIONS = new Set(["overview", "analyze", "health"]);
+
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
-function normalizeAction(value) { const action = String(value || "overview").trim().toLowerCase(); return ALLOWED_ACTIONS.has(action) ? action : null; }
+function normalizeAction(value) {
+  const action = String(value || "overview").trim().toLowerCase();
+  return ALLOWED_ACTIONS.has(action) ? action : null;
+}
+
+const LAYER_CONTRACTS = [
+  { id: "intelligence", name: "PULSE Intelligence", kind: "runtime", tables: ["machine_connect_machines", "machine_connect_telemetry", "machine_connect_twin_snapshots"] },
+  { id: "dna", name: "Machine DNA", kind: "runtime", tables: ["machine_connect_machines"] },
+  { id: "shield", name: "PULSE Shield", kind: "runtime", tables: ["machine_connect_commands"] },
+  { id: "procedure", name: "Procedure Execution", kind: "runtime", tables: [] },
+  { id: "machine-connect", name: "Machine Connect", kind: "runtime", tables: ["machine_connect_machines", "machine_connect_telemetry", "machine_connect_commands"] },
+  { id: "fleet", name: "Fleet", kind: "runtime", tables: ["organizations", "machine_connect_machines"] },
+  { id: "digital-twin", name: "Digital Twin", kind: "runtime", tables: ["machine_connect_twin_snapshots"] },
+  { id: "edge", name: "PULSE Edge", kind: "local_runtime", tables: [] },
+  { id: "graph", name: "Physical Knowledge Graph", kind: "runtime", tables: ["ontology_documents"] },
+  { id: "developer", name: "PULSE Developer API / SDK", kind: "contract", tables: [] },
+  { id: "synapse", name: "SYNAPSE", kind: "surface", tables: [] },
+  { id: "find", name: "PULSE FIND", kind: "surface", tables: [] },
+];
+
 function summarizeMachine(machine, telemetry, twin) {
   const caps = Array.isArray(machine.capabilities) ? machine.capabilities : [];
   const latest = telemetry?.[0] || null;
@@ -35,26 +55,47 @@ function summarizeMachine(machine, telemetry, twin) {
   if (!heartbeatFresh) findings.push({ level: "info", code: "HEARTBEAT_NOT_FRESH", message: "A fresh heartbeat is not available." });
   return { id: machine.id, identity: machine.machine_identity, name: machine.name, type: machine.machine_type, manufacturer: machine.manufacturer, model: machine.model, firmwareVersion: machine.firmware_version, state, connection, capabilities: caps, latestTelemetry: latest ? { metric: latest.metric_name, value: latest.metric_value, unit: latest.unit, recordedAt: latest.recorded_at, source: latest.source } : null, twinObservedAt: twin?.observed_at || null, confidence: Number(clamp(confidence, 0, 1).toFixed(2)), evidence, findings };
 }
+
+async function tableHealth(client, table) {
+  const { error } = await client.from(table).select("*").limit(1);
+  return { table, ok: !error, error: error ? error.message : null };
+}
+
 export default async function handler(req, res) {
   if (req.method === "OPTIONS") return sendJson(res, 204, null);
   if (!["GET", "POST"].includes(req.method)) return sendJson(res, 405, { error: "method_not_allowed" });
+
   const session = await getSession(req, res);
   if (!session?.user?.id) return sendJson(res, 401, { error: "authentication_required" });
+
   const client = userClient(session.token);
   const action = normalizeAction(req.method === "GET" ? "overview" : req.body?.action);
   if (!action) return sendJson(res, 400, { error: "unsupported_action" });
+
+  if (action === "health") {
+    const checks = [];
+    for (const layer of LAYER_CONTRACTS) {
+      const database = await Promise.all(layer.tables.map((table) => tableHealth(client, table)));
+      const available = database.length > 0 && database.every((c) => c.ok);
+      checks.push({ ...layer, database, status: layer.kind === "runtime" ? (available ? "BACKEND_REACHABLE" : "BACKEND_UNVERIFIED") : "NOT_RUNTIME_ENDPOINT" });
+    }
+    return sendJson(res, 200, { ok: true, service: "pulse-intelligence", mode: "layer_contract_health", generatedAt: new Date().toISOString(), layers: checks });
+  }
+
   let machineId = null;
   if (req.method === "GET") machineId = new URL(req.url, "http://localhost").searchParams.get("machineId");
   else {
     if (!req.body && req.headers["content-length"] && Number(req.headers["content-length"]) > MAX_BODY) return sendJson(res, 413, { error: "request_too_large" });
     machineId = req.body?.machineId ? String(req.body.machineId) : null;
   }
+
   const select = "id,machine_identity,name,machine_type,state,owner_id,capabilities,trust_level,last_heartbeat_at,created_at,updated_at,organization_id,manufacturer,model,firmware_version,adapter_id";
   let query = client.from("machine_connect_machines").select(select).order("updated_at", { ascending: false }).limit(100);
   if (machineId) query = query.eq("id", machineId).limit(1);
   const { data: machines, error: machineError } = await query;
   if (machineError) return sendJson(res, 500, { error: "machine_read_failed" });
   if (machineId && !machines?.length) return sendJson(res, 404, { error: "machine_not_found" });
+
   const rows = [];
   for (const machine of machines || []) {
     const [telemetryResult, twinResult] = await Promise.all([
@@ -64,6 +105,7 @@ export default async function handler(req, res) {
     if (telemetryResult.error || twinResult.error) return sendJson(res, 500, { error: "machine_context_read_failed" });
     rows.push(summarizeMachine(machine, telemetryResult.data || [], twinResult.data?.[0] || null));
   }
+
   const summary = { machineCount: rows.length, connectedCount: rows.filter((m) => m.connection === "connected").length, withTelemetry: rows.filter((m) => !!m.latestTelemetry).length, withTwin: rows.filter((m) => !!m.twinObservedAt).length, generatedAt: new Date().toISOString() };
   if (action === "overview") return sendJson(res, 200, { ok: true, service: "pulse-intelligence", version: "1.0", mode: "evidence_only", summary, machines: rows });
   const target = rows[0];
