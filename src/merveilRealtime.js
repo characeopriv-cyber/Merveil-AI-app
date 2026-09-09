@@ -183,6 +183,14 @@ const scheduleHealthCheck = () => {
 
 async function connect(force = false) {
   if (connecting || typeof window === "undefined" || !navigator.onLine) return;
+
+  // A healthy channel does not need another HTTP session request. This is
+  // important because realtime events can be frequent.
+  if (channel && !force) {
+    scheduleTokenRefresh();
+    return;
+  }
+
   connecting = true;
 
   try {
@@ -203,8 +211,8 @@ async function connect(force = false) {
     }
 
     const userId = body.user_id;
-    const userChanged = activeUserId && activeUserId !== userId;
-    if (force || userChanged) await removeChannel();
+    if (activeUserId && activeUserId !== userId) await removeChannel();
+    if (force) await removeChannel();
 
     await supabase.realtime.setAuth(body.access_token);
     activeUserId = userId;
@@ -265,7 +273,6 @@ export function startMerveilRealtime() {
   scheduleHealthCheck();
 
   window.addEventListener("online", () => connect(true));
-  window.addEventListener("focus", () => connect());
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") connect();
   });
