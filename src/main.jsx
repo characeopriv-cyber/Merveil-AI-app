@@ -4,9 +4,11 @@ import App from "./App.jsx";
 import "./index.css";
 import { startMerveilRealtime } from "./merveilRealtime.js";
 import { startMerveilNotifications } from "./merveilNotifications.js";
+import { startMerveilProductionFeeds } from "./merveilProductionFeeds.js";
 
 startMerveilRealtime();
 startMerveilNotifications();
+startMerveilProductionFeeds();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
