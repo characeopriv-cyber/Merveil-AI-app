@@ -1,15 +1,15 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App.jsx";
+import MerveilEntry from "./MerveilEntry.jsx";
 import "./index.css";
 import "./machine-connect.css";
 
-// PlusHub floating trigger removed — it covered the notification bell.
-// Secondary destinations (Sound, Arena, AI Call, Community, Transactions)
-// and Ecosystem rooms stay reachable from Passport → More / Ecosystem.
+// Merveil now opens through one private owner experience.
+// The existing App remains the product workspace behind the entry doorway.
+// Secondary destinations remain reachable from the product's existing navigation.
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <MerveilEntry />
   </React.StrictMode>
 );
