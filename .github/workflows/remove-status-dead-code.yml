@@ -1,0 +1,82 @@
+name: Remove retired Connect Status code
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.event.head_commit.message != 'chore: remove retired Connect Status dead code'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove retired Status frontend and API blocks
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          app = Path('src/App.jsx')
+          s = app.read_text(encoding='utf-8')
+
+          # Remove the complete retired 3D Status component.
+          s2, n1 = re.subn(
+              r'\n// Navigation = rotate the 3D world of citizen identity nodes\.[\s\S]*?(?=\nfunction MessagesView\()',
+              '\n', s, count=1)
+
+          # Remove its Connect-home mount.
+          s3, n2 = re.subn(
+              r'\n\s*\{/\* 3D Status World — circular identity \+ spatial rotation \(Connect home of Status\) \*/\}\s*<StatusWorld3D[\s\S]*?</StatusWorld3D>',
+              '\n', s2, count=1)
+
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f'App.jsx cleanup guard failed: component={n1}, mount={n2}')
+          app.write_text(s3, encoding='utf-8')
+
+          router = Path('api/router.js')
+          r = router.read_text(encoding='utf-8')
+          r2, nr = re.subn(
+              r'\n\s*// ---------------------------------------------------------- /api/status[\s\S]*?(?=\n\s*// ---------------------------------------------------------- /api/)',
+              '\n', r, count=1)
+          if nr != 1:
+              raise SystemExit(f'router.js cleanup guard failed: blocks={nr}')
+          router.write_text(r2, encoding='utf-8')
+
+          # Fail if retired endpoint/schema identifiers still remain in runtime source.
+          forbidden = ('/api/status', 'StatusWorld3D', 'citizen_status', 'status_reactions', 'status_views', 'status_blocks', 'status_config')
+          hits = []
+          for p in Path('.').rglob('*'):
+              if not p.is_file() or '.git' in p.parts or 'node_modules' in p.parts:
+                  continue
+              if p.suffix not in {'.js', '.jsx', '.ts', '.tsx', '.json'}:
+                  continue
+              try: text = p.read_text(encoding='utf-8', errors='ignore')
+              except Exception: continue
+              for token in forbidden:
+                  if token in text:
+                      hits.append(f'{p}:{token}')
+          if hits:
+              raise SystemExit('Retired Status references remain:\n' + '\n'.join(hits[:50]))
+
+      - name: Verify production build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit cleanup and remove this workflow
+        shell: bash
+        run: |
+          git config user.name 'Merveil AI'
+          git config user.email 'characeopriv@gmail.com'
+          git add src/App.jsx api/router.js
+          git rm .github/workflows/remove-status-dead-code.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'chore: remove retired Connect Status dead code'
+          git push origin main
