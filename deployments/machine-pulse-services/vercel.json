@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/api/machine-connect/(.*)", "destination": "/api/machine-connect?path=$1" }
-  ],
-  "headers": [
-    { "source": "/api/pulse-intelligence", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
-  ]
-}
