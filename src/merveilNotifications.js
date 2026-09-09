@@ -23,13 +23,7 @@ function emit() {
 
 function normalize(row) {
   const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
-  return {
-    ...row,
-    title: row.title || payload.title || "Merveil AI",
-    body: row.body || payload.body || "New activity in Merveil",
-    action_url: row.action_url || payload.url || "/",
-    read_at: row.read_at || null,
-  };
+  return { ...row, title: row.title || payload.title || "Merveil AI", body: row.body || payload.body || "New activity in Merveil", action_url: row.action_url || payload.url || "/", read_at: row.read_at || null };
 }
 
 async function getRealtimeToken() {
@@ -55,12 +49,7 @@ function scheduleTokenRefresh() {
 }
 
 async function load(userId) {
-  const { data, error } = await supabase
-    .from("merveil_notification_events")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const { data, error } = await supabase.from("merveil_notification_events").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(100);
   if (error) throw error;
   state.notifications = (data || []).map(normalize);
   state.unreadCount = state.notifications.filter((n) => !n.read_at).length;
@@ -97,6 +86,7 @@ async function subscribe(userId) {
       state.status = status;
       emit();
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        if (channel) channel = null;
         setTimeout(() => startMerveilNotifications(), 1500);
       }
     });
@@ -126,12 +116,12 @@ export async function startMerveilNotifications() {
 
 export async function markMerveilNotificationRead(id) {
   if (!id || !state.userId) return;
-  await supabase.from("merveil_notification_events").update({ read_at: new Date().toISOString(), status: "read" }).eq("id", id).eq("user_id", state.userId);
+  await supabase.from("merveil_notification_events").update({ read_at: new Date().toISOString() }).eq("id", id).eq("user_id", state.userId);
 }
 
 export async function markAllMerveilNotificationsRead() {
   if (!state.userId) return;
-  await supabase.from("merveil_notification_events").update({ read_at: new Date().toISOString(), status: "read" }).eq("user_id", state.userId).is("read_at", null);
+  await supabase.from("merveil_notification_events").update({ read_at: new Date().toISOString() }).eq("user_id", state.userId).is("read_at", null);
 }
 
 export async function deleteMerveilNotification(id) {
@@ -150,45 +140,31 @@ export async function registerMerveilPush(requestPermission = false) {
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return false;
   const permission = requestPermission ? await Notification.requestPermission() : Notification.permission;
   if (permission !== "granted") return false;
-
   const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     const keyResponse = await fetch("/api/push?action=vapid-public", { credentials: "include" });
     const keyBody = await keyResponse.json().catch(() => ({}));
     if (!keyBody.enabled || !keyBody.publicKey) return false;
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(keyBody.publicKey),
-    });
+    subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(keyBody.publicKey) });
   }
-
   const p256dh = subscription.getKey("p256dh");
   const authKey = subscription.getKey("auth");
   if (!p256dh || !authKey) return false;
-
   const encode = (key) => btoa(String.fromCharCode(...new Uint8Array(key)));
   const response = await fetch("/api/push?action=subscribe", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      platform: "web",
-      subscription: { endpoint: subscription.endpoint, keys: { p256dh: encode(p256dh), auth: encode(authKey) } },
-    }),
+    body: JSON.stringify({ platform: "web", subscription: { endpoint: subscription.endpoint, keys: { p256dh: encode(p256dh), auth: encode(authKey) } } }),
   });
   return response.ok;
 }
 
-// Permission prompts must be user-initiated. The app only auto-registers an
-// already-granted subscription; call registerMerveilPush(true) from the
-// notification settings/enable button to request permission.
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => startMerveilNotifications());
   window.addEventListener("focus", () => startMerveilNotifications());
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") startMerveilNotifications();
-  });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") startMerveilNotifications(); });
 }
 
 export function getMerveilNotifications() {
