@@ -62,7 +62,6 @@ const TABLES = [
   "circles",
   "circle_members",
   "circle_posts",
-  "entity_communities",
   "entities",
   "forum_posts",
 
