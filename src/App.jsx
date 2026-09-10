@@ -2078,6 +2078,7 @@ function stableMergeById(prev, next, idKey = "id") {
   if (!Array.isArray(next)) return Array.isArray(prev) ? prev : [];
   if (!Array.isArray(prev) || prev.length === 0) return next;
   const prevMap = new Map(prev.map((x) => [String(x?.[idKey]), x]));
+  const nextMap = new Map(next.map((x) => [String(x?.[idKey]), x]));
   let changed = prev.length !== next.length;
   const out = next.map((n) => {
     const id = String(n?.[idKey]);
@@ -2095,6 +2096,17 @@ function stableMergeById(prev, next, idKey = "id") {
     if (!same) changed = true;
     return same ? p : { ...p, ...n };
   });
+  // UNION, don't replace: a partial/slow/empty fetch response must not make
+  // items already on screen vanish. Any id present in `prev` but missing
+  // from this `next` response is appended (not dropped) so a short response
+  // only ever grows/updates the list, never shrinks it.
+  for (const p of prev) {
+    const id = String(p?.[idKey]);
+    if (!nextMap.has(id)) {
+      out.push(p);
+      changed = true;
+    }
+  }
   if (!changed) {
     for (let i = 0; i < out.length; i++) {
       if (String(prev[i]?.[idKey]) !== String(out[i]?.[idKey])) { changed = true; break; }
@@ -12139,12 +12151,6 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const [connectTab, setConnectTab] = useState("messages"); // "citizens" | "circle" | "messages"
   const presence = useUnfilteredPresence(currentUser); // unfiltered — feeds Citizens, My Circle, and Messages alike
   const [profiles, setProfiles] = useState({});
-  const [myStatus, setMyStatus] = useState(() => {
-    try {
-      const s = localStorage.getItem("merveil_presence_status");
-      return s === "busy" ? "busy" : "online";
-    } catch { return "online"; }
-  }); // "online" | "busy"
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   const [outbox, setOutbox] = useOutbox();
   const [showEmoji, setShowEmoji] = useState(false);
@@ -12474,17 +12480,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     };
   }, [activeId, isAiThread, currentUser?.id]);
 
-  // Connect only writes preferred status — global heartbeat does the interval.
-  // Avoids double POST every 8–12s from Connect + App shell.
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    const status = isOnline ? myStatus : "offline";
-    try { localStorage.setItem("merveil_presence_status", status === "busy" ? "busy" : "online"); } catch {}
-    fetch("/api/conversations?action=presence", {
-      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    }).catch(() => {});
-  }, [currentUser?.id, myStatus, isOnline]);
+  // Status toggle removed — the global presence heartbeat (App shell) is the
+  // single source of truth for this citizen's own status now.
 
   // Presence itself now comes from the unfiltered useUnfilteredPresence()
   // hook (declared above) so Citizens/My Circle/Messages all share one
@@ -12880,49 +12877,6 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             </button>
           </div>
 
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
-            <button
-              onClick={() => {
-                setMyStatus((s) => {
-                  const next = s === "online" ? "busy" : "online";
-                  try { localStorage.setItem("merveil_presence_status", next); } catch {}
-                  fetch("/api/conversations?action=presence", {
-                    method: "POST", credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ status: next }),
-                  }).catch(() => {});
-                  return next;
-                });
-              }}
-              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full"
-              style={{
-                background: isOnline
-                  ? (myStatus === "busy" ? "rgba(245,158,11,0.15)" : "rgba(34,197,94,0.15)")
-                  : "rgba(255,255,255,0.06)",
-                color: isOnline
-                  ? (myStatus === "busy" ? CT.busy : CT.online)
-                  : CT.sub,
-                border: `1px solid ${isOnline ? (myStatus === "busy" ? "rgba(245,158,11,0.35)" : "rgba(34,197,94,0.35)") : CT.line}`,
-              }}
-            >
-              <span className="w-2 h-2 rounded-full" style={{ background: presenceDot(isOnline ? myStatus : "offline"), boxShadow: isOnline ? `0 0 8px ${presenceDot(myStatus)}` : "none" }} />
-              {isOnline ? (myStatus === "busy" ? "Busy" : "Online") : "Offline"}
-            </button>
-            {(() => {
-              const onlineEst = Math.max(
-                Object.values(presence).filter((s) => s === "online" || s === "busy").length,
-                directory.filter((u) => u.status === "online" || u.status === "busy").length
-              );
-              const offlineEst = Math.max(0, (directory.length || connectionPeople.length) - onlineEst);
-              return (
-                <span className="text-[11px] font-medium" style={{ color: CT.sub }}>
-                  <span style={{ color: CT.online }}>●</span> {onlineEst} live
-                  <span className="mx-1.5 opacity-30">·</span>
-                  <span style={{ color: CT.offline }}>●</span> {offlineEst > 0 ? offlineEst : "—"} away
-                </span>
-              );
-            })()}
-          </div>
         </div>
 
         {/* CONNECT V1 — Citizens | My Circle | Messages */}
