@@ -30409,7 +30409,18 @@ function AppInner() {
         const body = await res.json().catch(() => null);
         if (res.ok && body?.user) handleAuthed(body.user);
       } catch {}
-      supabaseBrowser.auth.signOut().catch(() => {});
+      // CRITICAL: scope "local" only. Default signOut() scope is "global",
+      // which calls Supabase Auth's /logout endpoint and REVOKES the refresh
+      // token server-side — the exact refresh token oauth-bridge just wrote
+      // into the httpOnly cookie above for the backend to rotate with. That
+      // made every session a ticking bomb: calls, presence, and every /api
+      // request worked fine on the still-valid access token, then died the
+      // moment it expired and the backend tried to refresh with a token
+      // Supabase had already revoked — surfacing as "session expired" mid-
+      // call, and only fixable by signing out/in for a fresh, unrevoked pair.
+      // scope: "local" clears the client SDK's own copy without touching
+      // the server-side token the backend now owns.
+      supabaseBrowser.auth.signOut({ scope: "local" }).catch(() => {});
     }).catch(() => {});
   }, [currentUser]);
 
