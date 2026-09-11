@@ -1,42 +1,47 @@
-// Handles /integrations/connect — returns OAuth URL for a given provider
+// Receives OAuth callback, exchanges code → token, stores in integrations table
 import { serve } from "https://deno.land/std@0.210.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const PROVIDERS: Record<string, { authUrl: string; clientId: string; scope: string }> = {
-  github: {
-    authUrl: "https://github.com/login/oauth/authorize",
-    clientId: Deno.env.get("GITHUB_CLIENT_ID")!,
-    scope: "repo workflow user:email",
-  },
-  vercel: {
-    authUrl: "https://vercel.com/integrations/merveil/new",
-    clientId: "",
-    scope: "",
-  },
-  supabase: {
-    authUrl: "https://api.supabase.com/v1/oauth/authorize",
-    clientId: Deno.env.get("SUPABASE_OAUTH_CLIENT_ID")!,
-    scope: "all",
-  },
-  stripe: {
-    authUrl: "https://connect.stripe.com/oauth/authorize",
-    clientId: Deno.env.get("STRIPE_CLIENT_ID")!,
-    scope: "read_write",
-  },
-};
+const sb = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+);
 
 serve(async (req) => {
-  const { provider, redirect } = await req.json();
-  const p = PROVIDERS[provider];
-  if (!p) return new Response(JSON.stringify({ error: "unknown_provider" }), { status: 400 });
+  const url = new URL(req.url);
+  const code = url.searchParams.get("code");
+  const provider = url.searchParams.get("provider") || "github";
+  if (!code) return new Response("missing code", { status: 400 });
 
-  const state = crypto.randomUUID();
-  const url = new URL(p.authUrl);
-  url.searchParams.set("client_id", p.clientId);
-  url.searchParams.set("redirect_uri", redirect);
-  url.searchParams.set("scope", p.scope);
-  url.searchParams.set("state", state);
+  let access_token = "", refresh_token = null, account_label = "";
 
-  return new Response(JSON.stringify({ url: url.toString() }), {
-    headers: { "content-type": "application/json" },
-  });
+  if (provider === "github") {
+    const r = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      body: new URLSearchParams({
+        client_id: Deno.env.get("GITHUB_CLIENT_ID")!,
+        client_secret: Deno.env.get("GITHUB_CLIENT_SECRET")!,
+        code,
+      }),
+    });
+    const j = await r.json();
+    access_token = j.access_token;
+
+    const u = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `Bearer ${access_token}` },
+    }).then(r => r.json());
+    account_label = u.login;
+  }
+
+  await sb.from("integrations").upsert({
+    owner_user_id: req.headers.get("x-user-id"),
+    provider,
+    account_label,
+    access_token_enc: access_token,
+    refresh_token_enc: refresh_token,
+    status: "connected",
+  }, { onConflict: "owner_user_id,provider" });
+
+  return Response.redirect(`${Deno.env.get("APP_URL")}/developer?connected=${provider}`, 302);
 });
