@@ -1,1 +1,53 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Merveil AI — Developer Platform</title><link rel="icon" type="image/svg+xml" href="/merveil-mark.svg?v=1"><link rel="shortcut icon" href="/merveil-mark.svg?v=1"><style>body{margin:0;background:#07090f;color:#f5f7fb;font:16px system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:1050px;margin:auto;padding:56px 22px}.hero{padding:52px 0}.eyebrow{letter-spacing:.14em;text-transform:uppercase;opacity:.65;font-size:12px}.hero h1{font-size:clamp(42px,7vw,76px);line-height:.98;margin:16px 0}.hero p{max-width:700px;color:#aeb6c8;font-size:19px;line-height:1.6}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}a,button{border:1px solid #30384b;border-radius:12px;padding:13px 18px;text-decoration:none;color:#fff;background:#111622;cursor:pointer;font:inherit}.primary{background:#fff;color:#07090f}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:36px 0}.card{border:1px solid #202738;border-radius:16px;padding:22px;background:#0c1019}.card h3{margin-top:0}.muted{color:#8f99ad;line-height:1.5}.steps{display:grid;gap:10px}.step{display:flex;gap:15px;align-items:flex-start;padding:16px 0;border-bottom:1px solid #1b2230}.num{min-width:30px;height:30px;border:1px solid #394256;border-radius:50%;display:grid;place-items:center}.note{margin-top:28px;padding:16px;border-left:3px solid #77819a;background:#0d121d;color:#aeb6c8}</style></head><body><main><section class="hero"><div class="eyebrow">MERVEIL AI · DEVELOPER PLATFORM</div><h1>The intelligence layer beyond interaction.</h1><p>Integrate Merveil once and give your product access to governed intelligence, voice, connection, trust, business, property, capital and world capabilities. Merveil handles the intelligence routing underneath.</p><div class="actions"><a class="primary" href="/developer-portal/console.html">Start building</a><a href="/developer-portal/console.html">Open Developer Console</a></div></section><section class="grid"><div class="card"><h3>01 · Sandbox</h3><p class="muted">Create an organization and generate an <b>mv_test_*</b> credential for development.</p></div><div class="card"><h3>02 · Integrate</h3><p class="muted">Use one governed API boundary or the Merveil SDK across intelligence capabilities.</p></div><div class="card"><h3>03 · Connect</h3><p class="muted">Add OAuth for delegated access and webhooks for reliable application events.</p></div><div class="card"><h3>04 · Go live</h3><p class="muted">Choose a paid plan. After verified payment, production <b>mv_live_*</b> credentials become available.</p></div></section><section><div class="eyebrow">FROM FIRST REQUEST TO PRODUCTION</div><h2>One developer journey.</h2><div class="steps"><div class="step"><span class="num">1</span><div><b>Create your organization</b><div class="muted">Tell Merveil who you are, what you are building and expected API volume.</div></div></div><div class="step"><span class="num">2</span><div><b>Build in sandbox</b><div class="muted">Generate a test key, call Merveil Intelligence and validate your integration safely.</div></div></div><div class="step"><span class="num">3</span><div><b>Add trust and events</b><div class="muted">Configure OAuth, scopes and signed webhooks when your product needs delegated access or event delivery.</div></div></div><div class="step"><span class="num">4</span><div><b>Upgrade and activate production</b><div class="muted">Select Developer, Growth, Business or Enterprise. Production credentials are issued only after verified payment activation.</div></div></div></div></section><div class="note">Keep API keys server-side. For browser or mobile products, use your backend and OAuth rather than embedding Merveil production credentials in client code.</div></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0b0f" />
+  <title>Merveil · Onboarding</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/developer-portal/console.css" />
+  <style>
+    .onb-wrap{max-width:720px;margin:0 auto;padding:32px 20px 80px}
+    .onb-hero{text-align:center;margin-bottom:32px}
+    .onb-hero .orb{width:64px;height:64px;border-radius:50%;background:var(--grad);margin:0 auto 16px;box-shadow:0 0 40px rgba(124,92,255,.5)}
+    .onb-hero h1{font-size:26px;margin:0 0 8px}
+    .onb-hero p{color:var(--txt-2);font-size:14px;max-width:520px;margin:0 auto}
+    .onb-steps{display:flex;gap:8px;justify-content:center;margin-bottom:28px;flex-wrap:wrap}
+    .onb-step{padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;background:var(--bg-2);border:1px solid var(--line);color:var(--txt-3)}
+    .onb-step.on{background:var(--grad);border-color:transparent;color:#fff}
+    .onb-step.done{border-color:var(--acc-3);color:var(--acc-3)}
+    .onb-card{background:var(--bg-1);border:1px solid var(--line-2);border-radius:18px;padding:26px;box-shadow:var(--shadow)}
+    .onb-card h2{font-size:18px;margin:0 0 6px}
+    .onb-card p.hint{color:var(--txt-3);font-size:13px;margin:0 0 20px}
+    .onb-field{margin-bottom:16px}
+    .onb-field label{display:block;font-size:12px;font-weight:600;color:var(--txt-2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em}
+    .onb-field input,.onb-field select,.onb-field textarea{width:100%;padding:11px 13px;border-radius:11px;background:var(--bg);border:1px solid var(--line-2);color:var(--txt);font-size:14px;outline:none;transition:.15s;font-family:inherit}
+    .onb-field input:focus,.onb-field select:focus,.onb-field textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(124,92,255,.15)}
+    .onb-field textarea{min-height:90px;resize:vertical}
+    .onb-chips{display:flex;gap:8px;flex-wrap:wrap}
+    .onb-chip{padding:8px 14px;border-radius:999px;border:1px solid var(--line-2);background:var(--bg-2);font-size:12.5px;color:var(--txt-2);cursor:pointer;transition:.15s}
+    .onb-chip:hover{border-color:var(--acc);color:var(--txt)}
+    .onb-chip.on{background:var(--grad);border-color:transparent;color:#fff}
+    .onb-actions{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
+    .onb-progress{height:4px;background:var(--bg-3);border-radius:999px;overflow:hidden;margin-bottom:24px}
+    .onb-progress > div{height:100%;background:var(--grad);transition:width .35s ease;border-radius:999px}
+    .onb-summary{background:var(--bg-2);border:1px solid var(--line-2);border-radius:12px;padding:14px;font-size:13px;color:var(--txt-2);line-height:1.7}
+    .onb-summary strong{color:var(--txt)}
+  </style>
+</head>
+<body>
+  <div class="onb-wrap">
+    <div class="onb-hero">
+      <div class="orb"></div>
+      <h1>Welcome to Merveil Developer</h1>
+      <p>Three minutes to set up your Command Center. Your AI co-pilot will use this to build, deploy, and ship anything you imagine.</p>
+    </div>
+    <div class="onb-steps" id="onb-steps"></div>
+    <div class="onb-progress"><div id="onb-bar" style="width:0%"></div></div>
+    <div id="onb-body"></div>
+  </div>
+  <script type="module" src="/developer-portal/onboarding-panel.js"></script>
+</body>
+</html>
