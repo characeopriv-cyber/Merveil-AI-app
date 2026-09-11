@@ -1,25 +1,135 @@
-const commercialPanel=(()=>{
-  let client=null, token=null, org=null;
-  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  async function auth(){try{const r=await fetch('/api/v1/developer/config');const j=await r.json();if(!r.ok||!j.data)return;if(!client){const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.102.0');client=createClient(j.data.supabase_url,j.data.supabase_publishable_key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});}token=(await client.auth.getSession()).data.session?.access_token||null;}catch(_){} }
-  async function load(){if(!token)await auth();if(!token)return null;try{const r=await fetch('/api/v1/organization',{headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}});const j=await r.json();if(r.ok){org=j.data;draw();return j.data;}return null;}catch(_){return null;}}
-  function draw(){const nav=document.querySelector('.nav');if(!nav||document.getElementById('commercialNav'))return;const b=document.createElement('button');b.id='commercialNav';b.textContent='Plan & Billing';b.onclick=()=>show();nav.appendChild(b);}
-  function pct(value,limit){if(!limit||limit<=0)return 0;return Math.min(100,Math.round((Number(value||0)/Number(limit))*100));}
-  function planCard(p,current){const active=current?.code===p.code;const paid=Number(p.monthly_price||0)>0;return `<div class="card plan-card ${active?'active':''}"><div class="row"><h3>${esc(p.name)}</h3>${active?'<span class="badge good">Current</span>':''}</div><div class="metric">${paid?`$${esc(p.monthly_price)}`:'Free'}<span class="muted">${paid?'/month':''}</span></div><p class="muted">${esc(p.description||'Developer API access and usage capacity.')}</p><p class="muted">${Number(p.requests_per_month||0).toLocaleString()} requests · ${Number(p.included_ai_units||0).toLocaleString()} AI units · ${Number(p.included_call_minutes||0).toLocaleString()} call min</p>${active?'':'<button class="btn upgradePlan" data-plan="'+esc(p.code)+'">'+(paid?'Upgrade':'Included')+'</button>'}</div>`;}
-  async function upgrade(code){const button=document.querySelector(`.upgradePlan[data-plan="${CSS.escape(code)}"]`);if(button){button.disabled=true;button.textContent='Preparing…';}try{const r=await fetch('/api/v1/organization',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({action:'upgrade',organization_id:org.organization.id,plan_code:code})});const j=await r.json();if(!r.ok){alert(j.message||j.error||'Unable to start upgrade.');return;}const intent=j.data?.payment_intent;const checkout=intent?.checkout_url;if(checkout){window.location.href=checkout;return;}alert('Stripe checkout was not returned. No plan has been activated.');await load();}catch(_){alert('Network error while starting the upgrade.');}finally{if(button){button.disabled=false;button.textContent='Upgrade';}}}
-  async function show(){const data=await load();if(!data)return;const d=data.subscription||{};const p=d.plan||{};const current=p.code;const plans=data.plans||[];const usedReq=Number(data.usage?.requests||0),usedAi=Number(data.usage?.ai_units||0),usedCalls=Number(data.usage?.call_minutes||0),usedVer=Number(data.usage?.verifications||0);const c=document.getElementById('content');if(!c)return;
-    c.innerHTML=`<div class="section"><div class="row"><div><h2>${esc(data.organization.name)}</h2><p class="muted">${esc(data.role)} · Developer organization</p></div><span class="badge good">${esc(d.status||'active')}</span></div></div>
-    <div class="cards"><div class="card"><div class="muted">Current plan</div><div class="metric">${esc(p.name||'Sandbox')}</div><p class="muted">${Number(p.monthly_price||0)>0?`$${esc(p.monthly_price)}/month`:'Free'}</p></div>
-    <div class="card"><div class="muted">Payment</div><div class="metric">Stripe</div><p class="muted">Worldwide Checkout · secure hosted payment</p><span class="badge good">Only payment provider</span></div>
-    <div class="card"><div class="muted">Requests</div><div class="metric">${usedReq.toLocaleString()} <span class="muted">/ ${Number(p.requests_per_month||0).toLocaleString()}</span></div><div class="quota"><span style="width:${pct(usedReq,p.requests_per_month)}%"></span></div></div>
-    <div class="card"><div class="muted">AI units</div><div class="metric">${usedAi.toLocaleString()} <span class="muted">/ ${Number(p.included_ai_units||0).toLocaleString()}</span></div><div class="quota"><span style="width:${pct(usedAi,p.included_ai_units)}%"></span></div></div>
-    <div class="card"><div class="muted">Call minutes</div><div class="metric">${usedCalls.toLocaleString()} <span class="muted">/ ${Number(p.included_call_minutes||0).toLocaleString()}</span></div><div class="quota"><span style="width:${pct(usedCalls,p.included_call_minutes)}%"></span></div></div>
-    <div class="card"><div class="muted">Verifications</div><div class="metric">${usedVer.toLocaleString()} <span class="muted">/ ${Number(p.included_verifications||0).toLocaleString()}</span></div><div class="quota"><span style="width:${pct(usedVer,p.included_verifications)}%"></span></div></div></div>
-    <div class="section"><div class="row"><div><h2>Subscription</h2><p class="muted">${esc(p.description||'Your plan controls production access and usage limits.')}</p></div><button class="btn" id="refreshCommercial">Refresh</button></div><p class="muted">${d.cancel_at_period_end?'Cancellation is scheduled at the end of the current period.':'Subscription is active. Paid plan changes require verified Stripe payment.'}</p></div>
-    <div class="section"><h2>Plans</h2><div class="cards">${plans.map(x=>planCard(x,current)).join('')}</div></div>`;
-    document.getElementById('refreshCommercial').onclick=show;document.querySelectorAll('.upgradePlan').forEach(b=>b.onclick=()=>upgrade(b.dataset.plan));
+/* ============================================================
+   MERVEIL — Commercial Panel
+   Billing, plans, usage, credits. Drop-in for the Command Center.
+   ============================================================ */
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, API_BASE } from './config.js';
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true } });
+
+const PLANS = [
+  { id: 'free', name: 'Citizen', price: 0, credits: 1000, projects: 3, private: false,
+    features: ['1,000 AI credits / mo', '3 active projects', 'Public deploys', 'Community support'] },
+  { id: 'pro', name: 'Developer Pro', price: 29, credits: 50000, projects: 50, private: true,
+    features: ['50,000 AI credits / mo', '50 active projects', 'Private deploys', 'Custom domains', 'Priority builds', 'All integrations'] },
+  { id: 'scale', name: 'Studio', price: 199, credits: 500000, projects: 500, private: true,
+    features: ['500,000 AI credits / mo', '500 active projects', 'Team seats (5)', 'SLA + Priority support', 'White-label Merveil Interface', 'Edge deploys + analytics'] },
+  { id: 'enterprise', name: 'Enterprise', price: null, credits: -1, projects: -1, private: true,
+    features: ['Unlimited credits', 'Unlimited projects', 'SSO / SAML', 'Dedicated infra', 'On-prem option', '24/7 support + Slack'] },
+];
+
+export async function mountCommercialPanel(root) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { root.innerHTML = '<p style="color:var(--txt-3)">Sign in to view billing.</p>'; return; }
+
+  const [{ data: dev }, { data: usage }] = await Promise.all([
+    sb.from('developer_accounts').select('*').eq('owner_user_id', session.user.id).maybeSingle(),
+    sb.rpc('get_usage_summary', { p_user_id: session.user.id }).then(r => ({ data: r.data })).catch(() => ({ data: null })),
+  ]);
+
+  const plan = PLANS.find(p => p.id === (dev?.plan_id || 'free')) || PLANS[0];
+  const credits = dev?.credits ?? plan.credits;
+  const used = usage?.credits_used ?? 0;
+  const projectsUsed = usage?.projects_used ?? 0;
+  const projectsLimit = plan.projects === -1 ? '∞' : plan.projects;
+
+  root.innerHTML = '';
+  root.append(
+    sectionHeader('Commercial'),
+    statRow([
+      ['Current plan', plan.name, plan.price ? `$${plan.price}/mo` : 'Custom'],
+      ['Credits left', `${(credits - used).toLocaleString()}`, `of ${credits.toLocaleString()}`],
+      ['Projects', `${projectsUsed} / ${projectsLimit}`, `${plan.projects === -1 ? 'Unlimited' : plan.projects + ' allowed'}`],
+      ['Renews', new Date(Date.now() + 30 * 864e5).toLocaleDateString(), 'Monthly'],
+    ]),
+    sectionHeader('Plans'),
+    plansGrid(plan.id, dev),
+    sectionHeader('Usage'),
+    usageChart(usage?.daily || []),
+  );
+}
+
+function sectionHeader(t) {
+  const h = document.createElement('h3');
+  h.className = 'mv-h3';
+  h.textContent = t;
+  return h;
+}
+
+function statRow(items) {
+  const wrap = document.createElement('div');
+  wrap.className = 'mv-stats';
+  for (const [l, v, d] of items) {
+    const s = document.createElement('div');
+    s.className = 'mv-stat';
+    s.innerHTML = `<div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div>`;
+    wrap.append(s);
   }
-  function observe(){const app=document.getElementById('app');if(app)new MutationObserver(()=>draw()).observe(app,{childList:true,subtree:true});}
-  return{start:async()=>{observe();await auth();draw();setInterval(async()=>{await auth();draw();},15000);}};
-})();
-commercialPanel.start();
+  return wrap;
+}
+
+function plansGrid(currentId, dev) {
+  const grid = document.createElement('div');
+  grid.className = 'mv-grid';
+  for (const p of PLANS) {
+    const card = document.createElement('div');
+    card.className = 'mv-card';
+    card.style.padding = '20px';
+    card.innerHTML = `
+      <div style="font-size:15px;font-weight:800;margin-bottom:4px">${p.name}</div>
+      <div style="font-size:26px;font-weight:800;margin-bottom:12px">
+        ${p.price === null ? 'Custom' : p.price === 0 ? 'Free' : `$${p.price}<span style="font-size:12px;color:var(--txt-3);font-weight:500">/mo</span>`}
+      </div>
+      <ul style="list-style:none;padding:0;margin:0 0 16px;font-size:12.5px;color:var(--txt-2);line-height:1.9">
+        ${p.features.map(f => `<li>✓ ${f}</li>`).join('')}
+      </ul>
+    `;
+    const btn = document.createElement('button');
+    btn.className = currentId === p.id ? 'mv-btn ghost' : 'mv-btn';
+    btn.style.width = '100%';
+    btn.style.justifyContent = 'center';
+    btn.textContent = currentId === p.id ? 'Current plan' : (p.price === null ? 'Contact sales' : 'Upgrade');
+    btn.onclick = () => startCheckout(p.id, dev);
+    card.append(btn);
+    grid.append(card);
+  }
+  return grid;
+}
+
+async function startCheckout(planId, dev) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (planId === 'enterprise') {
+    location.href = 'mailto:sales@merveil.ai?subject=Enterprise%20plan%20inquiry';
+    return;
+  }
+  const res = await fetch(`${API_BASE}/billing/checkout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+    body: JSON.stringify({ plan_id: planId, developer_id: dev?.id }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (json.url) location.href = json.url;
+  else alert(json.error || 'Checkout unavailable');
+}
+
+function usageChart(daily) {
+  const box = document.createElement('div');
+  box.className = 'mv-panel';
+  box.style.padding = '16px';
+  if (!daily.length) {
+    box.textContent = 'No usage yet.';
+    box.style.color = 'var(--txt-3)';
+    box.style.fontSize = '13px';
+    return box;
+  }
+  const max = Math.max(...daily.map(d => d.credits), 1);
+  const bars = daily.map(d => {
+    const h = Math.round((d.credits / max) * 120);
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px">
+      <div style="height:${h}px;width:100%;background:var(--grad);border-radius:4px 4px 0 0;min-height:2px"></div>
+      <div style="font-size:9px;color:var(--txt-3)">${d.date.slice(5)}</div>
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div style="display:flex;align-items:flex-end;gap:6px;height:150px">${bars}</div>`;
+  return box;
+}
