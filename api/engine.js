@@ -81,16 +81,11 @@ async function requireAccess(req, res) {
 
 async function streamClaude(res, { system, prompt, image }) {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) {
-    return sendJson(res, 500, { error: "ANTHROPIC_API_KEY not configured on the server." });
-  }
+  if (!key) return sendJson(res, 500, { error: "ANTHROPIC_API_KEY not configured on the server." });
 
   const content = [];
   if (image?.data && image?.mediaType) {
-    content.push({
-      type: "image",
-      source: { type: "base64", media_type: image.mediaType, data: image.data },
-    });
+    content.push({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.data } });
   }
   content.push({ type: "text", text: prompt });
 
@@ -144,9 +139,7 @@ async function streamClaude(res, { system, prompt, image }) {
         if (payload === "[DONE]") continue;
         try {
           const evt = JSON.parse(payload);
-          if (evt.type === "content_block_delta" && evt.delta?.text) {
-            res.write(evt.delta.text);
-          }
+          if (evt.type === "content_block_delta" && evt.delta?.text) res.write(evt.delta.text);
         } catch {}
       }
     }
@@ -183,7 +176,6 @@ export default async function handler(req, res) {
   const [pathPart, queryPart] = rawUrl.split("?");
   const query = Object.fromEntries(new URLSearchParams(queryPart || ""));
 
-  // ── GET /api/engine/integrations ──
   if (pathPart.endsWith("/api/engine/integrations") && req.method === "GET") {
     return sendJson(res, 200, {
       integrations: [
@@ -199,50 +191,34 @@ export default async function handler(req, res) {
     });
   }
 
-  // ── GET /api/studio?action=access ──
   if (pathPart.endsWith("/api/studio") && req.method === "GET") {
     const gate = await requireAccess(req, res);
     if (!gate) return;
-    return sendJson(res, 200, {
-      ok: true,
-      completionPct: gate.completionPct,
-      citizenId: gate.citizenId,
-    });
+    return sendJson(res, 200, { ok: true, completionPct: gate.completionPct, citizenId: gate.citizenId });
   }
 
-  // ── POST /api/engine/generate ──
   if (pathPart.endsWith("/api/engine/generate") && req.method === "POST") {
     const gate = await requireAccess(req, res);
     if (!gate) return;
-
     const body = await readJson(req);
     const prompt = String(body.prompt || "").slice(0, 6000);
     if (!prompt) return sendJson(res, 400, { error: "Prompt required." });
-
     return streamClaude(res, { system: GEN_SYSTEM, prompt, image: body.image });
   }
 
-  // ── POST /api/engine/evolve ──
   if (pathPart.endsWith("/api/engine/evolve") && req.method === "POST") {
     const gate = await requireAccess(req, res);
     if (!gate) return;
-
     const body = await readJson(req);
     const instruction = String(body.instruction || "").slice(0, 4000);
     const files = Array.isArray(body.files) ? body.files : [];
     if (!instruction) return sendJson(res, 400, { error: "instruction required." });
     if (!files.length) return sendJson(res, 400, { error: "files required." });
-
-    const fileContext = files
-      .slice(0, 20)
-      .map((f) => `=== ${f.path} ===\n${String(f.content || "").slice(0, 4000)}`)
-      .join("\n\n");
-
+    const fileContext = files.slice(0, 20).map((f) => `=== ${f.path} ===\n${String(f.content || "").slice(0, 4000)}`).join("\n\n");
     const prompt = `EVOLVE existing app.\n\nInstruction: ${instruction}\n\nCURRENT FILES:\n${fileContext}\n\nEmit only the files that change.`;
     return streamClaude(res, { system: EVOLVE_SYSTEM, prompt });
   }
 
-  // ── POST /api/engine/deploy ──
   if (pathPart.endsWith("/api/engine/deploy") && req.method === "POST") {
     const gate = await requireAccess(req, res);
     if (!gate) return;
@@ -250,7 +226,7 @@ export default async function handler(req, res) {
     const token = process.env.VERCEL_TOKEN;
     if (!token) {
       return sendJson(res, 400, {
-        error: "Deploy isn't wired yet — add VERCEL_TOKEN in Vercel → Settings → Environment Variables.",
+        error: "Vercel deployment is not configured. Add VERCEL_TOKEN in the Vercel project's Environment Variables.",
         code: "DEPLOY_NOT_CONFIGURED",
       });
     }
@@ -259,26 +235,30 @@ export default async function handler(req, res) {
     const files = Array.isArray(body.files) ? body.files : [];
     if (!files.length) return sendJson(res, 400, { error: "No files to deploy." });
 
-    const teamQuery = process.env.VERCEL_TEAM_ID ? `?teamId=${process.env.VERCEL_TEAM_ID}` : "";
+    const projectId = process.env.VERCEL_PROJECT_ID || "";
+    const teamQuery = process.env.VERCEL_TEAM_ID ? `?teamId=${encodeURIComponent(process.env.VERCEL_TEAM_ID)}` : "";
+    const target = body.target === "production" ? "production" : "preview";
+    const name = String(body.projectName || "merveil-app").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 52) || "merveil-app";
+
     try {
       const dep = await fetch(`https://api.vercel.com/v13/deployments${teamQuery}`, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${token}`,
-        },
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          name: String(body.projectName || "merveil-app")
-            .toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 52),
+          name,
+          ...(projectId ? { project: projectId } : {}),
           files: files.map((f) => ({ file: f.path, data: f.content })),
-          target: "preview",
+          target,
         }),
       });
       const data = await dep.json();
-      if (!dep.ok) {
-        return sendJson(res, dep.status, { error: data?.error?.message || "Vercel deploy failed." });
-      }
-      return sendJson(res, 200, { url: `https://${data.url}`, deploymentId: data.id });
+      if (!dep.ok) return sendJson(res, dep.status, { error: data?.error?.message || "Vercel deploy failed." });
+      return sendJson(res, 200, {
+        ok: true,
+        url: data.url ? `https://${data.url}` : null,
+        deploymentId: data.id || null,
+        target,
+      });
     } catch (e) {
       return sendJson(res, 500, { error: e.message || "Deploy failed." });
     }
