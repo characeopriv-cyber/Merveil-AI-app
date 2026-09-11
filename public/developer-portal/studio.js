@@ -57,6 +57,11 @@ const toast = (msg) => {
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
   state.session = session;
+  const link = new URLSearchParams(location.search).get('link');
+  if (link && session) {
+    try { await sb.rpc('redeem_passport_link', { p_token: link }); } catch (_) {}
+    history.replaceState({}, '', '/developer');
+  }
   sb.auth.onAuthStateChange((_e, s) => {
     state.session = s;
     if (s?.access_token) sb.realtime.setAuth(s.access_token);
@@ -170,22 +175,70 @@ function viewProjects() {
 
 function render() {
   root.innerHTML = '';
-  if (!state.session) {
-    return root.append(gate('Sign in to open Merveil Studio.',
-      el('button', { class: 'btn lg', 'data-c': 'voice', onclick: signIn }, '🔑  Continue with Google')));
-  }
-  if (!state.passport) {
-    return root.append(gate('Your Merveil Passport is required.',
-      el('a', { class: 'btn lg', href: '/' }, '🛂  Open Citizen App')));
-  }
+  if (!state.session) return root.append(signInLanding());
+  if (!state.passport) return root.append(passportGate());
   root.append(topbar());
   const main = el('main', { class: 'shell' });
+  if (state.view === 'compose') main.append(citizenBanner());
   if (state.view === 'compose') main.append(viewCompose());
   if (state.view === 'projects') main.append(viewProjects());
   if (state.view === 'refine') main.append(viewRefine());
   if (state.view === 'build') main.append(viewBuild());
   if (state.view === 'live') main.append(viewLive());
   root.append(main);
+}
+
+function citizenBanner(){
+  const hasPassport = !!state.passport;
+  return el('div', { class:'xroute' },
+    el('div', { class:'ico' }, hasPassport ? '🛂' : '✦'),
+    el('div', { class:'txt' },
+      el('div', { class:'t' }, hasPassport
+        ? 'Connected to Merveil Citizen · ' + (state.passport.citizen_id || '')
+        : 'One Merveil Passport. Every Merveil product.'),
+      el('div', { class:'d' }, hasPassport
+        ? 'Your Citizen identity, AI, and marketplace are already wired in.'
+        : 'Use the same Passport to explore the Citizen App, publish apps, and receive payments.'),
+    ),
+    hasPassport
+      ? el('a', { class:'btn ghost sm', href:'/', target:'_blank' }, '🌐 Open Citizen App')
+      : el('a', { class:'btn sm', 'data-c':'voice', href:'/?register=1&return=developer' }, '🛂 Create Passport'),
+  );
+}
+
+function signInLanding(){
+  return el('div', { style:'min-height:100vh;display:grid;place-items:center;padding:22px' },
+    el('div', { style:'max-width:440px;text-align:center;padding:34px;background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:var(--sh-2)' },
+      el('div', { style:'width:70px;height:70px;border-radius:50%;background:conic-gradient(from 45deg,var(--mv-cyan),#7c5cff,var(--c-build),var(--mv-cyan));margin:0 auto 18px;box-shadow:0 0 0 12px rgba(0,184,212,.08)' }),
+      el('h1', { style:'font-size:28px;margin-bottom:10px;font-family:Instrument Serif,serif;font-weight:400' }, 'Merveil Studio'),
+      el('p', { style:'color:var(--ink-2);margin-bottom:22px' }, 'Sign in with the same Passport you use across Merveil.'),
+      el('button', { class:'btn lg', 'data-c':'voice', style:'width:100%;justify-content:center', onclick: signIn }, '🔑  Continue with Google'),
+      el('div', { style:'margin-top:18px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-3)' },
+        'New to Merveil? ',
+        el('a', { href:'/?register=1&return=developer', style:'color:var(--mv-cyan-3,#0097a7);font-weight:600' }, 'Create your Passport →'),
+      ),
+    )
+  );
+}
+
+function passportGate(){
+  return el('div', { style:'min-height:100vh;display:grid;place-items:center;padding:22px' },
+    el('div', { style:'max-width:480px;text-align:center;padding:34px;background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:var(--sh-2)' },
+      el('div', { style:'width:70px;height:70px;border-radius:50%;background:linear-gradient(120deg,var(--mv-cyan,#00b8d4),var(--mv-cyan-3,#0097a7));margin:0 auto 18px;display:grid;place-items:center;font-size:30px;color:#fff;box-shadow:0 0 0 12px rgba(0,184,212,.1)' }, '🛂'),
+      el('h1', { style:'font-size:26px;margin-bottom:10px;font-family:Instrument Serif,serif;font-weight:400' }, 'Your Passport is your key'),
+      el('p', { style:'color:var(--ink-2);margin-bottom:24px;font-size:14.5px' },
+        "Merveil Studio runs on the same identity as the Citizen App. Create your free Passport in under a minute — you'll return here automatically."),
+      el('a', {
+        class:'btn lg block', 'data-c':'voice',
+        href:'/?register=1&return=' + encodeURIComponent(location.pathname),
+        style:'width:100%;justify-content:center'
+      }, '🛂  Create Passport in Citizen App'),
+      el('div', { style:'margin-top:14px;font-size:12.5px;color:var(--ink-3)' },
+        'Already have a Passport? ',
+        el('a', { href:'#', onclick: async (e) => { e.preventDefault(); await sb.auth.signOut(); signIn(); }, style:'color:var(--mv-cyan-3,#0097a7);font-weight:600' }, 'Sign in'),
+      ),
+    )
+  );
 }
 
 function topbar() {
@@ -275,6 +328,34 @@ function viewCompose() {
       ),
     ));
   }
+
+  // Expert mode entry
+  wrap.append(el('div', { class:'pro-entry' },
+    el('div', { style:'flex:1;position:relative' },
+      el('div', { class:'badge' }, '◆ Pro Studio'),
+      el('h3', {}, 'Expert mode. Raw code. Every tool.'),
+      el('p', {}, 'Full file tree, terminal, Git, live collaboration, and 60+ integrations. Merveil AI sits beside you as code copilot.'),
+      el('div', { class:'tags' },
+        el('span', {}, 'Monaco editor'),
+        el('span', {}, 'GitHub / Vercel / Supabase'),
+        el('span', {}, 'WebContainers'),
+        el('span', {}, 'AI code assist'),
+      ),
+    ),
+    el('a', { class:'btn lg', href:'/developer/pro' },
+      el('span', { class:'k' }, '⚡'), 'Enter Pro Studio'),
+  ));
+
+  // Developer API teaser
+  wrap.append(el('div', { style:'margin-top:40px;padding-top:34px;border-top:1px solid var(--line);text-align:left' },
+    el('h2', { style:'font-family:Instrument Serif,serif;font-weight:400;font-size:28px' }, 'Developer API'),
+    el('p', { style:'color:var(--ink-2);font-size:14px;margin:6px 0 14px' }, 'Build on Merveil from anywhere. Every Studio feature is an endpoint.'),
+    el('div', { style:'display:flex;gap:8px;flex-wrap:wrap' },
+      el('a', { class:'btn sm', 'data-c':'template', href:'/developer-portal/quickstart.html' }, '📖 Quickstart'),
+      el('a', { class:'btn ghost sm', href:'/developer-portal/openapi.yaml' }, 'OpenAPI'),
+    ),
+  ));
+
   return wrap;
 }
 
