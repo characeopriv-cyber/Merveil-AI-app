@@ -1,15 +1,31 @@
-# Merveil Developer Onboarding
+# Merveil Developer Platform
 
-The external-company journey is:
+AI-native workspace. Idea → prototype in under 3 minutes.
 
-1. Create an organization.
-2. Start in the sandbox with `mv_test_*` credentials.
-3. Make the first Merveil Intelligence request.
-4. Configure OAuth and signed webhooks when needed.
-5. Review usage and choose a commercial plan.
-6. Complete verified payment.
-7. Activate production and issue `mv_live_*` credentials.
+## Files
 
-Production credentials are never presented as a free sandbox feature. API keys must remain server-side. Browser and mobile applications should use their backend and OAuth for delegated access.
+- `console.html` — /developer Command Center
+- `console.css` / `console.js` — dark AI-first UI
+- `config.js` — SUPABASE_URL, ANON_KEY, API_BASE, AI_BASE
+- `onboarding.html` + `onboarding-panel.js` — guided setup
+- `commercial-panel.js` — plans / usage
+- `team-panel.js` — collaborators
+- `webhook-deliveries.js` — live webhook log
+- `oauth-consent.html` — 3rd-party OAuth consent
+- `quickstart.html` — docs
+- `openapi.yaml` — API reference
+- `index.html` — marketing landing
 
-Primary console: `/developer-portal/console.html`
+## Routes (vercel.json)
+
+| Path | File |
+|------|------|
+| /developer | console.html |
+| /developer/onboarding | onboarding.html |
+| /developer/quickstart | quickstart.html |
+| /onboarding | onboarding.html |
+| /oauth/consent | oauth-consent.html |
+
+## Config
+
+Edit `config.js` with your Supabase project URL and anon key.
