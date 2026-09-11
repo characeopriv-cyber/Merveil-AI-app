@@ -1,6 +1,7 @@
 /**
- * Merveil Studio — Home → Build workspace
- * Real passport gate · real MF streaming · real evolve with file contents
+ * Merveil Studio — dense Home → Build workspace
+ * Wire: /api/engine/generate (MF stream) + local VFS state
+ * Auth: reads Supabase token from localStorage, sends as Bearer header
  */
 import { API_BASE } from './config.js';
 
@@ -31,8 +32,6 @@ const SECTIONS = [
   ['pages', 'Pages'], ['search', 'Search'], ['data', 'Data'], ['design', 'Design'],
   ['integrations', 'Integrations'], ['git', 'History'], ['deploy', 'Publish'], ['settings', 'Settings'],
 ];
-
-const MF_RE = /<MF:BEGIN>\s*path:\s*(\S+)\s*<MF:BYTES>\s*([\s\S]*?)<MF:END>/g;
 
 const state = {
   screen: 'home',
@@ -71,9 +70,33 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/**
+ * Read the Supabase session token from localStorage and return an
+ * Authorization header. This is what lets the server see you as a
+ * signed-in citizen even when the httpOnly cookie isn't being carried.
+ */
+function authHeader() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const data = JSON.parse(raw);
+        const token = data?.access_token || data?.currentSession?.access_token;
+        if (token) return { Authorization: `Bearer ${token}` };
+      }
+    }
+  } catch {}
+  return {};
+}
+
 async function loadPassport() {
   try {
-    const res = await fetch(`${API_BASE || ''}/api/studio?action=access`, { credentials: 'include' });
+    const res = await fetch(`${API_BASE || ''}/api/studio?action=access`, {
+      credentials: 'include',
+      headers: { ...authHeader() },
+    });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 || res.status === 403) {
       window.location.href = data.redirect || '/';
@@ -88,7 +111,10 @@ async function loadPassport() {
 
 async function loadIntegrations() {
   try {
-    const res = await fetch(`${API_BASE || ''}/api/engine/integrations`, { credentials: 'include' });
+    const res = await fetch(`${API_BASE || ''}/api/engine/integrations`, {
+      credentials: 'include',
+      headers: { ...authHeader() },
+    });
     const data = await res.json();
     state.integrations = data.integrations || [];
   } catch {
@@ -504,7 +530,7 @@ function renderAI() {
   ai.querySelector('#ai-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
   });
-  ai.querySelectorAll('[data-preset]')?.forEach((b) => b.addEventListener('click', () => {
+  ai.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => {
     evolve(b.getAttribute('data-preset'));
   }));
   return ai;
@@ -526,6 +552,16 @@ function applyDesign() {
 }
 
 /* ══════════ ENGINE ══════════ */
+function parseMF(text) {
+  const files = [];
+  const re = /<MF:BEGIN>\s*path:\s*(\S+)\s*<MF:BYTES>\s*([\s\S]*?)<MF:END>/g;
+  let m;
+  while ((m = re.exec(text))) {
+    files.push({ path: m[1], content: m[2].replace(/^\n/, ''), bytes: m[2].length });
+  }
+  return files;
+}
+
 function materializePreview(files) {
   const htmlFile = files.find((f) => f.path === 'index.html') || files.find((f) => f.path.endsWith('.html'));
   const app = files.find((f) => /App\.(tsx|jsx|js)$/.test(f.path));
@@ -546,67 +582,6 @@ function materializePreview(files) {
   state.previewUrl = URL.createObjectURL(new Blob([body], { type: 'text/html' }));
 }
 
-/**
- * Stream the generate response and parse MF blocks incrementally.
- * Files appear in the panel as Claude writes them.
- */
-async function streamGenerate(prompt, image) {
-  const res = await fetch(`${API_BASE || ''}/api/engine/generate`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ prompt, image: image || undefined }),
-  });
-
-  // Critical: check status BEFORE trying to parse the body
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    if (errData.redirect) { window.location.href = errData.redirect; return []; }
-    throw new Error(errData.error || `Build failed (${res.status})`);
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  const seen = new Set();
-  const files = [];
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let lastIndex = 0;
-    let m;
-    MF_RE.lastIndex = 0;
-    while ((m = MF_RE.exec(buffer))) {
-      const path = m[1].trim();
-      if (seen.has(path)) { lastIndex = MF_RE.lastIndex; continue; }
-      seen.add(path);
-      const file = { path, content: m[2].replace(/^\r?\n/, ''), bytes: m[2].length };
-      files.push(file);
-      state.files.push(file);
-      lastIndex = MF_RE.lastIndex;
-      render();
-    }
-    if (lastIndex) buffer = buffer.slice(lastIndex);
-  }
-
-  // Flush any trailing block
-  MF_RE.lastIndex = 0;
-  let m;
-  while ((m = MF_RE.exec(buffer))) {
-    const path = m[1].trim();
-    if (!seen.has(path)) {
-      const file = { path, content: m[2].replace(/^\r?\n/, ''), bytes: m[2].length };
-      files.push(file);
-      state.files.push(file);
-    }
-  }
-
-  return files;
-}
-
 async function ignite() {
   const prompt = state.prompt.trim();
   if (prompt.length < 3) return;
@@ -623,12 +598,26 @@ async function ignite() {
   render();
 
   try {
-    const files = await streamGenerate(
-      prompt,
-      state.attachedImage,
-    );
+    const res = await fetch(`${API_BASE || ''}/api/engine/generate`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        prompt,
+        mode: KIND_MAP[state.mode] || 'web_app',
+        image: state.attachedImage || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.redirect) { window.location.href = errData.redirect; return; }
+      throw new Error(errData.error || `Build failed (${res.status})`);
+    }
     state.attachedImage = null;
+    const text = await res.text();
+    const files = parseMF(text);
     if (!files.length) throw new Error('Model returned no files — try rephrasing the prompt.');
+    state.files = files;
     state.buildState = 'building';
     state.events.push({ type: 'pipeline:completed', n: files.length });
     state.messages.push({
@@ -636,6 +625,7 @@ async function ignite() {
       text: `Built ${files.length} files.`,
       files: files.map((f) => f.path),
     });
+    render();
     materializePreview(files);
     state.buildState = 'ready';
     render();
@@ -647,79 +637,37 @@ async function ignite() {
 }
 
 async function evolve(instruction) {
-  if (!state.files.length) {
-    state.messages.push({ role: 'bot', text: 'Build something first before evolving.' });
-    render();
-    return;
-  }
   state.messages.push({ role: 'user', text: instruction });
   state.buildState = 'generating';
   render();
-
-  // Send full file contents so Claude can actually understand the app
-  const fileContext = state.files
-    .slice(0, 20)
-    .map((f) => `=== ${f.path} ===\n${f.content.slice(0, 4000)}`)
-    .join('\n\n');
-
-  const prompt = `EVOLVE existing app.\n\nInstruction: ${instruction}\n\nCURRENT FILES:\n${fileContext}\n\nEmit only the files that change, in MF protocol. Keep unchanged files untouched.`;
-
   try {
     const res = await fetch(`${API_BASE || ''}/api/engine/generate`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt }),
+      headers: { 'content-type': 'application/json', ...authHeader() },
+      body: JSON.stringify({
+        prompt: `EVOLVE existing app.\nInstruction: ${instruction}\nCurrent files:\n${state.files.map((f) => f.path).join('\n')}\n\nEmit only changed files in MF protocol.`,
+        mode: KIND_MAP[state.mode] || 'web_app',
+        image: state.attachedImage || undefined,
+      }),
     });
-
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       if (errData.redirect) { window.location.href = errData.redirect; return; }
       throw new Error(errData.error || `Evolve failed (${res.status})`);
     }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    const seen = new Set();
-    const changes = [];
-    let buffer = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let lastIndex = 0;
-      let m;
-      MF_RE.lastIndex = 0;
-      while ((m = MF_RE.exec(buffer))) {
-        const path = m[1].trim();
-        if (seen.has(path)) { lastIndex = MF_RE.lastIndex; continue; }
-        seen.add(path);
-        changes.push({ path, content: m[2].replace(/^\r?\n/, ''), bytes: m[2].length });
-        lastIndex = MF_RE.lastIndex;
-      }
-      if (lastIndex) buffer = buffer.slice(lastIndex);
-    }
-
-    MF_RE.lastIndex = 0;
-    let m;
-    while ((m = MF_RE.exec(buffer))) {
-      const path = m[1].trim();
-      if (!seen.has(path)) {
-        changes.push({ path, content: m[2].replace(/^\r?\n/, ''), bytes: m[2].length });
-      }
-    }
-
-    if (changes.length) {
+    state.attachedImage = null;
+    const text = await res.text();
+    const files = parseMF(text);
+    if (files.length) {
       const map = new Map(state.files.map((f) => [f.path, f]));
-      for (const f of changes) map.set(f.path, f);
+      for (const f of files) map.set(f.path, f);
       state.files = [...map.values()];
       materializePreview(state.files);
-      state.events.push({ type: 'evolve:completed', n: changes.length });
-      state.messages.push({ role: 'bot', text: `Updated ${changes.length} file(s).`, files: changes.map((f) => f.path) });
+      state.events.push({ type: 'evolve:completed', n: files.length });
+      state.messages.push({ role: 'bot', text: `Updated ${files.length} file(s).`, files: files.map((f) => f.path) });
     } else {
-      state.messages.push({ role: 'bot', text: 'No changes returned — try rephrasing.' });
+      state.messages.push({ role: 'bot', text: text.slice(0, 500) || 'No file changes returned.' });
     }
     state.buildState = 'ready';
   } catch (err) {
@@ -741,7 +689,7 @@ async function deployNow() {
     const res = await fetch(`${API_BASE || ''}/api/engine/deploy`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...authHeader() },
       body: JSON.stringify({ projectName: state.projectName, files: state.files }),
     });
     const data = await res.json().catch(() => ({}));
