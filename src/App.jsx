@@ -5287,7 +5287,6 @@ function FeedView({ liveViews, properties, currentUser, onPropertyUpdated, onPro
   const [likedIds, setLikedIds] = useState([]);
   const [ownerProfiles, setOwnerProfiles] = useState({});
 
-
   useEffect(() => {
     const ids = [...new Set(properties.map((p) => p.ownerId).filter(Boolean))];
     if (!ids.length) return;
@@ -7998,7 +7997,7 @@ function useIncomingCallListener(currentUser) {
     if (!currentUser?.id) return;
     const uid = currentUser.id;
 
-    // StrictMode/current-user safety: remove any stale fixed-topic channel first.
+    // Reap any leftover channels from a prior mount (StrictMode safety)
     try {
       (supabaseBrowser.getChannels?.() || []).forEach((c) => {
         const t = String(c.topic || "");
@@ -8050,6 +8049,8 @@ function useIncomingCallListener(currentUser) {
       if (callId) poll();
     };
     window.addEventListener("merveil:notification-click", onPushClick);
+
+    // Named handler so it can be removed on cleanup
     const swHandler = (ev) => {
       if (ev?.data?.type === "merveil:notification-click") onPushClick({ detail: ev.data.data || {} });
     };
@@ -8739,6 +8740,11 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
   const p = current?.data;
   const insight = useMemo(() => (p ? computePropertyMarketInsight(p, items) : null), [p?.id, items.length]);
 
+  // compute these BEFORE the guard so the presence effect below is always reachable
+  const posterName = (p?.owner_name || p?.lister_name || p?.listerName || "").trim() || null;
+  const ownerId = p?.ownerId || p?.owner_id || p?.user_id || null;
+  const isOwn = !!(currentUserId && ownerId && String(ownerId) === String(currentUserId));
+
   // Pulse reels autoplay — sound when possible.
   useEffect(() => {
     const el = videoRef.current;
@@ -8771,9 +8777,6 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
     };
   }, [p?.id, p?.video_url, muted]);
 
-  const ownerId = p?.ownerId || p?.owner_id || p?.user_id || null;
-  const isOwn = currentUserId && ownerId && String(ownerId) === String(currentUserId);
-
   // Creator online indicator — fetch only for the active poster (no list churn)
   useEffect(() => {
     if (!ownerId || isOwn) { setOwnerPresence("offline"); return; }
@@ -8791,7 +8794,6 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
 
   if (!current || !p) return null;
 
-  const posterName = (p.owner_name || p.lister_name || p.listerName || "").trim() || null;
   const listerRole = LISTER_TYPE_STYLE[p.listedAs]?.label || null;
   const ownerAvatar = p.owner_avatar || p.owner_avatar_url || p.avatar_url || null;
   const displayName = isOwn ? "You" : (posterName || "Merveil Citizen");
@@ -8801,7 +8803,6 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
   const openPoster = () => {
     if (ownerId && onOpenProfile) onOpenProfile(ownerId);
   };
-
 
   return (
     <div className="relative h-full w-full overflow-hidden select-none" style={{ background: "#000" }}
@@ -23276,13 +23277,6 @@ function CommunityView({ onOpenPost, onOpenChat, currentUserId, onRequireSignIn 
   const [quickPostTitle, setQuickPostTitle] = useState("");
   const [quickPostType, setQuickPostType] = useState("announcement");
   const [circleCountries, setCircleCountries] = useState([]);
-  useEffect(() => {
-    if (!circle) { setCircleCountries([]); return; }
-    fetch(`/api/circles/${circle.code}/countries`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => data && setCircleCountries(data.countries || []))
-      .catch(() => {});
-  }, [circle?.code]);
 
   // Load real posts for whichever circle is open — falls back to just the
   // seeded mock posts if the backend isn't connected yet.
@@ -23320,6 +23314,15 @@ function CommunityView({ onOpenPost, onOpenChat, currentUserId, onRequireSignIn 
   };
 
   const circle = circles.find((c) => c.code === selected);
+
+  useEffect(() => {
+    if (!circle) { setCircleCountries([]); return; }
+    fetch(`/api/circles/${circle.code}/countries`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setCircleCountries(data.countries || []))
+      .catch(() => {});
+  }, [circle?.code]);
+
 
   // Pull real circles from the database once loaded — unions with the
   // seeded list so any custom circle you created earlier (in a previous
@@ -23509,7 +23512,6 @@ function CommunityView({ onOpenPost, onOpenChat, currentUserId, onRequireSignIn 
       </div>
     );
   }
-
 
   if (circle) {
     const posts = [...realCirclePosts, ...CIRCLE_POSTS.filter((p) => p.circle === circle.code)];
@@ -29981,6 +29983,32 @@ function AppInner() {
     const pid = params.get("passport");
     if (pid) setSharedPassportId(pid);
   }, []);
+  // Developer Studio return-trip: one citizen identity across the whole
+  // ecosystem. A visitor who followed a /developer link straight in gets
+  // bounced here (sign in / finish Passport) with ?next= remembering
+  // where to send them back. ?goto=passport also opens the Passport tab
+  // directly so they land on the right screen, not just the homepage.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next");
+    const goto = params.get("goto");
+    if (next) {
+      try { sessionStorage.setItem("merveil_return_to", next); } catch {}
+    }
+    if (goto === "passport") {
+      window.dispatchEvent(new CustomEvent("merveil:goto-passport"));
+    }
+  }, []);
+  useEffect(() => {
+    if (!currentUser) return;
+    let returnTo = null;
+    try { returnTo = sessionStorage.getItem("merveil_return_to"); } catch {}
+    if (!returnTo) return;
+    if (passportCompletionOf(currentUser) >= 40) {
+      try { sessionStorage.removeItem("merveil_return_to"); } catch {}
+      window.location.href = returnTo;
+    }
+  }, [currentUser]);
   const [aiWelcome, setAiWelcome] = useState("");
 
   // Global incoming-call handling — reachable from any tab, not only
