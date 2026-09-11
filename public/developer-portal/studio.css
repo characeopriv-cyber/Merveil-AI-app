@@ -99,6 +99,17 @@ a { color: inherit; }
 }
 .mode:hover { color: var(--ink); background: var(--paper-2); }
 .mode.on { background: var(--ink); color: #fff; }
+
+.composer-attachment {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: var(--paper-2);
+  border-top: 1px solid var(--line);
+  font: 12px var(--mono); color: var(--ink-2);
+}
+.composer-attachment span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-attachment .tool-icon { width: 22px; height: 22px; border-radius: 6px; font-size: 14px; }
+
 .composer-body { padding: 10px 14px 14px; }
 .composer textarea {
   width: 100%; border: 0; outline: 0; resize: none; background: transparent;
@@ -264,11 +275,12 @@ a { color: inherit; }
 .tb-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
-  border: 1px solid var(--line); background: var(--card);
+  border: 1px solid var(--line); background: var(--card); text-decoration: none; color: inherit;
 }
 .tb-btn.ghost:hover:not(:disabled) { border-color: var(--ink-3); }
 .tb-btn:disabled { opacity: .4; cursor: not-allowed; }
 .tb-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tb-btn.primary:hover:not(:disabled) { opacity: .92; }
 
 .rail {
   grid-area: rail; background: var(--paper); border-right: 1px solid var(--line);
