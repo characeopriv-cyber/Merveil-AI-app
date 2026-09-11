@@ -1,2 +1,97 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Merveil AI — Developer Quickstart</title><link rel="icon" type="image/svg+xml" href="/merveil-mark.svg?v=1"><link rel="shortcut icon" href="/merveil-mark.svg?v=1"><style>:root{color-scheme:dark;--bg:#07090f;--panel:#0d111b;--line:#202938;--text:#f5f7fb;--muted:#9aa6b8;--accent:#8ab4ff;--good:#72d6a4}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:1100px;margin:auto;padding:48px 22px 80px}.brand{letter-spacing:.18em;font-weight:800}.hero{padding:42px 0 28px}.hero h1{font-size:46px;line-height:1.05;margin:10px 0}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px}.step{font-size:12px;color:var(--accent);letter-spacing:.1em;font-weight:700}pre{overflow:auto;background:#05070c;border:1px solid var(--line);border-radius:12px;padding:16px;color:#dce5f3}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 9px;margin:3px;color:var(--muted)}a{color:var(--accent);text-decoration:none}.ok{color:var(--good)}section{margin-top:34px}.note{border-left:3px solid var(--accent);padding:12px 16px;background:#0b1019;border-radius:8px}@media(max-width:650px){.hero h1{font-size:36px}}</style></head><body><main><div class="brand">MERVEIL AI</div><div class="hero"><div class="step">DEVELOPER PLATFORM · API V1</div><h1>Build with Merveil.</h1><p class="muted">Connect trusted identity, Passport, Connect, AI, Merveil AI Call, companies, properties, World, investor intelligence, credits and verification into your own product.</p><p><a href="/developer-portal/console.html">Open Developer Console →</a> · <a href="/developer-portal/openapi.yaml">OpenAPI specification</a></p></div><section><h2>1. Create your application</h2><div class="grid"><div class="card"><b>Sandbox</b><p class="muted">Use <code>mv_test_…</code> credentials while building. Sandbox traffic is isolated from live production credentials.</p></div><div class="card"><b>Production</b><p class="muted">Use <code>mv_live_…</code> credentials only from your trusted backend after integration testing.</p></div></div></section><section><h2>2. Make your first request</h2><pre><code>curl https://api.merveil.ai/api/v1/profile \
-  -H "X-API-Key: mv_test_YOUR_KEY"</code></pre><div class="note">Never put an Merveil API key in browser JavaScript, a mobile app bundle, public GitHub repository, or client-side environment variable.</div></section><section><h2>3. Choose least-privilege scopes</h2><div><span class="pill">profile:read</span><span class="pill">passport:read</span><span class="pill">connect:read</span><span class="pill">connect:write</span><span class="pill">ai:use</span><span class="pill">call:read</span><span class="pill">call:write</span><span class="pill">companies:read</span><span class="pill">properties:read</span><span class="pill">world:read</span><span class="pill">investors:read</span><span class="pill">credits:read</span><span class="pill">verification:read</span></div></section><section><h2>4. OAuth 2.0 + PKCE</h2><p class="muted">OAuth uses Authorization Code flow. PKCE S256 is supported for public clients. Confidential clients use their client secret at the token endpoint. Redirect URIs must exactly match the registered HTTPS URI.</p><pre><code>GET https://developers.merveil.ai/oauth-consent.html?</code></pre></section><section><h2>5. Webhooks</h2><p class="muted">Register an HTTPS endpoint to receive Merveil events. Store the one-time signing secret securely and verify every webhook before processing it.</p></section><section><h2>6. Production checklist</h2><div class="grid"><div class="card"><b>Credentials</b><p class="muted">Use production keys only on your server. Rotate immediately if exposed.</p></div><div class="card"><b>Scopes</b><p class="muted">Remove permissions your integration does not use.</p></div><div class="card"><b>OAuth</b><p class="muted">Use state, PKCE S256, exact redirects, secure token storage and refresh rotation.</p></div><div class="card"><b>Webhooks</b><p class="muted">Verify signatures, reject replays, and make handlers idempotent.</p></div></div></section><section><h2>7. Billing</h2><p class="muted">Developer API plans are billed through Stripe worldwide checkout. A paid plan becomes active only after verified payment/webhook processing. Merveil does not expose Supabase directly to external developers.</p></section><section><h2>API base</h2><pre><code>https://api.merveil.ai/api/v1</code></pre><p class="muted">Every API response carries a request ID. Use it when contacting Merveil support about a failed request.</p></section><p class="muted" style="margin-top:50px">Merveil AI Developer Platform · API v1</p></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0a0b0f" />
+  <title>Merveil · Quickstart</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/developer-portal/console.css" />
+  <style>
+    .qs{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+    .qs h1{font-size:28px;margin:0 0 8px}
+    .qs .lead{color:var(--txt-2);font-size:15px;margin-bottom:28px}
+    .qs h2{font-size:16px;margin:28px 0 10px;display:flex;align-items:center;gap:8px}
+    .qs h2::before{content:"";width:4px;height:16px;border-radius:3px;background:var(--grad)}
+    .qs pre{background:var(--bg-1);border:1px solid var(--line);border-radius:12px;padding:16px;overflow:auto;font-family:JetBrains Mono,monospace;font-size:12.5px;line-height:1.7;color:var(--txt-2);position:relative}
+    .qs pre .copy{position:absolute;top:8px;right:8px;padding:4px 10px;border-radius:6px;background:var(--bg-3);border:1px solid var(--line-2);font-size:11px;color:var(--txt-2);cursor:pointer}
+    .qs pre .copy:hover{border-color:var(--acc)}
+    .qs code{color:var(--acc-2)}
+    .qs .note{background:rgba(124,92,255,.08);border:1px solid rgba(124,92,255,.3);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--txt-2);margin:14px 0}
+    .qs-tabs{display:flex;gap:6px;margin-bottom:0}
+    .qs-tab{padding:8px 14px;border-radius:10px 10px 0 0;background:var(--bg-2);border:1px solid var(--line);border-bottom:0;font-size:12px;cursor:pointer;color:var(--txt-3)}
+    .qs-tab.on{background:var(--bg-1);color:var(--txt)}
+  </style>
+</head>
+<body>
+  <div class="qs">
+    <h1>Quickstart</h1>
+    <p class="lead">Ship your first Merveil AI project in under 5 minutes. One prompt, one API call, one deploy.</p>
+    <h2>1. Install the SDK</h2>
+    <div class="qs-tabs">
+      <div class="qs-tab on" data-lang="js">Node / TypeScript</div>
+      <div class="qs-tab" data-lang="py">Python</div>
+      <div class="qs-tab" data-lang="curl">cURL</div>
+    </div>
+    <pre id="qs-install" data-lang="js"><button class="copy">Copy</button>npm install @merveil/sdk</pre>
+    <h2>2. Authenticate</h2>
+    <pre><button class="copy">Copy</button>import { Merveil } from '@merveil/sdk';
+
+const mv = new Merveil({
+  apiKey: process.env.MERVEIL_API_KEY, // mv_live_xxx
+});</pre>
+    <div class="note">Get an API key from <code>Command Center → Docs → API keys</code>. Keys are scoped and hashed — never share them client-side.</div>
+    <h2>3. Build anything from a prompt</h2>
+    <pre><button class="copy">Copy</button>const project = await mv.projects.create({
+  name: 'Lead Qualifier',
+  kind: 'ai_agent',
+  prompt: 'An AI agent that qualifies real-estate leads from WhatsApp and books viewings.',
+});
+
+for await (const stage of mv.builds.stream(project.buildId)) {
+  console.log(stage.status, stage.progress + '%', stage.message);
+}
+
+console.log('Live at:', project.previewUrl);</pre>
+    <h2>4. Deploy</h2>
+    <pre><button class="copy">Copy</button>npx merveil deploy --provider vercel</pre>
+    <h2>5. Publish to the Merveil Interface</h2>
+    <pre><button class="copy">Copy</button>await mv.marketplace.publish(project.id, {
+  category: 'productivity',
+  priceCents: 0,
+});</pre>
+    <h2>Next steps</h2>
+    <pre><button class="copy">Copy</button>📖 API reference: /developer-portal/openapi.yaml
+🔌 Integrations:  /developer
+🏪 Marketplace:   /developer</pre>
+  </div>
+  <script type="module">
+    const SNIPPETS = {
+      js: 'npm install @merveil/sdk',
+      py: 'pip install merveil-sdk',
+      curl: 'curl -H "Authorization: Bearer $MERVEIL_API_KEY" \\\n     https://api.junction.technology/v1/projects',
+    };
+    const tabs = document.querySelectorAll('.qs-tab');
+    const target = document.getElementById('qs-install');
+    tabs.forEach(t => t.onclick = () => {
+      tabs.forEach(x => x.classList.remove('on'));
+      t.classList.add('on');
+      target.innerHTML = `<button class="copy">Copy</button>${SNIPPETS[t.dataset.lang]}`;
+      bindCopy();
+    });
+    function bindCopy() {
+      document.querySelectorAll('.copy').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const text = btn.parentElement.textContent.replace('Copy', '').trim();
+          navigator.clipboard.writeText(text);
+          btn.textContent = '✓ Copied';
+          setTimeout(() => btn.textContent = 'Copy', 1500);
+        };
+      });
+    }
+    bindCopy();
+  </script>
+</body>
+</html>
