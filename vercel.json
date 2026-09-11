@@ -1,33 +1,25 @@
 {
   "rewrites": [
-    { "source": "/developer",              "destination": "/developer-portal/studio.html" },
-    { "source": "/developer/pro",          "destination": "/developer-portal/pro.html" },
-    { "source": "/developer/onboarding",   "destination": "/developer-portal/onboarding.html" },
-    { "source": "/developer/quickstart",   "destination": "/developer-portal/quickstart.html" },
-    { "source": "/developer/classic",      "destination": "/developer-portal/console.html" },
-    { "source": "/developer/(.*)",         "destination": "/developer-portal/$1" },
-    { "source": "/onboarding",             "destination": "/developer-portal/onboarding.html" },
-    { "source": "/oauth/consent",          "destination": "/developer-portal/oauth-consent.html" }
+    { "source": "/api/engine/(.*)", "destination": "/api/engine" },
+    { "source": "/api/studio", "destination": "/api/engine" },
+
+    { "source": "/developer", "destination": "/developer-portal/studio.html" },
+    { "source": "/developer/pro", "destination": "/developer-portal/pro.html" },
+    { "source": "/developer/onboarding", "destination": "/developer-portal/onboarding.html" },
+    { "source": "/developer/quickstart", "destination": "/developer-portal/quickstart.html" },
+    { "source": "/developer/classic", "destination": "/developer-portal/console.html" },
+    { "source": "/developer/(.*)", "destination": "/developer-portal/$1" },
+    { "source": "/onboarding", "destination": "/developer-portal/onboarding.html" },
+    { "source": "/oauth/consent", "destination": "/developer-portal/oauth-consent.html" },
+
+    { "source": "/api/(.*)", "destination": "/api/router" }
   ],
   "functions": {
-    "api/[...path].js": {
+    "api/engine.js": {
       "maxDuration": 60,
       "memory": 1024
     }
   },
-  "headers": [
-    {
-      "source": "/developer-portal/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
-        { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
-      ]
-    },
-    {
-      "source": "/developer-portal/config.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
-    }
-  ],
   "redirects": [
     { "source": "/dev", "destination": "/developer", "permanent": false }
   ]
