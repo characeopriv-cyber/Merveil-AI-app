@@ -5277,6 +5277,7 @@ function AdBanner({ placement = "feed" }) {
 function FeedView({ liveViews, properties, currentUser, onPropertyUpdated, onPropertyDeleted, onRequireSignIn, onChat }) {
   const [editingProperty, setEditingProperty] = useState(null);
   const [activeOrb, setActiveOrb] = useState("forYou");
+  const [feedVisible, setFeedVisible] = useState(18);
   useEffect(() => { setFeedVisible(18); }, [activeOrb]);
   const [paused, setPaused] = useState(false);
   const [inventories, setInventories] = useState([]);
@@ -5285,7 +5286,7 @@ function FeedView({ liveViews, properties, currentUser, onPropertyUpdated, onPro
   const [detailProperty, setDetailProperty] = useState(null);
   const [likedIds, setLikedIds] = useState([]);
   const [ownerProfiles, setOwnerProfiles] = useState({});
-  const [feedVisible, setFeedVisible] = useState(18);
+
 
   useEffect(() => {
     const ids = [...new Set(properties.map((p) => p.ownerId).filter(Boolean))];
@@ -7996,8 +7997,20 @@ function useIncomingCallListener(currentUser) {
   useEffect(() => {
     if (!currentUser?.id) return;
     const uid = currentUser.id;
+
+    // StrictMode/current-user safety: remove any stale fixed-topic channel first.
+    try {
+      (supabaseBrowser.getChannels?.() || []).forEach((c) => {
+        const t = String(c.topic || "");
+        if (t.includes(`incoming-calls-${uid}`)) {
+          try { supabaseBrowser.removeChannel(c); } catch {}
+        }
+      });
+    } catch {}
+
+    const topic = `incoming-calls-${uid}-${Math.random().toString(36).slice(2, 9)}`;
     const channel = supabaseBrowser
-      .channel(`incoming-calls-${uid}`)
+      .channel(topic)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "calls", filter: `receiver_id=eq.${uid}` }, (payload) => {
         if (payload.new?.status === "ringing") setIncoming(payload.new);
       })
@@ -8037,9 +8050,10 @@ function useIncomingCallListener(currentUser) {
       if (callId) poll();
     };
     window.addEventListener("merveil:notification-click", onPushClick);
-    navigator.serviceWorker?.addEventListener?.("message", (ev) => {
+    const swHandler = (ev) => {
       if (ev?.data?.type === "merveil:notification-click") onPushClick({ detail: ev.data.data || {} });
-    });
+    };
+    navigator.serviceWorker?.addEventListener?.("message", swHandler);
 
     return () => {
       cancelled = true;
@@ -8047,7 +8061,8 @@ function useIncomingCallListener(currentUser) {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onVis);
       window.removeEventListener("merveil:notification-click", onPushClick);
-      channel.unsubscribe();
+      try { navigator.serviceWorker?.removeEventListener?.("message", swHandler); } catch {}
+      try { supabaseBrowser.removeChannel(channel); } catch {}
     };
   }, [currentUser?.id]);
   return [incoming, setIncoming];
@@ -8228,6 +8243,7 @@ const Permissions = {
     if (this.isNative()) {
       try {
         // Only use runtime plugin bridge — no import("@capacitor/...") so Vite builds on Vercel.
+        const Cap = window.Capacitor;
         const Push = window.Capacitor?.Plugins?.PushNotifications || null;
         if (!Push) {
           return { ok: false, permission: "unsupported", push: false, error: "PushNotifications plugin not available on this shell." };
@@ -8755,20 +8771,8 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
     };
   }, [p?.id, p?.video_url, muted]);
 
-  if (!current || !p) return null;
-
-  const posterName = (p.owner_name || p.lister_name || p.listerName || "").trim() || null;
-  const listerRole = LISTER_TYPE_STYLE[p.listedAs]?.label || null;
-  const ownerId = p.ownerId || p.owner_id || p.user_id;
+  const ownerId = p?.ownerId || p?.owner_id || p?.user_id || null;
   const isOwn = currentUserId && ownerId && String(ownerId) === String(currentUserId);
-  const ownerAvatar = p.owner_avatar || p.owner_avatar_url || p.avatar_url || null;
-  const displayName = isOwn ? "You" : (posterName || "Merveil Citizen");
-  const photo = p.photo_url || p.photo || (Array.isArray(p.photos) ? p.photos[0] : null);
-  const bedsLine = [p.beds != null && `${p.beds} Bed${p.beds === 1 ? "" : "s"}`, p.baths != null && `${p.baths} Bath${p.baths === 1 ? "" : "s"}`, p.sqft != null && `${Number(p.sqft).toLocaleString()} sqft`]
-    .filter(Boolean).join(" · ");
-  const openPoster = () => {
-    if (ownerId && onOpenProfile) onOpenProfile(ownerId);
-  };
 
   // Creator online indicator — fetch only for the active poster (no list churn)
   useEffect(() => {
@@ -8784,6 +8788,20 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
       .catch(() => {});
     return () => { cancelled = true; };
   }, [ownerId, isOwn, p?.id]);
+
+  if (!current || !p) return null;
+
+  const posterName = (p.owner_name || p.lister_name || p.listerName || "").trim() || null;
+  const listerRole = LISTER_TYPE_STYLE[p.listedAs]?.label || null;
+  const ownerAvatar = p.owner_avatar || p.owner_avatar_url || p.avatar_url || null;
+  const displayName = isOwn ? "You" : (posterName || "Merveil Citizen");
+  const photo = p.photo_url || p.photo || (Array.isArray(p.photos) ? p.photos[0] : null);
+  const bedsLine = [p.beds != null && `${p.beds} Bed${p.beds === 1 ? "" : "s"}`, p.baths != null && `${p.baths} Bath${p.baths === 1 ? "" : "s"}`, p.sqft != null && `${Number(p.sqft).toLocaleString()} sqft`]
+    .filter(Boolean).join(" · ");
+  const openPoster = () => {
+    if (ownerId && onOpenProfile) onOpenProfile(ownerId);
+  };
+
 
   return (
     <div className="relative h-full w-full overflow-hidden select-none" style={{ background: "#000" }}
@@ -23257,6 +23275,14 @@ function CommunityView({ onOpenPost, onOpenChat, currentUserId, onRequireSignIn 
   const [quickPostOpen, setQuickPostOpen] = useState(false);
   const [quickPostTitle, setQuickPostTitle] = useState("");
   const [quickPostType, setQuickPostType] = useState("announcement");
+  const [circleCountries, setCircleCountries] = useState([]);
+  useEffect(() => {
+    if (!circle) { setCircleCountries([]); return; }
+    fetch(`/api/circles/${circle.code}/countries`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setCircleCountries(data.countries || []))
+      .catch(() => {});
+  }, [circle?.code]);
 
   // Load real posts for whichever circle is open — falls back to just the
   // seeded mock posts if the backend isn't connected yet.
@@ -23484,14 +23510,6 @@ function CommunityView({ onOpenPost, onOpenChat, currentUserId, onRequireSignIn 
     );
   }
 
-  const [circleCountries, setCircleCountries] = useState([]);
-  useEffect(() => {
-    if (!circle) { setCircleCountries([]); return; }
-    fetch(`/api/circles/${circle.code}/countries`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => data && setCircleCountries(data.countries || []))
-      .catch(() => {});
-  }, [circle?.code]);
 
   if (circle) {
     const posts = [...realCirclePosts, ...CIRCLE_POSTS.filter((p) => p.circle === circle.code)];
