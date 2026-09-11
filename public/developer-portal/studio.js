@@ -1,8 +1,8 @@
 /**
- * Merveil Studio — dense Home → Build workspace
- * Wire: /api/engine/generate (MF stream) + local VFS state
+ * Merveil Studio — Home → Build workspace
+ * Real passport gate · real MF streaming · real evolve with file contents
  */
-import { SUPABASE_URL, SUPABASE_ANON_KEY, API_BASE } from './config.js';
+import { API_BASE } from './config.js';
 
 const MODES = ['Website', 'Web app', 'Mobile', 'AI agent', 'Game', 'Video', 'Music', 'Book'];
 const KIND_MAP = {
@@ -32,8 +32,10 @@ const SECTIONS = [
   ['integrations', 'Integrations'], ['git', 'History'], ['deploy', 'Publish'], ['settings', 'Settings'],
 ];
 
+const MF_RE = /<MF:BEGIN>\s*path:\s*(\S+)\s*<MF:BYTES>\s*([\s\S]*?)<MF:END>/g;
+
 const state = {
-  screen: 'home', // home | build
+  screen: 'home',
   mode: 'Web app',
   prompt: '',
   plan: false,
@@ -44,15 +46,17 @@ const state = {
   panelOpen: true,
   aiOpen: true,
   device: 'desktop',
-  buildState: 'idle', // idle | planning | generating | building | ready | failed
-  files: /** @type {Array<{path:string,content:string,bytes:number}>} */ ([]),
-  messages: /** @type {Array<{role:string,text:string,files?:string[]}>} */ ([]),
+  buildState: 'idle',
+  files: [],
+  messages: [],
   previewUrl: null,
   events: [],
   searchQ: '',
   primary: '#00b8d4',
   accent: '#ff5a1f',
   editingName: false,
+  attachedImage: null,
+  integrations: [],
 };
 
 const root = document.getElementById('root');
@@ -69,12 +73,38 @@ function esc(s) {
 
 async function loadPassport() {
   try {
-    const raw = localStorage.getItem('junction_user') || localStorage.getItem('merveil_user');
-    if (raw) state.passport = JSON.parse(raw);
-  } catch { /* ignore */ }
-  if (!state.passport?.citizen_id) {
-    state.passport = { citizen_id: 'visitor', display_name: 'Visitor' };
+    const res = await fetch(`${API_BASE || ''}/api/studio?action=access`, { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 || res.status === 403) {
+      window.location.href = data.redirect || '/';
+      return;
+    }
+    if (!res.ok) throw new Error(data.error || `Access check failed (${res.status})`);
+    state.passport = { citizen_id: data.citizenId, completionPct: data.completionPct };
+  } catch {
+    state.passport = { citizen_id: 'visitor', display_name: 'Visitor', offline: true };
   }
+}
+
+async function loadIntegrations() {
+  try {
+    const res = await fetch(`${API_BASE || ''}/api/engine/integrations`, { credentials: 'include' });
+    const data = await res.json();
+    state.integrations = data.integrations || [];
+  } catch {
+    state.integrations = [];
+  }
+}
+
+function extractSchema(files) {
+  const tables = new Set();
+  for (const f of files) {
+    if (!/\.sql$/i.test(f.path)) continue;
+    const re = /create\s+table\s+(?:if\s+not\s+exists\s+)?["`]?(\w+)["`]?/gi;
+    let m;
+    while ((m = re.exec(f.content || ''))) tables.add(m[1]);
+  }
+  return [...tables];
 }
 
 function render() {
@@ -116,10 +146,15 @@ function renderHome() {
     <div class="composer-modes">
       ${MODES.map((m) => `<button type="button" class="mode ${state.mode === m ? 'on' : ''}" data-mode="${esc(m)}">${esc(m)}</button>`).join('')}
     </div>
+    ${state.attachedImage ? `
+    <div class="composer-attachment">
+      <span>📎 ${esc(state.attachedImage.name)}</span>
+      <button type="button" class="tool-icon" data-act="remove-attach" title="Remove attachment">×</button>
+    </div>` : ''}
     <div class="composer-body">
       <textarea id="home-prompt" rows="2" placeholder="Build an interior design platform for floor plans, material specs, and project documentation…">${esc(state.prompt)}</textarea>
       <div class="composer-tools">
-        <button type="button" class="tool-icon" title="Attach" data-act="attach">+</button>
+        <button type="button" class="tool-icon" title="Attach a reference image" data-act="attach">+</button>
         <button type="button" class="tool-plan ${state.plan ? 'on' : ''}" data-act="plan">Plan <span class="switch ${state.plan ? 'on' : ''}"><span></span></span></button>
         <div class="tool-sep"></div>
         <button type="button" class="tool-icon" title="Voice" data-act="voice">◉</button>
@@ -184,7 +219,6 @@ function renderHome() {
     </footer>
   `));
 
-  // binds
   home.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
     state.mode = b.getAttribute('data-mode');
     render();
@@ -202,6 +236,28 @@ function renderHome() {
   home.querySelector('[data-act="plan"]')?.addEventListener('click', () => { state.plan = !state.plan; render(); });
   home.querySelector('[data-act="ignite"]')?.addEventListener('click', () => ignite());
   home.querySelector('[data-act="voice"]')?.addEventListener('click', () => startVoice(ta));
+  home.querySelector('[data-act="attach"]')?.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/webp';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const [meta, b64] = String(reader.result).split(',');
+        const mediaType = meta.match(/data:(.*);base64/)?.[1] || file.type || 'image/png';
+        state.attachedImage = { mediaType, data: b64, name: file.name };
+        render();
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  });
+  home.querySelector('[data-act="remove-attach"]')?.addEventListener('click', () => {
+    state.attachedImage = null;
+    render();
+  });
 
   return home;
 }
@@ -280,10 +336,7 @@ function renderStudio() {
   wrap.querySelector('#proj-name')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') e.target.blur();
   });
-  wrap.querySelector('[data-act="deploy"]')?.addEventListener('click', () => {
-    state.messages.push({ role: 'bot', text: 'Deploy: connect Vercel token in Settings, then publish from Deploy panel.' });
-    render();
-  });
+  wrap.querySelector('[data-act="deploy"]')?.addEventListener('click', () => deployNow());
   wrap.querySelector('[data-act="home"]')?.addEventListener('click', (e) => {
     e.preventDefault();
     state.screen = 'home';
@@ -301,7 +354,6 @@ function renderPanel() {
 
   if (state.section === 'pages') {
     const pages = state.files.filter((f) => /App\.(tsx|jsx|js)$|pages\//.test(f.path));
-    const comps = state.files.filter((f) => /components\//.test(f.path));
     panel.appendChild(el(`
       <div class="panel-body">
         <div class="group"><div class="group-head">Pages <span class="group-count">${pages.length}</span></div>
@@ -340,19 +392,19 @@ function renderPanel() {
     panel.querySelector('#c-primary')?.addEventListener('input', (e) => { state.primary = e.target.value; applyDesign(); });
     panel.querySelector('#c-accent')?.addEventListener('input', (e) => { state.accent = e.target.value; applyDesign(); });
   } else if (state.section === 'data') {
+    const tables = extractSchema(state.files);
     panel.appendChild(el(`
       <div class="panel-body">
-        <div class="empty-line">Backend built in. Postgres + RLS ready.</div>
-        ${['users','posts','comments'].map((n) => `<div class="row"><span class="row-ico">▣</span><span class="row-name">${n}</span></div>`).join('')}
+        ${tables.length
+          ? `<div class="empty-line">Detected from generated SQL — Postgres + RLS ready.</div>${tables.map((n) => `<div class="row"><span class="row-ico">▣</span><span class="row-name">${esc(n)}</span></div>`).join('')}`
+          : '<div class="empty-line">No schema yet — build first.</div>'}
       </div>
     `));
   } else if (state.section === 'integrations') {
-    const items = [
-      ['Supabase', true], ['Stripe', false], ['GitHub', false], ['OpenAI', false], ['Anthropic', true], ['Resend', false],
-    ];
+    const items = state.integrations.length ? state.integrations : [{ name: 'Loading…', connected: false }];
     panel.appendChild(el(`
       <div class="panel-body">
-        ${items.map(([n, on]) => `<div class="row"><span class="row-name">${n}</span><span class="row-path">${on ? 'on' : 'off'}</span></div>`).join('')}
+        ${items.map((it) => `<div class="row"><span class="row-name">${esc(it.name)}</span><span class="row-path">${it.connected ? 'on' : 'off'}</span></div>`).join('')}
       </div>
     `));
   } else if (state.section === 'git') {
@@ -368,10 +420,7 @@ function renderPanel() {
         <button type="button" class="tb-btn primary" style="width:100%;margin-top:8px" data-act="deploy-now">Publish</button>
       </div>
     `));
-    panel.querySelector('[data-act="deploy-now"]')?.addEventListener('click', () => {
-      state.messages.push({ role: 'bot', text: 'Publish requires a linked Vercel token. Use Pro Studio for GitHub deploy.' });
-      render();
-    });
+    panel.querySelector('[data-act="deploy-now"]')?.addEventListener('click', () => deployNow());
   } else {
     panel.appendChild(el(`<div class="panel-body"><div class="empty-line">Project settings</div></div>`));
   }
@@ -455,7 +504,7 @@ function renderAI() {
   ai.querySelector('#ai-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
   });
-  ai.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => {
+  ai.querySelectorAll('[data-preset]')?.forEach((b) => b.addEventListener('click', () => {
     evolve(b.getAttribute('data-preset'));
   }));
   return ai;
@@ -477,16 +526,6 @@ function applyDesign() {
 }
 
 /* ══════════ ENGINE ══════════ */
-function parseMF(text) {
-  const files = [];
-  const re = /<MF:BEGIN>\s*path:\s*(\S+)\s*<MF:BYTES>\s*([\s\S]*?)<MF:END>/g;
-  let m;
-  while ((m = re.exec(text))) {
-    files.push({ path: m[1], content: m[2].replace(/^\n/, ''), bytes: m[2].length });
-  }
-  return files;
-}
-
 function materializePreview(files) {
   const htmlFile = files.find((f) => f.path === 'index.html') || files.find((f) => f.path.endsWith('.html'));
   const app = files.find((f) => /App\.(tsx|jsx|js)$/.test(f.path));
@@ -507,6 +546,67 @@ function materializePreview(files) {
   state.previewUrl = URL.createObjectURL(new Blob([body], { type: 'text/html' }));
 }
 
+/**
+ * Stream the generate response and parse MF blocks incrementally.
+ * Files appear in the panel as Claude writes them.
+ */
+async function streamGenerate(prompt, image) {
+  const res = await fetch(`${API_BASE || ''}/api/engine/generate`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ prompt, image: image || undefined }),
+  });
+
+  // Critical: check status BEFORE trying to parse the body
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    if (errData.redirect) { window.location.href = errData.redirect; return []; }
+    throw new Error(errData.error || `Build failed (${res.status})`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const seen = new Set();
+  const files = [];
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let lastIndex = 0;
+    let m;
+    MF_RE.lastIndex = 0;
+    while ((m = MF_RE.exec(buffer))) {
+      const path = m[1].trim();
+      if (seen.has(path)) { lastIndex = MF_RE.lastIndex; continue; }
+      seen.add(path);
+      const file = { path, content: m[2].replace(/^\r?\n/, ''), bytes: m[2].length };
+      files.push(file);
+      state.files.push(file);
+      lastIndex = MF_RE.lastIndex;
+      render();
+    }
+    if (lastIndex) buffer = buffer.slice(lastIndex);
+  }
+
+  // Flush any trailing block
+  MF_RE.lastIndex = 0;
+  let m;
+  while ((m = MF_RE.exec(buffer))) {
+    const path = m[1].trim();
+    if (!seen.has(path)) {
+      const file = { path, content: m[2].replace(/^\r?\n/, ''), bytes: m[2].length };
+      files.push(file);
+      state.files.push(file);
+    }
+  }
+
+  return files;
+}
+
 async function ignite() {
   const prompt = state.prompt.trim();
   if (prompt.length < 3) return;
@@ -523,15 +623,12 @@ async function ignite() {
   render();
 
   try {
-    const res = await fetch(`${API_BASE || ''}/api/engine/generate`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt, mode: KIND_MAP[state.mode] || 'web_app' }),
-    });
-    const text = await res.text();
-    const files = parseMF(text);
-    if (!files.length) throw new Error('No files in stream');
-    state.files = files;
+    const files = await streamGenerate(
+      prompt,
+      state.attachedImage,
+    );
+    state.attachedImage = null;
+    if (!files.length) throw new Error('Model returned no files — try rephrasing the prompt.');
     state.buildState = 'building';
     state.events.push({ type: 'pipeline:completed', n: files.length });
     state.messages.push({
@@ -539,7 +636,6 @@ async function ignite() {
       text: `Built ${files.length} files.`,
       files: files.map((f) => f.path),
     });
-    render();
     materializePreview(files);
     state.buildState = 'ready';
     render();
@@ -551,33 +647,112 @@ async function ignite() {
 }
 
 async function evolve(instruction) {
+  if (!state.files.length) {
+    state.messages.push({ role: 'bot', text: 'Build something first before evolving.' });
+    render();
+    return;
+  }
   state.messages.push({ role: 'user', text: instruction });
   state.buildState = 'generating';
   render();
+
+  // Send full file contents so Claude can actually understand the app
+  const fileContext = state.files
+    .slice(0, 20)
+    .map((f) => `=== ${f.path} ===\n${f.content.slice(0, 4000)}`)
+    .join('\n\n');
+
+  const prompt = `EVOLVE existing app.\n\nInstruction: ${instruction}\n\nCURRENT FILES:\n${fileContext}\n\nEmit only the files that change, in MF protocol. Keep unchanged files untouched.`;
+
   try {
     const res = await fetch(`${API_BASE || ''}/api/engine/generate`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        prompt: `EVOLVE existing app.\nInstruction: ${instruction}\nCurrent files:\n${state.files.map((f) => f.path).join('\n')}\n\nEmit only changed files in MF protocol.`,
-        mode: KIND_MAP[state.mode] || 'web_app',
-      }),
+      body: JSON.stringify({ prompt }),
     });
-    const text = await res.text();
-    const files = parseMF(text);
-    if (files.length) {
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.redirect) { window.location.href = errData.redirect; return; }
+      throw new Error(errData.error || `Evolve failed (${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const seen = new Set();
+    const changes = [];
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let lastIndex = 0;
+      let m;
+      MF_RE.lastIndex = 0;
+      while ((m = MF_RE.exec(buffer))) {
+        const path = m[1].trim();
+        if (seen.has(path)) { lastIndex = MF_RE.lastIndex; continue; }
+        seen.add(path);
+        changes.push({ path, content: m[2].replace(/^\r?\n/, ''), bytes: m[2].length });
+        lastIndex = MF_RE.lastIndex;
+      }
+      if (lastIndex) buffer = buffer.slice(lastIndex);
+    }
+
+    MF_RE.lastIndex = 0;
+    let m;
+    while ((m = MF_RE.exec(buffer))) {
+      const path = m[1].trim();
+      if (!seen.has(path)) {
+        changes.push({ path, content: m[2].replace(/^\r?\n/, ''), bytes: m[2].length });
+      }
+    }
+
+    if (changes.length) {
       const map = new Map(state.files.map((f) => [f.path, f]));
-      for (const f of files) map.set(f.path, f);
+      for (const f of changes) map.set(f.path, f);
       state.files = [...map.values()];
       materializePreview(state.files);
-      state.messages.push({ role: 'bot', text: `Updated ${files.length} file(s).`, files: files.map((f) => f.path) });
+      state.events.push({ type: 'evolve:completed', n: changes.length });
+      state.messages.push({ role: 'bot', text: `Updated ${changes.length} file(s).`, files: changes.map((f) => f.path) });
     } else {
-      state.messages.push({ role: 'bot', text: text.slice(0, 500) || 'No file changes returned.' });
+      state.messages.push({ role: 'bot', text: 'No changes returned — try rephrasing.' });
     }
     state.buildState = 'ready';
   } catch (err) {
     state.messages.push({ role: 'bot', text: String(err.message || err) });
     state.buildState = 'failed';
+  }
+  render();
+}
+
+async function deployNow() {
+  if (!state.files.length) {
+    state.messages.push({ role: 'bot', text: 'Nothing to deploy yet — build first.' });
+    render();
+    return;
+  }
+  state.messages.push({ role: 'bot', text: 'Deploying…' });
+  render();
+  try {
+    const res = await fetch(`${API_BASE || ''}/api/engine/deploy`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ projectName: state.projectName, files: state.files }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (data.redirect) { window.location.href = data.redirect; return; }
+      throw new Error(data.error || `Deploy failed (${res.status})`);
+    }
+    state.events.push({ type: 'deploy:completed', url: data.url });
+    state.messages.push({ role: 'bot', text: `Live at ${data.url}`, files: [data.url] });
+  } catch (err) {
+    state.messages.push({ role: 'bot', text: String(err.message || err) });
   }
   render();
 }
@@ -611,7 +786,7 @@ window.addEventListener('popstate', () => {
   render();
 });
 
-loadPassport().then(() => {
+Promise.all([loadPassport(), loadIntegrations()]).then(() => {
   if (location.search.includes('build=1')) state.screen = 'build';
   render();
 });
