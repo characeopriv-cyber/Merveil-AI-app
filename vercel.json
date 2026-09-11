@@ -25,6 +25,22 @@
       "destination": "/admin/index.html"
     },
     {
+      "source": "/developer/workflows/",
+      "destination": "/developer-portal/workflows.html"
+    },
+    {
+      "source": "/developer/workflows",
+      "destination": "/developer-portal/workflows.html"
+    },
+    {
+      "source": "/developer/agents/",
+      "destination": "/developer-portal/agents.html"
+    },
+    {
+      "source": "/developer/agents",
+      "destination": "/developer-portal/agents.html"
+    },
+    {
       "source": "/admin/",
       "destination": "/admin/index.html"
     },
@@ -55,6 +71,14 @@
     {
       "source": "/developer/",
       "destination": "/developer-portal/studio.html"
+    },
+    {
+      "source": "/developer/pro",
+      "destination": "/developer-portal/pro.html"
+    },
+    {
+      "source": "/developer/pro/",
+      "destination": "/developer-portal/pro.html"
     },
     {
       "source": "/developer/classic",
@@ -313,6 +337,11 @@
     {
       "source": "/dev",
       "destination": "/developer",
+      "permanent": false
+    },
+    {
+      "source": "/pro",
+      "destination": "/developer/pro",
       "permanent": false
     }
   ]
