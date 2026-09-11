@@ -1,0 +1,40 @@
+.market{max-width:1280px;margin:0 auto;padding:20px 20px 80px}
+.market-hero{padding:48px 24px;margin-bottom:24px;text-align:center;background:radial-gradient(800px 300px at 20% 0%,rgba(0,184,212,.14),transparent 60%),#fff;border:1px solid var(--line,#e8e2d8);border-radius:24px}
+.market-eyebrow{display:inline-block;padding:5px 14px;border-radius:999px;background:rgba(0,184,212,.1);color:#008b9c;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px}
+.market-hero h1{font-family:'Instrument Serif',serif;font-weight:400;font-size:clamp(30px,4vw,46px);margin:0 0 8px}
+.market-hero p{color:var(--ink-2,#4a4540);font-size:15px;margin:0 0 22px}
+.market-search{display:flex;gap:10px;max-width:640px;margin:0 auto;padding:6px 6px 6px 18px;background:#faf8f4;border:1px solid var(--line,#e8e2d8);border-radius:999px;align-items:center}
+.market-search input{flex:1;border:0;background:transparent;outline:0;font-size:14.5px;padding:8px}
+.market-controls{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.market-cats{display:flex;gap:6px;overflow-x:auto;flex:1}
+.market-cat{padding:7px 14px;border-radius:999px;background:#fff;border:1px solid var(--line,#e8e2d8);font-size:13px;font-weight:500;cursor:pointer}
+.market-cat.on{background:var(--ink,#1a1614);color:#fff;border-color:var(--ink,#1a1614)}
+.market-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.listing-card{display:flex;flex-direction:column;gap:12px;padding:18px;background:#fff;border:1px solid var(--line,#e8e2d8);border-radius:16px;text-decoration:none;color:inherit;transition:.18s}
+.listing-card:hover{transform:translateY(-3px);box-shadow:0 12px 40px -12px rgba(26,22,20,.18);border-color:#00b8d4}
+.listing-icon{width:64px;height:64px;border-radius:16px;background:#f2eee6;background-size:cover;display:grid;place-items:center;font-family:'Instrument Serif',serif;font-size:26px}
+.listing-title{font-family:'Instrument Serif',serif;font-size:19px;font-weight:500}
+.listing-tagline{font-size:12.5px;color:var(--ink-2,#4a4540);line-height:1.5}
+.listing-meta{display:flex;gap:12px;font-size:11.5px;color:var(--ink-3,#8a847c);align-items:center}
+.listing-price{margin-left:auto;font-weight:800;font-family:'JetBrains Mono',monospace}
+.listing-price.free{color:#2f9e44}
+.market-empty{text-align:center;padding:80px 20px}
+.listing-detail{max-width:900px;margin:0 auto;padding:24px 20px}
+.listing-hero{background:#fff;border:1px solid var(--line,#e8e2d8);border-radius:22px;padding:28px;margin-bottom:24px}
+.listing-hero-inner{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+.listing-hero-icon{width:96px;height:96px;border-radius:20px;background:#f2eee6;display:grid;place-items:center;font-size:38px;font-family:'Instrument Serif',serif}
+.listing-hero h1{font-family:'Instrument Serif',serif;font-weight:400;font-size:34px;margin:0 0 6px}
+.listing-desc{color:var(--ink-2,#4a4540);font-size:14.5px;line-height:1.75;white-space:pre-wrap}
+.listing-error{color:#8b2f1c;font-size:12.5px;margin-top:8px}
+.pub-wizard{max-width:640px;margin:0 auto;padding:24px 20px;background:#fff;border:1px solid var(--line,#e8e2d8);border-radius:20px}
+.pub-wizard-steps{display:flex;gap:10px;margin-bottom:22px;justify-content:center}
+.pub-step{width:28px;height:28px;border-radius:50%;background:#f2eee6;display:grid;place-items:center;font-size:12.5px;font-weight:700}
+.pub-step.on{background:linear-gradient(120deg,#00b8d4,#0097a7);color:#fff}
+.pub-form h2{font-family:'Instrument Serif',serif;font-weight:400;font-size:22px;margin:0 0 14px}
+.pub-form label{display:block;font-size:12.5px;font-weight:600;margin-bottom:12px}
+.pub-form input,.pub-form select,.pub-form textarea{width:100%;margin-top:6px;padding:11px 13px;border:1px solid var(--line,#e8e2d8);border-radius:10px;font:inherit;background:#faf8f4}
+.pub-note{font-size:12.5px;color:var(--ink-3,#8a847c);background:rgba(0,184,212,.06);border-left:3px solid #00b8d4;padding:10px 14px;border-radius:8px}
+.pub-err{margin-top:10px;padding:10px 14px;background:rgba(255,107,74,.08);color:#8b2f1c;border-radius:10px;font-size:12.5px}
+.pub-wizard-actions{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
+.mv-btn{padding:10px 16px;border-radius:10px;border:0;background:#00b8d4;color:#fff;font-weight:700;cursor:pointer}
+.mv-btn.ghost{background:#f2eee6;color:#1a1a1a}

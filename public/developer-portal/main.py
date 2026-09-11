@@ -1,196 +1,164 @@
-"""
-Merveil AI Orchestrator
-- Receives a build request from the developer portal
-- Plans with an LLM (Claude/GPT)
-- Generates a full project tree
-- Writes to Supabase (project_files) in real-time
-- Deploys to Vercel / Cloudflare via connected integration tokens
-"""
-import os, json, httpx
+"""Merveil Agent Runtime — invoke + stream."""
+import os, json, time, logging
 from datetime import datetime, timezone
-from typing import Optional, Literal
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from typing import Optional, Any
+from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from supabase import create_client, Client
-from anthropic import AsyncAnthropic
+from supabase import create_client
 
-app = FastAPI(title="Merveil AI Orchestrator", version="2.0.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
-)
+from spec import AgentSpec
+from tools import ToolRegistry
+from models import ModelRouter
+from loop import AgentLoop
 
-sb: Client = create_client(
-    os.environ["SUPABASE_URL"],
-    os.environ["SUPABASE_SERVICE_ROLE_KEY"],
-)
-claude = AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-VERCEL_TOKEN = os.environ.get("VERCEL_TOKEN")
+log = logging.getLogger("merveil.runtime")
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
-class BuildRequest(BaseModel):
-    build_id: str
-    prompt: str
-    kind: Literal[
-        "ai_agent","website","web_app","mobile_app","game_2d","game_3d",
-        "video","short_video","music","book","api","other"
-    ]
+sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+tools = ToolRegistry(sb)
+models = ModelRouter()
 
-async def log_stage(build_id: str, stage: str, msg: str, progress: int):
-    row = sb.table("build_runs").select("stage_log").eq("id", build_id).single().execute()
-    log = (row.data or {}).get("stage_log") or []
-    log.append({"ts": datetime.now(timezone.utc).isoformat(), "stage": stage, "msg": msg})
-    sb.table("build_runs").update({
-        "status": stage, "progress": progress, "stage_log": log,
-    }).eq("id", build_id).execute()
+app = FastAPI(title="Merveil Agent Runtime", version="1.0.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-async def get_integration(user_id: str, provider: str) -> Optional[dict]:
-    r = sb.table("integrations").select("*").eq("owner_user_id", user_id).eq("provider", provider).maybe_single().execute()
-    return r.data
+class InvokeRequest(BaseModel):
+    agent_id: str
+    session_id: Optional[str] = None
+    message: str
+    variables: dict = {}
+    stream: bool = False
+    channel: str = "api"
 
-PLAN_SYSTEM = """You are Merveil AI, an elite full-stack architect and product designer.
-Given an idea and a project kind, output a STRICT JSON plan:
-{
-  "name": "...",
-  "summary": "...",
-  "stack": {"frontend": "...", "backend": "...", "db": "...", "ai": "..."},
-  "files": [
-    {"path": "index.html", "language": "html", "purpose": "..."}
-  ],
-  "env_vars": [{"key": "X", "hint": "..."}],
-  "deploy_target": "vercel" | "cloudflare" | "merveil-edge"
-}
-Keep files minimal but runnable. Prefer vanilla or Next.js for web, Phaser/Babylon for games,
-Remotion for video, Tone.js for music, Pandoc for books, FastAPI for agents/APIs.
-"""
-
-async def plan_build(prompt: str, kind: str) -> dict:
-    msg = await claude.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=2000,
-        system=PLAN_SYSTEM,
-        messages=[{"role": "user", "content": f"KIND: {kind}\nIDEA: {prompt}"}],
-    )
-    text = msg.content[0].text.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"): text = text[4:]
-    return json.loads(text.strip())
-
-GEN_SYSTEM = """You are Merveil AI, generating ONE file at a time.
-Return ONLY the raw file contents. No markdown fences. No commentary.
-The file must be complete, runnable, and match the plan's stack."""
-
-async def generate_file(plan: dict, file_spec: dict, prompt: str) -> str:
-    user = f"""PROJECT: {plan['name']}
-SUMMARY: {plan['summary']}
-STACK: {json.dumps(plan['stack'])}
-
-FILE PATH: {file_spec['path']}
-PURPOSE: {file_spec['purpose']}
-
-ORIGINAL IDEA: {prompt}
-"""
-    msg = await claude.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=8000,
-        system=GEN_SYSTEM,
-        messages=[{"role": "user", "content": user}],
-    )
-    return msg.content[0].text
-
-async def deploy_vercel(project_id: str, files: dict, user_id: str) -> str:
-    integ = await get_integration(user_id, "vercel")
-    token = VERCEL_TOKEN or (integ or {}).get("access_token_enc")
-    if not token:
-        raise RuntimeError("vercel_not_connected")
-    async with httpx.AsyncClient(timeout=120) as c:
-        payload = {
-            "name": f"merveil-{project_id[:8]}",
-            "files": [{"file": p, "data": d} for p, d in files.items()],
-            "projectSettings": {"framework": None},
-        }
-        r = await c.post(
-            "https://api.vercel.com/v13/deployments",
-            headers={"Authorization": f"Bearer {token}"},
-            json=payload,
-        )
-        r.raise_for_status()
-        return r.json().get("url", "")
-
-@app.post("/v1/builds")
-async def build(req: BuildRequest, background: BackgroundTasks):
-    build_row = sb.table("build_runs").select("id,project_id,initiated_by").eq("id", req.build_id).single().execute().data
-    if not build_row:
-        raise HTTPException(404, "build not found")
-
-    background.add_task(_run_pipeline,
-        build_id=req.build_id,
-        project_id=build_row["project_id"],
-        user_id=build_row["initiated_by"],
-        prompt=req.prompt,
-        kind=req.kind,
-    )
-    return {"ok": True, "build_id": req.build_id}
-
-async def _run_pipeline(*, build_id: str, project_id: str, user_id: str, prompt: str, kind: str):
+async def _resolve_user(auth: str | None) -> str | None:
+    if not auth:
+        return None
     try:
-        await log_stage(build_id, "planning", "Analyzing idea…", 5)
-        plan = await plan_build(prompt, kind)
-        sb.table("projects").update({
-            "plan": plan,
-            "stack": plan.get("stack", {}),
-            "description": plan.get("summary", "")[:280],
-        }).eq("id", project_id).execute()
-        await log_stage(build_id, "planning", f"Planned {len(plan['files'])} files", 15)
+        u = sb.auth.get_user(auth.replace("Bearer ", ""))
+        return u.user.id if u and u.user else None
+    except Exception:
+        return None
 
-        await log_stage(build_id, "scaffolding", "Creating project tree", 20)
+async def _load_spec(agent_id: str) -> tuple[dict, AgentSpec]:
+    a = sb.table("agents").select("*").eq("id", agent_id).maybe_single().execute().data
+    if not a:
+        raise HTTPException(404, "agent_not_found")
+    v = None
+    if a.get("current_version_id"):
+        v = sb.table("agent_versions").select("*").eq("id", a["current_version_id"]).maybe_single().execute().data
+    if not v:
+        vs = sb.table("agent_versions").select("*").eq("agent_id", agent_id).order("version", desc=True).limit(1).execute().data
+        v = (vs or [None])[0]
+    if not v:
+        # default spec for draft without version
+        return a, AgentSpec(name=a.get("name") or "Agent")
+    return a, AgentSpec.model_validate(v["spec"])
 
-        await log_stage(build_id, "generating", "Writing code with Merveil AI…", 30)
-        files: dict[str, str] = {}
-        n = len(plan["files"])
-        for i, spec in enumerate(plan["files"]):
-            code = await generate_file(plan, spec, prompt)
-            files[spec["path"]] = code
-            sb.table("project_files").upsert({
-                "project_id": project_id,
-                "path": spec["path"],
-                "content": code,
-                "language": spec.get("language", "text"),
-                "size_bytes": len(code.encode("utf-8")),
-            }, on_conflict="project_id,path").execute()
-            pct = 30 + int(40 * (i + 1) / n)
-            await log_stage(build_id, "generating", f"{spec['path']} ✓", pct)
-
-        await log_stage(build_id, "installing", "Preparing runtime", 75)
-        await log_stage(build_id, "building", "Compiling bundle", 85)
-        await log_stage(build_id, "previewing", "Shipping to edge…", 92)
-        url = ""
-        try:
-            url = await deploy_vercel(project_id, files, user_id)
-        except Exception:
-            url = f"https://preview.junction.technology/{project_id}"
-
-        sb.table("build_runs").update({
-            "status": "success", "progress": 100,
-            "artifacts": {"files": list(files.keys()), "preview": url},
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", build_id).execute()
-
-        sb.table("projects").update({
-            "status": "preview",
-            "preview_url": url,
-            "repo_url": f"https://github.com/merveil-dev/{plan['name'].lower().replace(' ','-')}",
-        }).eq("id", project_id).execute()
-
-        await log_stage(build_id, "success", f"Live at {url}", 100)
-
-    except Exception as e:
-        sb.table("build_runs").update({
-            "status": "failed", "error": str(e),
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", build_id).execute()
-        await log_stage(build_id, "failed", str(e), 100)
+async def _session(agent_id: str, session_id: str | None, user_id: str | None, variables: dict) -> dict:
+    if session_id:
+        r = sb.table("agent_sessions").select("*").eq("id", session_id).maybe_single().execute().data
+        if r:
+            return r
+    return sb.table("agent_sessions").insert({
+        "agent_id": agent_id,
+        "user_id": user_id,
+        "variables": variables or {},
+        "status": "active",
+    }).select().single().execute().data
 
 @app.get("/healthz")
-def health(): return {"ok": True}
+def healthz():
+    return {"ok": True, "ts": datetime.now(timezone.utc).isoformat()}
+
+@app.post("/v1/agents/invoke")
+@app.post("/v1/agents/run")
+async def invoke(req: InvokeRequest, authorization: str = Header(default="")):
+    user_id = await _resolve_user(authorization)
+    agent, spec = await _load_spec(req.agent_id)
+    session = await _session(req.agent_id, req.session_id, user_id, req.variables)
+
+    run = sb.table("agent_runs").insert({
+        "session_id": session["id"],
+        "agent_id": req.agent_id,
+        "triggered_by": user_id,
+        "trigger": "user",
+        "status": "running",
+        "input": {"message": req.message},
+    }).select().single().execute().data
+
+    # history
+    hist = sb.table("agent_messages").select("role,content,tool_call_id,name") \
+        .eq("session_id", session["id"]).order("created_at").limit(40).execute().data or []
+
+    sb.table("agent_messages").insert({
+        "session_id": session["id"], "role": "user", "content": req.message,
+    }).execute()
+
+    loop = AgentLoop(sb=sb, spec=spec, tools=tools, models=models,
+                     run_id=run["id"], session_id=session["id"], agent_id=req.agent_id)
+    try:
+        result = await loop.run(req.message, hist, {**(session.get("variables") or {}), **(req.variables or {})})
+        sb.table("agent_messages").insert({
+            "session_id": session["id"], "role": "assistant", "content": result["text"],
+            "tokens_in": result["tokens_in"], "tokens_out": result["tokens_out"],
+            "credits_used": result["credits_used"],
+        }).execute()
+        sb.table("agent_runs").update({
+            "status": "succeeded",
+            "output": {"text": result["text"]},
+            "steps": result["steps"],
+            "credits_used": result["credits_used"],
+            "tokens_in": result["tokens_in"],
+            "tokens_out": result["tokens_out"],
+            "duration_ms": result["duration_ms"],
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", run["id"]).execute()
+        # credit deduct if available
+        if user_id and result["credits_used"]:
+            try:
+                sb.rpc("apply_credit_delta", {
+                    "p_user_id": user_id,
+                    "p_delta": -int(result["credits_used"]),
+                    "p_reason": "assist",
+                    "p_ref": run["id"],
+                }).execute()
+            except Exception:
+                pass
+        return {
+            "run_id": run["id"],
+            "session_id": session["id"],
+            "output": result["text"],
+            "steps": result["steps"],
+            "credits_used": result["credits_used"],
+            "duration_ms": result["duration_ms"],
+        }
+    except Exception as e:
+        sb.table("agent_runs").update({
+            "status": "failed", "error": str(e)[:500],
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", run["id"]).execute()
+        raise HTTPException(500, str(e))
+
+@app.post("/v1/agents/stream")
+async def stream(req: InvokeRequest, authorization: str = Header(default="")):
+    # Non-token streaming: emit run lifecycle events then final (token streaming can be added later)
+    async def gen():
+        try:
+            # reuse invoke path
+            user_id = await _resolve_user(authorization)
+            # call internal
+            from fastapi import Request
+            result = await invoke(req, authorization)
+            yield f"data: {json.dumps({'type':'final', **result})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type':'error','error':str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+@app.get("/v1/agents/{agent_id}/runs")
+async def list_runs(agent_id: str, authorization: str = Header(default="")):
+    await _resolve_user(authorization)
+    rows = sb.table("agent_runs").select("*").eq("agent_id", agent_id).order("started_at", desc=True).limit(40).execute().data
+    return {"runs": rows or []}

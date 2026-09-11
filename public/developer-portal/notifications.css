@@ -1,0 +1,40 @@
+.notif-bell-wrap{position:relative}
+.notif-bell{width:38px;height:38px;border-radius:12px;background:#fff;border:1px solid var(--line,#e8e2d8);display:grid;place-items:center;position:relative;transition:.15s}
+.notif-bell:hover,.notif-bell.open{border-color:var(--mv-cyan,#00b8d4)}
+.notif-bell.open{box-shadow:0 0 0 4px rgba(0,184,212,.12)}
+.notif-bell-ico{font-size:17px}
+.notif-badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:linear-gradient(120deg,#ff6b4a,#e11d48);color:#fff;font-size:10.5px;font-weight:800;display:grid;place-items:center;border:2px solid var(--paper,#faf8f4)}
+.notif-drawer{position:absolute;top:calc(100% + 10px);right:0;width:400px;max-width:92vw;background:#fff;border:1px solid var(--line,#e8e2d8);border-radius:18px;box-shadow:0 24px 60px -20px rgba(26,22,20,.3);overflow:hidden;z-index:80;display:flex;flex-direction:column;max-height:min(620px,80vh)}
+.notif-head{padding:14px 18px 8px;display:flex;align-items:center;gap:10px}
+.notif-head h3{font-family:'Instrument Serif',serif;font-weight:400;font-size:20px;margin:0}
+.notif-head-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
+.notif-mini{font-size:11.5px;font-weight:600;color:#00b8d4;padding:4px 8px;border-radius:8px;background:none;border:0;cursor:pointer}
+.notif-mini.ghost{color:var(--ink-3,#8a847c)}
+.notif-close{font-size:22px;color:var(--ink-3,#8a847c);line-height:1;padding:2px 8px;border:0;background:none;cursor:pointer}
+.notif-tabs{display:flex;gap:2px;padding:0 12px 8px;overflow-x:auto;border-bottom:1px solid var(--line,#e8e2d8)}
+.notif-tabs button{padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:600;color:var(--ink-3,#8a847c);white-space:nowrap;border:0;background:none;cursor:pointer}
+.notif-tabs button.on{background:var(--ink,#1a1614);color:#fff}
+.notif-list{flex:1;overflow-y:auto}
+.notif-item{display:flex;gap:12px;padding:13px 18px;cursor:pointer;border-bottom:1px solid #f2eee6;position:relative}
+.notif-item.unread{background:linear-gradient(90deg,rgba(0,184,212,.05),transparent 60%)}
+.notif-ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:17px;flex-shrink:0;background:#f2eee6}
+.notif-body{flex:1;min-width:0}
+.notif-title{font-weight:600;font-size:13.5px}
+.notif-text{font-size:12.5px;color:var(--ink-2,#4a4540);margin-top:3px}
+.notif-meta{font-size:11px;color:var(--ink-3,#8a847c);margin-top:5px}
+.notif-x{width:24px;height:24px;border-radius:8px;color:var(--ink-3,#8a847c);font-size:16px;opacity:0;border:0;background:none;cursor:pointer}
+.notif-item:hover .notif-x{opacity:1}
+.notif-empty{text-align:center;padding:60px 24px}
+.notif-empty-title{font-family:'Instrument Serif',serif;font-size:20px}
+.notif-foot{padding:10px 18px;border-top:1px solid var(--line,#e8e2d8);background:#faf8f4;text-align:center}
+.notif-foot a{font-size:12.5px;font-weight:600;color:#00b8d4;text-decoration:none}
+.toast-host{position:fixed;top:74px;right:22px;z-index:150;display:flex;flex-direction:column;gap:10px;max-width:380px;pointer-events:none}
+.toast{background:#fff;border:1px solid var(--line,#e8e2d8);border-radius:14px;padding:13px 16px;box-shadow:0 14px 40px -14px rgba(26,22,20,.28);display:flex;gap:12px;align-items:flex-start;pointer-events:auto}
+.toast.tone-success{border-left:3px solid #2f9e44}
+.toast.tone-warn{border-left:3px solid #ff6b4a}
+.toast.tone-info{border-left:3px solid #00b8d4}
+.toast-title{font-weight:700;font-size:13.5px}
+.toast-text{font-size:12.5px;color:var(--ink-2,#4a4540);margin-top:3px}
+.toast-action{font-size:12px;font-weight:700;color:#00b8d4;text-decoration:none}
+.toast-x{border:0;background:none;cursor:pointer;color:var(--ink-3)}
+@media (max-width:520px){.notif-drawer{position:fixed;top:60px;right:12px;left:12px;width:auto}.toast-host{right:12px;left:12px;max-width:none}}
