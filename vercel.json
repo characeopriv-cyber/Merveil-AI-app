@@ -12,6 +12,7 @@
     { "source": "/api/developer-builds", "destination": "/api/v1?route=developer-builds" },
     { "source": "/api/developer-build-history", "destination": "/api/v1?route=developer-build-history" },
     { "source": "/api/developer-project-context", "destination": "/api/v1?route=developer-project-context" },
+    { "source": "/api/developer-interface", "destination": "/api/v1?route=developer-interface" },
     { "source": "/api/developer-sandbox-build", "destination": "/api/v1?route=developer-sandbox-build" },
     { "source": "/api/developer-git", "destination": "/api/v1?route=developer-git" },
     { "source": "/api/developer-health", "destination": "/api/v1?route=developer-health" },
