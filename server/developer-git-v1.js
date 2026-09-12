@@ -4,24 +4,25 @@ import { oauthStart, pullRepo, pushRepo, listRepos, listBranches, status as gith
 const URL='https://dixfybqlepticyudikuz.supabase.co';
 const db=()=>createClient(URL,process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SERVICE_ROLE||'',{auth:{autoRefreshToken:false,persistSession:false}});
 const bodyOf=req=>typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});
+async function saveBinding(client,projectId,repo,branch,sha){const{data:p}=await client.from('developer_projects').select('metadata').eq('id',projectId).maybeSingle();const metadata=p?.metadata&&typeof p.metadata==='object'?p.metadata:{};return client.from('developer_projects').update({metadata:{...metadata,github_repo:repo,github_branch:branch,github_sha:sha}}).eq('id',projectId)}
 export default async function developerGit(req,res){
  if(!['GET','POST'].includes(req.method))return{status:405,body:{error:'Method not allowed'}};
  if(req.method==='GET'&&String(req.query?.action||'')==='oauth-callback')return{status:500,body:{error:'Use /api/github-oauth for the OAuth callback'}};
  const s=await getSession(req,res).catch(()=>({user:null,jwtSub:null}));const uid=s?.user?.id||s?.jwtSub;if(!uid)return{status:401,body:{error:'Sign in required'}};
  const body=bodyOf(req),projectId=String(req.query?.projectId||body.projectId||'');if(!projectId)return{status:400,body:{error:'projectId is required'}};
- const client=db();const{data:project}=await client.from('developer_projects').select('id,name,owner_user_id').eq('id',projectId).eq('owner_user_id',uid).maybeSingle();if(!project)return{status:404,body:{error:'Project not found'}};
+ const client=db();const{data:project}=await client.from('developer_projects').select('id,name,owner_user_id,metadata').eq('id',projectId).eq('owner_user_id',uid).maybeSingle();if(!project)return{status:404,body:{error:'Project not found'}};
  if(req.method==='GET'){
   const action=String(req.query?.action||'status');
   if(action==='connect')return oauthStart(req,res);
   if(action==='repos')return{status:200,body:{ok:true,repositories:await listRepos(uid,projectId)}};
-  if(action==='branches'){const repo=String(req.query?.repo||'');return{status:200,body:{ok:true,branches:await listBranches(uid,projectId,repo)}};
+  if(action==='branches'){const repo=String(req.query?.repo||project.metadata?.github_repo||'');if(!repo)return{status:400,body:{error:'repo is required'}};return{status:200,body:{ok:true,branches:await listBranches(uid,projectId,repo)}};
   }
-  return{status:200,body:{ok:true,project,git:{...(await githubStatus(uid,projectId)),branch:String(req.query?.branch||'main')}}};
+  return{status:200,body:{ok:true,project,git:{...(await githubStatus(uid,projectId)),branch:project.metadata?.github_branch||null}}};
  }
  const action=String(body.action||'');try{
   if(action==='connect')return oauthStart(req,res);
-  if(action==='pull'){const r=await pullRepo(uid,projectId,String(body.fullName||''),String(body.branch||'main'));const rows=r.files.map(f=>({project_id:projectId,owner_user_id:uid,path:f.path,content:f.content}));if(rows.length)await client.from('developer_project_files').upsert(rows,{onConflict:'project_id,path'});await client.from('developer_projects').update({metadata:{github_repo:r.repo,github_branch:r.branch,github_sha:r.sha}}).eq('id',projectId);return{status:200,body:{ok:true,action,repo:r.repo,branch:r.branch,sha:r.sha,files:r.files.length}}}
-  if(action==='commit'||action==='push'){const fullName=String(body.fullName||''),branch=String(body.branch||'main');const{data:files,error}=await client.from('developer_project_files').select('path,content').eq('project_id',projectId).eq('owner_user_id',uid).limit(300);if(error)throw error;const r=await pushRepo(uid,projectId,fullName,branch,files||[],body.message||`Update ${project.name} from Merveil Developer Platform`);await client.from('developer_projects').update({metadata:{github_repo:r.repo,github_branch:r.branch,github_sha:r.commit}}).eq('id',projectId);return{status:200,body:{ok:true,action,repo:r.repo,branch:r.branch,commit:r.commit,url:r.url}}}
+  if(action==='pull'){const fullName=String(body.fullName||project.metadata?.github_repo||''),branch=String(body.branch||project.metadata?.github_branch||'');if(!fullName)return{status:400,body:{error:'Select a GitHub repository first'}};const r=await pullRepo(uid,projectId,fullName,branch);const rows=r.files.map(f=>({project_id:projectId,owner_user_id:uid,path:f.path,content:f.content}));if(rows.length)await client.from('developer_project_files').upsert(rows,{onConflict:'project_id,path'});await saveBinding(client,projectId,r.repo,r.branch,r.sha);return{status:200,body:{ok:true,action,repo:r.repo,branch:r.branch,sha:r.sha,files:r.files.length}}}
+  if(action==='commit'||action==='push'){const fullName=String(body.fullName||project.metadata?.github_repo||''),branch=String(body.branch||project.metadata?.github_branch||'');if(!fullName)return{status:400,body:{error:'Select a GitHub repository first'}};const{data:files,error}=await client.from('developer_project_files').select('path,content').eq('project_id',projectId).eq('owner_user_id',uid).limit(300);if(error)throw error;const r=await pushRepo(uid,projectId,fullName,branch,files||[],body.message||`Update ${project.name} from Merveil Developer Platform`);await saveBinding(client,projectId,r.repo,r.branch,r.commit);return{status:200,body:{ok:true,action,repo:r.repo,branch:r.branch,commit:r.commit,url:r.url}}}
   return{status:400,body:{error:'Unsupported Git action',supported:['connect','repos','branches','pull','commit','push']}};
- }catch(e){const code=e?.code||null;return{status:code==='GITHUB_PROVIDER_REQUIRED'?409:e?.status===404?404:500,body:{ok:false,code,message:e?.message||'GitHub operation failed'}}}
+ }catch(e){const code=e?.code||null;const status=code==='GITHUB_PROVIDER_REQUIRED'?409:code==='GITHUB_PROJECT_BOUND'||code==='GITHUB_BRANCH_BOUND'?409:e?.status===401?401:e?.status===403?502:e?.status===404?404:500;return{status,body:{ok:false,code,message:e?.message||'GitHub operation failed'}}}
 }
