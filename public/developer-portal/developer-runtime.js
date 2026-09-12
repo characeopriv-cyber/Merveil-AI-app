@@ -17,6 +17,19 @@
     return out;
   };
   const active = () => { const p = readProject(); return p?.id ? p : null; };
+  const authToken = () => {
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i) || '';
+        if (!key.includes('auth-token')) continue;
+        const raw = localStorage.getItem(key); if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        const token = parsed?.access_token || parsed?.currentSession?.access_token;
+        if (token) return token;
+      }
+    } catch {}
+    return '';
+  };
   const postJson = (url, body) => originalFetch(url, { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
   window.fetch = async (input, init = {}) => {
@@ -71,7 +84,9 @@
   const buildCheck = async () => {
     const p = active(); if (!p) return { ready: false, error: 'Choose an active developer project first.' };
     try {
-      const r = await originalFetch('/api/build-check', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projectId: p.id }) });
+      const headers = { 'content-type': 'application/json' }; const token = authToken();
+      if (token) headers.authorization = `Bearer ${token}`;
+      const r = await originalFetch('/api/build-check', { method: 'POST', credentials: 'include', headers, body: JSON.stringify({ projectId: p.id }) });
       const d = await r.json(); return { ...d, httpStatus: r.status };
     } catch (e) { return { ready: false, error: e?.message || String(e) }; }
   };
