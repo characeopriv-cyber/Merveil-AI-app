@@ -1,9 +1,7 @@
 {
   "rewrites": [
     { "source": "/api/engine/(.*)", "destination": "/api/engine" },
-    { "source": "/api/engine",      "destination": "/api/engine" },
-    { "source": "/api/studio",      "destination": "/api/engine?action=access" },
-    { "source": "/api/studio/(.*)", "destination": "/api/engine?action=access" },
+    { "source": "/api/engine", "destination": "/api/engine" },
     { "source": "/invite", "destination": "/api/share?type=invite" },
     { "source": "/invite/", "destination": "/api/share?type=invite" },
     { "source": "/interface/(.*)", "destination": "/interface/$1" },
@@ -38,25 +36,20 @@
     { "source": "/onboarding", "destination": "/developer-portal/onboarding.html" },
     { "source": "/onboarding/", "destination": "/developer-portal/onboarding.html" },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "developer.junction.technology" }], "destination": "/developer-portal/$1" },
-    { "source": "/", "has": [{ "type": "host", "value": "developers.junction.technology" }], "destination": "/developer-portal/studio.html" },
-    { "source": "/onboarding", "has": [{ "type": "host", "value": "developers.junction.technology" }], "destination": "/developer-portal/onboarding.html" },
-    { "source": "/onboarding/", "has": [{ "type": "host", "value": "developers.junction.technology" }], "destination": "/developer-portal/onboarding.html" },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "developers.junction.technology" }], "destination": "/developer-portal/$1" },
-    { "source": "/", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/studio.html" },
-    { "source": "/onboarding", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
-    { "source": "/onboarding/", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/onboarding.html" },
     { "source": "/(.*)", "has": [{ "type": "host", "value": "developers.merveil.ai" }], "destination": "/developer-portal/$1" },
     { "source": "/api/(.*)", "destination": "/api/router" },
     { "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/|developer(?:/|$)|developer-portal(?:/|$)|interface(?:/|$)|admin(?:/|$)|merveil-admin-x9k2(?:/|$)|onboarding(?:/|$)|oauth(?:/|$)).*)", "destination": "/index.html" }
   ],
   "functions": {
     "api/engine.js": { "maxDuration": 60, "memory": 1024 },
+    "api/studio.js": { "maxDuration": 30, "memory": 512 },
     "api/router.js": { "maxDuration": 30 }
   },
   "headers": [
     { "source": "/api/v1/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
     { "source": "/.well-known/assetlinks.json", "headers": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Cache-Control", "value": "public, max-age=300" }] },
-    { "source": "/manifest.webmanifest", "headers": [{ "key": "Content-Type", "value": "application/manifest+json" }, { "key": "Cache-Control", "value": "no-store" }] },
+    { "source": "/manifest.webmanifest", "headers": [{ "key": "Content-Type", "value": "application/manifest+json" }, { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }, { "key": "Service-Worker-Allowed", "value": "/" }] },
     { "source": "/developer-portal/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }, { "key": "X-Frame-Options", "value": "SAMEORIGIN" }] },
     { "source": "/developer-portal/config.js", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
