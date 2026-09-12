@@ -5,7 +5,8 @@ const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID || 'team_Urqfhqe5vN1eNviJMXLKR
 const MAX_FILES = 300;
 const MAX_FILE_BYTES = 750_000;
 const MAX_TOTAL_BYTES = 8_000_000;
-const BUILD_TIMEOUT = 45_000;
+const INSTALL_TIMEOUT = 25_000;
+const BUILD_TIMEOUT = 30_000;
 
 const cleanPath = (value) => {
   const path = String(value || '').replace(/\\/g, '/').replace(/^\/+/, '');
@@ -57,13 +58,14 @@ export async function sandboxBuild(files) {
     const manifest = JSON.parse(normalized.find(f => f.path === 'package.json').content);
     const hasLock = normalized.some(f => ['package-lock.json', 'npm-shrinkwrap.json'].includes(f.path));
     const installCmd = hasLock ? ['ci', '--ignore-scripts', '--no-audit', '--no-fund'] : ['install', '--ignore-scripts', '--no-audit', '--no-fund'];
-    const install = await sandbox.runCommand({ cmd: 'npm', args: installCmd, timeout: BUILD_TIMEOUT });
+    const install = await sandbox.runCommand({ cmd: 'npm', args: installCmd, timeout: INSTALL_TIMEOUT });
     const installOut = await readOutput(install);
     let logs = `$ npm ${installCmd.join(' ')}\n${installOut.stdout}${installOut.stderr ? `\n${installOut.stderr}` : ''}`;
     if (installOut.exitCode !== 0) return { status: 'failed', exitCode: installOut.exitCode, logs: logs.slice(-30000), durationMs: Date.now() - started };
     if (!manifest?.scripts?.build) return { status: 'blocked', exitCode: 1, logs: `${logs}\nNo build script exists in package.json.`, durationMs: Date.now() - started };
 
-    const build = await sandbox.runCommand({ cmd: 'npm', args: ['run', 'build'], timeout: BUILD_TIMEOUT });
+    const remaining = Math.max(5000, 55_000 - (Date.now() - started));
+    const build = await sandbox.runCommand({ cmd: 'npm', args: ['run', 'build'], timeout: Math.min(BUILD_TIMEOUT, remaining) });
     const buildOut = await readOutput(build);
     logs += `\n$ npm run build\n${buildOut.stdout}${buildOut.stderr ? `\n${buildOut.stderr}` : ''}`;
     return { status: buildOut.exitCode === 0 ? 'success' : 'failed', exitCode: buildOut.exitCode, logs: logs.slice(-30000), durationMs: Date.now() - started, buildScript: manifest.scripts.build };
