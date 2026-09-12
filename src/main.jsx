@@ -6,11 +6,13 @@ import { startMerveilRealtime } from "./merveilRealtime.js";
 import { startMerveilNotifications } from "./merveilNotifications.js";
 import { startMerveilProductionFeeds } from "./merveilProductionFeeds.js";
 import { startMerveilBoost } from "./merveilBoostGlobal.js";
+import { startMerveilControl } from "./merveilControlGlobal.js";
 
 startMerveilRealtime();
 startMerveilNotifications();
 startMerveilProductionFeeds();
 startMerveilBoost();
+startMerveilControl();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
