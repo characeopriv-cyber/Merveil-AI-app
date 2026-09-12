@@ -1,0 +1,31 @@
+name: Developer Platform health check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/developer-health.js'
+      - 'public/developer-portal/developer-health-ui.js'
+      - 'public/developer-portal/config.js'
+  pull_request:
+    paths:
+      - 'api/developer-health.js'
+      - 'public/developer-portal/developer-health-ui.js'
+      - 'public/developer-portal/config.js'
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check Developer Platform health files
+        run: |
+          node --check api/developer-health.js
+          node --check public/developer-portal/developer-health-ui.js
+          node --check public/developer-portal/config.js
