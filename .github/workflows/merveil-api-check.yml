@@ -4,6 +4,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_production_e2e:
+        description: 'Run the isolated F3 production E2E certification harness'
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   verify:
@@ -29,5 +36,16 @@ jobs:
           find public/developer-portal -maxdepth 1 -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
             node --check "$file"
           done
+      - name: F2 deterministic realization integration contract
+        run: node tools/f2-integration-check.mjs
+      - name: F3 production E2E harness (gated)
+        if: github.event_name == 'workflow_dispatch' && inputs.run_production_e2e == true
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          F3_BASE_URL: ${{ secrets.F3_BASE_URL }}
+          F3_TEST_PASSWORD: ${{ secrets.F3_TEST_PASSWORD }}
+          F3_CONFIRM_PRODUCTION: YES
+        run: node tools/f3-production-e2e.mjs
       - name: Build production application
         run: npm run build
