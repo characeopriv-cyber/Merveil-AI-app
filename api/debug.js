@@ -1,5 +1,5 @@
 import { getSession, sendJson } from "../lib/supabaseServer.js";
-import { diagnose, propose, verify } from "../server/debug-v1.js";
+import { diagnose, propose, repairPlan, verify } from "../server/debug-v1.js";
 
 async function access(req, res) {
   try {
@@ -20,8 +20,8 @@ export default async function handler(req, res) {
   if (req.method === "GET") return sendJson(res, 200, {
     ok: true,
     service: "Merveil Debug V1",
-    pipeline: ["ingest", "map", "diagnose", "propose", "verify"],
-    capabilities: ["project-scan", "static-diagnosis", "proposal-generation", "verification", "safe-no-mutation"]
+    pipeline: ["ingest", "map", "diagnose", "propose", "repair", "verify"],
+    capabilities: ["project-scan", "static-diagnosis", "proposal-generation", "repair-plan", "verification", "safe-no-mutation"]
   });
 
   try {
@@ -35,12 +35,17 @@ export default async function handler(req, res) {
       const diagnosis = body.diagnosis || diagnose(body.files || []);
       return sendJson(res, 200, { ok: true, userId, ...propose(diagnosis), diagnosis });
     }
+    if (action === "repair") {
+      const diagnosis = body.diagnosis || diagnose(body.files || []);
+      const selectedIds = Array.isArray(body.proposalIds) ? body.proposalIds : null;
+      return sendJson(res, 200, { ok: true, userId, ...repairPlan(diagnosis, selectedIds), diagnosis });
+    }
     if (action === "verify") {
       const before = body.before || {};
       const after = body.after || diagnose(body.files || []);
       return sendJson(res, 200, { ok: true, userId, ...verify(before, after), after });
     }
-    return sendJson(res, 400, { error: "Unknown Debug action", code: "DEBUG_ACTION_INVALID", allowed: ["diagnose", "propose", "verify"] });
+    return sendJson(res, 400, { error: "Unknown Debug action", code: "DEBUG_ACTION_INVALID", allowed: ["diagnose", "propose", "repair", "verify"] });
   } catch (e) {
     return sendJson(res, 400, { error: e?.message || "Debug operation failed", code: "DEBUG_OPERATION_FAILED" });
   }
