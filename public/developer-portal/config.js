@@ -20,3 +20,5 @@ import './home-lifecycle-guard.js';
 import './project-flow-guard.js';
 // Live Developer Platform health surface.
 import './developer-health-ui.js';
+// Final lifecycle bridge: live health, OAuth callback refresh, verified build flow.
+import './developer-integration-finalizer.js';
