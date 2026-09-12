@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getSession, sendJson } from "../lib/supabaseServer.js";
+import { diagnose, propose } from "../server/debug-v1.js";
 
 export const config = { api: { bodyParser: false }, maxDuration: 60 };
 const SUPABASE_URL = "https://dixfybqlepticyudikuz.supabase.co";
@@ -38,8 +39,20 @@ async function requireAccess(req, res) {
   } catch (e) { sendJson(res, 500, { error: e.message }); return null; }
 }
 
-function emit(res, files) {
-  res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Merveil-Generator": "ai-or-offline" });
+function emit(res, files, debug = null) {
+  const headers = {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    "X-Merveil-Generator": "ai-or-offline",
+    "X-Merveil-Debug": debug ? "project-aware" : "not-run"
+  };
+  if (debug) {
+    headers["X-Merveil-Debug-Score"] = String(debug.score);
+    headers["X-Merveil-Debug-Status"] = encodeURIComponent(debug.status);
+    headers["X-Merveil-Debug-Errors"] = String(debug.counts.error);
+    headers["X-Merveil-Debug-Warns"] = String(debug.counts.warn);
+  }
+  res.writeHead(200, headers);
   for (const f of files) res.write(`<MF:BEGIN>\npath: ${f.path}\n<MF:BYTES>\n${f.content}\n<MF:END>\n`);
   res.end();
 }
@@ -91,7 +104,15 @@ function parseMF(text) {
 export default async function handler(req,res){
   if(req.method!=="POST") return sendJson(res,405,{error:"Method not allowed"});
   const gate=await requireAccess(req,res); if(!gate)return;
-  const body=await readJson(req); const prompt=String(body.prompt||"").slice(0,6000); if(!prompt)return sendJson(res,400,{error:"Prompt required."});
-  const ai=await aiProject(prompt);
-  return emit(res, ai || offlineProject(prompt));
+  const body=await readJson(req);
+  const prompt=String(body.prompt||"").slice(0,6000); if(!prompt)return sendJson(res,400,{error:"Prompt required."});
+
+  // Build/Pro becomes project-aware when the Studio supplies the selected project's files.
+  // Diagnosis is read-only; credential-bearing files are filtered by the shared Debug V1 layer.
+  const projectFiles = Array.isArray(body.files) ? body.files : [];
+  const debug = projectFiles.length ? diagnose(projectFiles) : null;
+  const proposal = debug ? propose(debug) : null;
+  const context = debug ? `\n\nMerveil Debug V1 preflight (read-only): score=${debug.score}; status=${debug.status}; errors=${debug.counts.error}; warnings=${debug.counts.warn}.\n${(proposal?.proposals || []).slice(0, 20).map(p => `- ${p.code}: ${p.action}${p.file ? ` [${p.file}]` : ''}`).join('\n')}` : '';
+  const ai=await aiProject(prompt + context);
+  return emit(res, ai || offlineProject(prompt), debug);
 }
