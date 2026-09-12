@@ -14,3 +14,5 @@ import './developer-runtime.js';
 import './pro-project-overlay.js';
 // Developer Home provider connection bridge.
 import './home-integration-bridge.js';
+// Developer Home project lifecycle guard.
+import './home-lifecycle-guard.js';
