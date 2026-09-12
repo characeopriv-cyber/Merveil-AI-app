@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { getSession } from '../lib/supabaseServer.js';
 import { sandboxBuild } from '../server/developer-sandbox-build.js';
 
+export const config = { maxDuration: 60 };
+
 const SUPABASE_URL = 'https://dixfybqlepticyudikuz.supabase.co';
 const admin = () => createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '', { auth: { autoRefreshToken: false, persistSession: false } });
 
