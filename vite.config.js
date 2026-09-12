@@ -13,6 +13,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         app: "index.html",
+        interface: "interface.html",
       },
       output: {
         manualChunks: {
