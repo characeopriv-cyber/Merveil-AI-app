@@ -18,3 +18,5 @@ import './home-integration-bridge.js';
 import './home-lifecycle-guard.js';
 // Project source selection + persistence fail-closed guard.
 import './project-flow-guard.js';
+// Live Developer Platform health surface.
+import './developer-health-ui.js';
