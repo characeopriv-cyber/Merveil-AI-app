@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/engine/generate", "destination": "/api/engine-generate" },
     { "source": "/api/engine/(.*)", "destination": "/api/engine" },
     { "source": "/api/engine", "destination": "/api/engine" },
     { "source": "/invite", "destination": "/api/share?type=invite" },
@@ -43,6 +44,7 @@
   ],
   "functions": {
     "api/engine.js": { "maxDuration": 60, "memory": 1024 },
+    "api/engine-generate.js": { "maxDuration": 60, "memory": 1024 },
     "api/studio.js": { "maxDuration": 30, "memory": 512 },
     "api/router.js": { "maxDuration": 30 }
   },
