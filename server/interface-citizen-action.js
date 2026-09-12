@@ -10,6 +10,7 @@ const safeReturn=(listing,action,value)=>{const fallback=interfaceReturn(listing
 const canonicalPair=(a,b)=>a<b?[a,b]:[b,a];
 async function notify(svc,recipientId,senderId,type,title,body,data){if(!recipientId)return null;const {data:row,error}=await svc.from('notifications').insert({recipient_id:recipientId,sender_id:senderId||null,type,title,body,data,is_read:false,priority:'normal',channel:'in_app'}).select('*').maybeSingle();if(error)throw error;return row;}
 async function audit(svc,uid,listing,action,outcome,metadata={},target=null){const {error}=await svc.from('interface_action_events').insert({actor_user_id:uid,project_id:listing.developer_project_id||null,listing_id:listing.id,action,outcome,target_user_id:target,metadata});if(error)throw error;}
+async function findConnection(svc,a,b){const [lo,hi]=canonicalPair(a,b);const {data:canonical,error}=await svc.from('connections').select('id,status').eq('user_id',lo).eq('connected_user_id',hi).maybeSingle();if(error)throw error;if(canonical)return canonical;const {data:legacy,error:le}=await svc.from('connections').select('id,status').eq('user_id',hi).eq('connected_user_id',lo).maybeSingle();if(le)throw le;return legacy||null;}
 async function findConversation(svc,a,b){const {data,error}=await svc.from('conversations').select('id,participant_ids').contains('participant_ids',[a,b]).order('created_at',{ascending:false}).limit(50);if(error)throw error;return (data||[]).find(c=>Array.isArray(c.participant_ids)&&c.participant_ids.length===2&&c.participant_ids.includes(a)&&c.participant_ids.includes(b))||null;}
 
 export default async function interfaceCitizenAction(req,res){
@@ -34,13 +35,11 @@ export default async function interfaceCitizenAction(req,res){
   const baseMeta={source:'interface',interface_product_id:listing.id,project_id:listing.developer_project_id||listing.project_id,return_path:returnPath,action};
   let destination=action,destinationId=null,status='opened';
   if(action==='connect'){
-    const [lo,hi]=canonicalPair(uid,targetId);
-    const {data:existing,error:ee}=await svc.from('connections').select('id,status').eq('user_id',lo).eq('connected_user_id',hi).maybeSingle();
-    if(ee)throw ee;
+    const existing=await findConnection(svc,uid,targetId);
     if(existing){destinationId=existing.id;status=existing.status||'pending';}
     else{
       const {data:c,error}=await svc.from('connections').insert({user_id:uid,connected_user_id:targetId,status:'pending'}).select('id,status').single();
-      if(error){if(error.code!=='23505')throw error;const {data:r,error:re}=await svc.from('connections').select('id,status').eq('user_id',lo).eq('connected_user_id',hi).maybeSingle();if(re||!r)throw(re||error);destinationId=r.id;status=r.status||'pending';}
+      if(error){if(error.code!=='23505')throw error;const r=await findConnection(svc,uid,targetId);if(!r)throw error;destinationId=r.id;status=r.status||'pending';}
       else{destinationId=c.id;status='pending';await notify(svc,targetId,uid,'interface_connect_request','Connection request from Interface','A Merveil citizen wants to connect with you through your Interface product.',{route:'/connect',...baseMeta,connection_id:c.id});}
     }
   }else if(action==='message'){
