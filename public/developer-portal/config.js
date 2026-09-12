@@ -22,3 +22,5 @@ import './project-flow-guard.js';
 import './developer-health-ui.js';
 // Final lifecycle bridge: live health, OAuth callback refresh, verified build flow.
 import './developer-integration-finalizer.js';
+// Thin commercial/intelligence activation layer shared with Interface.
+import './merveil-boost-ui.js';
