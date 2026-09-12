@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
     <script>
-      if (location.hostname === 'developer.junction.technology' && location.pathname === '/') {
-        location.replace('/developer');
+      if (location.pathname === '/') {
+        if (location.hostname === 'developer.junction.technology') location.replace('/developer');
+        else if (location.hostname === 'interface.junction.technology') location.replace('/interface.html');
       }
     </script>
     <title>Merveil AI — Identity, network &amp; opportunity</title>
@@ -18,7 +19,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Merveil AI" />
-    <meta property="og:title" content="Merveil AI — Identity, network & opportunity" />
+    <meta property="og:title" content="Merveil AI — Identity, network &amp; opportunity" />
     <meta property="og:description" content="One Passport. Real citizens. Jobs, services, investment, World reels, and trusted connections — not just property." />
     <meta property="og:url" content="https://www.junction.technology/" />
     <meta property="og:image" content="https://www.junction.technology/og-merveil.png" />
@@ -26,7 +27,7 @@
     <meta property="og:image:height" content="630" />
     <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Merveil AI — Identity, network & opportunity" />
+    <meta name="twitter:title" content="Merveil AI — Identity, network &amp; opportunity" />
     <meta name="twitter:description" content="Verified identity, careers, services, investment, and global networking in one super-app." />
     <meta name="twitter:image" content="https://www.junction.technology/og-merveil.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -36,9 +37,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      window.__MERVEIL_STRIPE_PK = window.__MERVEIL_STRIPE_PK || "";
-    </script>
+    <script>window.__MERVEIL_STRIPE_PK = window.__MERVEIL_STRIPE_PK || "";</script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
