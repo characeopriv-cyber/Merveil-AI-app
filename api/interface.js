@@ -24,16 +24,13 @@ export default async function handler(req, res) {
   const svc = db();
 
   try {
+    // Public discovery intentionally reads only the security-scoped view.
+    // This keeps private listing columns behind listings RLS/grants.
     if (req.method === 'GET' && (route === 'products' || route === '')) {
       const limit = Math.min(Math.max(Number(req.query?.limit || 50), 1), 100);
-      let q = svc.from('listings').select('*')
-        .eq('status', 'published')
-        .eq('interface_state', 'live')
-        .is('deleted_at', null)
-        .is('frozen_at', null)
+      let q = svc.from('interface_public_products_v1').select('*')
         .order('published_at', { ascending: false })
         .limit(limit);
-      if (req.query?.status && String(req.query.status) !== 'published') q = q.eq('status', String(req.query.status));
       const { data, error } = await q;
       if (error) throw error;
       return json(res, 200, { products: data || [], items: data || [] });
