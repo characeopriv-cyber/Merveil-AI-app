@@ -12,6 +12,7 @@ export const config = {
 };
 
 const SUPABASE_URL = "https://dixfybqlepticyudikuz.supabase.co";
+const CITIZEN_ORIGIN = "https://www.junction.technology";
 
 function adminClient() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
@@ -50,10 +51,12 @@ async function requireAccess(req, res) {
   const citizenId = sessionResult?.user?.id || sessionResult?.jwtSub || null;
 
   if (!citizenId) {
+    // Never redirect to "/" from developer.junction.technology: that host's
+    // root is itself rewritten to Studio, which creates a bounce/flash loop.
     sendJson(res, 401, {
       error: "Sign in required",
       code: "AUTH_REQUIRED",
-      redirect: "/?next=/developer",
+      redirect: `${CITIZEN_ORIGIN}/?next=/developer`,
     });
     return null;
   }
@@ -71,7 +74,7 @@ async function requireAccess(req, res) {
       code: "PASSPORT_INCOMPLETE",
       completionPct: pct,
       required: MIN_COMPLETION,
-      redirect: "/?goto=passport&next=/developer",
+      redirect: `${CITIZEN_ORIGIN}/?goto=passport&next=/developer`,
     });
     return null;
   }
@@ -166,7 +169,6 @@ const EVOLVE_SYSTEM = [
   "<MF:BEGIN>",
   "path: <relative/path>",
   "<MF:BYTES>",
-  "<file content>",
   "<MF:END>",
   "Do NOT re-emit unchanged files. Do NOT add prose.",
 ].join("\n");
