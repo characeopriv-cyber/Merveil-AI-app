@@ -16,3 +16,5 @@ import './pro-project-overlay.js';
 import './home-integration-bridge.js';
 // Developer Home project lifecycle guard.
 import './home-lifecycle-guard.js';
+// Project source selection + persistence fail-closed guard.
+import './project-flow-guard.js';
