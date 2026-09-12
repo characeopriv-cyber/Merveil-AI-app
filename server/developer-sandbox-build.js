@@ -1,5 +1,7 @@
 import { Sandbox } from '@vercel/sandbox';
 
+const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID || 'prj_Uh2TlTU0FzrmmBifk6Ix379rkL7M';
+const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID || 'team_Urqfhqe5vN1eNviJMXLKRFmC';
 const MAX_FILES = 300;
 const MAX_FILE_BYTES = 750_000;
 const MAX_TOTAL_BYTES = 8_000_000;
@@ -27,61 +29,44 @@ const normalizeFiles = (files) => {
   });
 };
 
-const output = async (result) => ({
-  exitCode: Number(result?.exitCode ?? -1),
-  stdout: String(await result?.stdout?.().catch?.(() => '') ?? ''),
-  stderr: String(await result?.stderr?.().catch?.(() => '') ?? ''),
-});
+const readOutput = async (result) => {
+  let stdout = '', stderr = '';
+  try { stdout = String(await result?.stdout?.() || ''); } catch {}
+  try { stderr = String(await result?.stderr?.() || ''); } catch {}
+  return { exitCode: Number(result?.exitCode ?? -1), stdout, stderr };
+};
 
 export async function sandboxBuild(files) {
   const normalized = normalizeFiles(files);
-  if (!normalized.some(f => f.path === 'package.json')) {
-    return { status: 'blocked', exitCode: 1, logs: 'Sandbox build requires package.json.' };
-  }
+  if (!normalized.some(f => f.path === 'package.json')) return { status: 'blocked', exitCode: 1, logs: 'Sandbox build requires package.json.' };
 
-  const token = process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL_TOKEN || '';
-  if (!token) throw new Error('Vercel Sandbox authentication is not configured.');
-
+  const token = process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL_TOKEN || undefined;
   const sandbox = await Sandbox.create({
-    token,
-    projectId: process.env.VERCEL_PROJECT_ID || undefined,
-    teamId: process.env.VERCEL_TEAM_ID || undefined,
+    ...(token ? { token } : {}),
+    projectId: VERCEL_PROJECT_ID,
+    teamId: VERCEL_TEAM_ID,
     runtime: 'node24',
     timeout: 300000,
     resources: { vcpus: 2 },
-    networkPolicy: {
-      mode: 'custom',
-      allowedDomains: ['registry.npmjs.org', '*.npmjs.org'],
-      allowedCIDRs: [],
-      deniedCIDRs: [],
-    },
+    networkPolicy: { mode: 'custom', allowedDomains: ['registry.npmjs.org', '*.npmjs.org'], allowedCIDRs: [], deniedCIDRs: [] },
   });
 
   const started = Date.now();
   try {
     for (const file of normalized) await sandbox.writeFile(file.path, file.content);
-
     const manifest = JSON.parse(normalized.find(f => f.path === 'package.json').content);
     const hasLock = normalized.some(f => ['package-lock.json', 'npm-shrinkwrap.json'].includes(f.path));
     const installCmd = hasLock ? ['ci', '--ignore-scripts', '--no-audit', '--no-fund'] : ['install', '--ignore-scripts', '--no-audit', '--no-fund'];
     const install = await sandbox.runCommand({ cmd: 'npm', args: installCmd, timeout: BUILD_TIMEOUT });
-    const installOut = await output(install);
-    let logs = `$ npm npm ${installCmd.join(' ')}\n${installOut.stdout}${installOut.stderr ? `\n${installOut.stderr}` : ''}`;
-    if (installOut.exitCode !== 0) return { status: 'failed', exitCode: installOut.exitCode, logs, durationMs: Date.now() - started };
-
-    const buildScript = manifest?.scripts?.build;
-    if (!buildScript) return { status: 'blocked', exitCode: 1, logs: `${logs}\nNo build script exists in package.json.`, durationMs: Date.now() - started };
+    const installOut = await readOutput(install);
+    let logs = `$ npm ${installCmd.join(' ')}\n${installOut.stdout}${installOut.stderr ? `\n${installOut.stderr}` : ''}`;
+    if (installOut.exitCode !== 0) return { status: 'failed', exitCode: installOut.exitCode, logs: logs.slice(-30000), durationMs: Date.now() - started };
+    if (!manifest?.scripts?.build) return { status: 'blocked', exitCode: 1, logs: `${logs}\nNo build script exists in package.json.`, durationMs: Date.now() - started };
 
     const build = await sandbox.runCommand({ cmd: 'npm', args: ['run', 'build'], timeout: BUILD_TIMEOUT });
-    const buildOut = await output(build);
+    const buildOut = await readOutput(build);
     logs += `\n$ npm run build\n${buildOut.stdout}${buildOut.stderr ? `\n${buildOut.stderr}` : ''}`;
-    return {
-      status: buildOut.exitCode === 0 ? 'success' : 'failed',
-      exitCode: buildOut.exitCode,
-      logs: logs.slice(-30000),
-      durationMs: Date.now() - started,
-      buildScript,
-    };
+    return { status: buildOut.exitCode === 0 ? 'success' : 'failed', exitCode: buildOut.exitCode, logs: logs.slice(-30000), durationMs: Date.now() - started, buildScript: manifest.scripts.build };
   } finally {
     await sandbox.stop().catch(() => {});
   }
