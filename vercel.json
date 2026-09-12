@@ -3,6 +3,7 @@
     { "source": "/api/engine/generate", "destination": "/api/engine-generate" },
     { "source": "/api/engine/(.*)", "destination": "/api/engine" },
     { "source": "/api/engine", "destination": "/api/engine" },
+    { "source": "/api/developer-home", "destination": "/api/studio?action=home" },
     { "source": "/invite", "destination": "/api/share?type=invite" },
     { "source": "/invite/", "destination": "/api/share?type=invite" },
     { "source": "/interface/(.*)", "destination": "/interface/$1" },
