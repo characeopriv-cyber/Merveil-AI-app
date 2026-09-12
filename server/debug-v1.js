@@ -86,6 +86,28 @@ export function propose(diagnosis) {
   };
 }
 
+export function repairPlan(diagnosis, selectedIds = null) {
+  const proposals = propose(diagnosis).proposals;
+  const selected = Array.isArray(selectedIds) && selectedIds.length
+    ? new Set(selectedIds.map(String))
+    : null;
+  return {
+    pipeline: 'repair',
+    readOnly: true,
+    requiresConfirmation: true,
+    mutations: [],
+    plan: proposals.filter(p => !selected || selected.has(p.id)).map(p => ({
+      id: p.id,
+      code: p.code,
+      file: p.file,
+      line: p.line,
+      action: p.action,
+      verification: p.verification,
+      safety: p.code === 'SECRET_LIKE_VALUE' ? 'manual-required' : 'review-required'
+    }))
+  };
+}
+
 export function verify(before, after) {
   const beforeIssues = Array.isArray(before?.issues) ? before.issues : [];
   const afterIssues = Array.isArray(after?.issues) ? after.issues : [];
