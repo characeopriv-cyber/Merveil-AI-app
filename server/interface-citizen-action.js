@@ -6,7 +6,7 @@ const db=()=>createClient(SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY||pr
 const bodyOf=req=>typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});
 const uidOf=async(req,res)=>{const s=await getSession(req,res).catch(()=>({user:null,jwtSub:null}));return s?.user?.id||s?.jwtSub||null};
 const interfaceReturn=(listing,action)=>`/interface?product=${encodeURIComponent(listing.id)}&action=${encodeURIComponent(action)}&return=interface`;
-async function notify(svc,recipientId,senderId,type,title,body,data){if(!recipientId)return null;const {data:row,error}=await svc.from('notifications').insert({recipient_id:recipientId,sender_id:senderId||null,type,title,body,data,is_read:false,priority:'normal',channel:'in_app'}).select('*').maybeSingle();if(error)throw error;return row;}
+async function notify(svc,recipientId,senderId,type,title,body,data){if(!recipientId)return null;const {data:row,error}=await svc.from('notifications').insert({recipient_id:recipientId,sender_id:senderId||null,type,title,body,data,is_read:false,priority:'normal',channel:'inapp'}).select('*').maybeSingle();if(error)throw error;return row;}
 async function audit(svc,uid,listing,action,outcome,metadata={},target=null){const {error}=await svc.from('interface_action_events').insert({actor_user_id:uid,project_id:listing.developer_project_id||null,listing_id:listing.id,action,outcome,target_user_id:target,metadata});if(error)throw error;}
 
 export default async function interfaceCitizenAction(req,res){
