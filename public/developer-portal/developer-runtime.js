@@ -87,8 +87,13 @@
           window.dispatchEvent(new CustomEvent('merveil:generation:blocked', { detail: { error: 'BUILD_CHECK_BLOCKED', check } }));
           return new Response(JSON.stringify({ error: 'Generated project was blocked by Build Check.', code: 'BUILD_CHECK_BLOCKED', check }), { status: 422, headers: { 'content-type': 'application/json' } });
         }
-        await postJson(`/api/developer-project-files?projectId=${encodeURIComponent(project.id)}`, { projectId: project.id, files });
-        await postJson(`/api/developer-builds?projectId=${encodeURIComponent(project.id)}`, { projectId: project.id, status: 'success', logs: `Merveil generated, validated and persisted ${files.length} files.` });
+        const persistResponse = await postJson(`/api/developer-project-files?projectId=${encodeURIComponent(project.id)}`, { projectId: project.id, files });
+        const persist = await persistResponse.json().catch(() => ({}));
+        if (!persistResponse.ok) {
+          window.dispatchEvent(new CustomEvent('merveil:generation:error', { detail: { error: 'PROJECT_PERSIST_FAILED', persist } }));
+          return new Response(JSON.stringify({ error: 'Generated project could not be persisted.', code: 'PROJECT_PERSIST_FAILED', persist }), { status: 422, headers: { 'content-type': 'application/json' } });
+        }
+        window.dispatchEvent(new CustomEvent('merveil:generation:persisted', { detail: { projectId: project.id, files: files.length, check, persist } }));
       } catch (e) {
         window.dispatchEvent(new CustomEvent('merveil:generation:error', { detail: { error: e?.message || String(e) } }));
       }
