@@ -7,6 +7,7 @@ const admin = () => createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE
 const bodyOf = (req) => typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 const userId = async (req, res) => { const s = await getSession(req, res).catch(() => ({ user: null, jwtSub: null })); return s?.user?.id || s?.jwtSub || null; };
 const ALLOWED = new Set(['queued','running','success','failed','blocked','cancelled']);
+const CLIENT_ALLOWED = new Set(['queued','running']);
 const TERMINAL = new Set(['success','failed','blocked','cancelled']);
 
 export default async function developerBuilds(req, res) {
@@ -25,6 +26,7 @@ export default async function developerBuilds(req, res) {
   if (req.method === 'POST') {
     const status = String(body.status || 'queued').slice(0, 40);
     if (!ALLOWED.has(status)) return { status: 400, body: { error: 'Invalid build status', code: 'INVALID_BUILD_STATUS' } };
+    if (!CLIENT_ALLOWED.has(status)) return { status: 403, body: { error: 'Terminal build statuses are reserved for the verified build executor.', code: 'TERMINAL_STATUS_RESERVED' } };
     const logs = String(body.logs || '').slice(0, MAX_LOGS);
     const finishedAt = TERMINAL.has(status) ? new Date().toISOString() : null;
     const { data, error } = await db.from('developer_builds').insert({ project_id: projectId, owner_user_id: uid, status, logs, finished_at: finishedAt }).select('id,project_id,status,logs,created_at,finished_at').single();
