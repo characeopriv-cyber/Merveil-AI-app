@@ -20,6 +20,8 @@
     { "source": "/api/github-repos", "destination": "/api/v1?route=github-repos" },
     { "source": "/api/session", "destination": "/api/router" },
     { "source": "/api/security-gate", "destination": "/api/router" },
+    { "source": "/api/interface", "destination": "/api/interface?route=products" },
+    { "source": "/api/interface/(.*)", "destination": "/api/interface?route=$1" },
     { "source": "/invite", "destination": "/api/share?type=invite" },
     { "source": "/invite/", "destination": "/api/share?type=invite" },
     { "source": "/interface", "destination": "/interface.html" },
@@ -65,11 +67,12 @@
     "api/engine-generate.js": { "maxDuration": 60, "memory": 1024 },
     "api/studio.js": { "maxDuration": 30, "memory": 512 },
     "api/router.js": { "maxDuration": 30 },
-    "api/v1.js": { "maxDuration": 60, "memory": 1024 }
+    "api/v1.js": { "maxDuration": 60, "memory": 1024 },
+    "api/interface.js": { "maxDuration": 30, "memory": 512 }
   },
   "headers": [
     { "source": "/api/v1/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
-    { "source": "/api/(engine|engine-generate|studio|debug|build-check|developer.*|github.*)(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }, { "key": "Pragma", "value": "no-cache" }, { "key": "X-Content-Type-Options", "value": "nosniff" }] },
+    { "source": "/api/(engine|engine-generate|studio|debug|build-check|developer.*|github.*|interface.*)(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }, { "key": "Pragma", "value": "no-cache" }, { "key": "X-Content-Type-Options", "value": "nosniff" }] },
     { "source": "/.well-known/assetlinks.json", "headers": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Cache-Control", "value": "public, max-age=300" }] },
     { "source": "/manifest.webmanifest", "headers": [{ "key": "Content-Type", "value": "application/manifest+json" }, { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
     { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }, { "key": "Service-Worker-Allowed", "value": "/" }] },
