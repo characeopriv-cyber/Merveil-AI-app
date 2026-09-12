@@ -7,8 +7,10 @@ const bodyOf=req=>typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.bod
 const uidOf=async(req,res)=>{const s=await getSession(req,res).catch(()=>({user:null,jwtSub:null}));return s?.user?.id||s?.jwtSub||null};
 const interfaceReturn=(listing,action)=>`/interface?product=${encodeURIComponent(listing.id)}&action=${encodeURIComponent(action)}&return=interface`;
 const safeReturn=(listing,action,value)=>{const fallback=interfaceReturn(listing,action);const raw=String(value||'').trim();if(!raw||!raw.startsWith('/interface'))return fallback;if(raw.startsWith('//')||raw.includes('\\')||raw.length>1000)return fallback;return raw};
-async function notify(svc,recipientId,senderId,type,title,body,data){if(!recipientId)return null;const {data:row,error}=await svc.from('notifications').insert({recipient_id:recipientId,sender_id:senderId||null,type,title,body,data,is_read:false,priority:'normal',channel:'inapp'}).select('*').maybeSingle();if(error)throw error;return row;}
+const canonicalPair=(a,b)=>a<b?[a,b]:[b,a];
+async function notify(svc,recipientId,senderId,type,title,body,data){if(!recipientId)return null;const {data:row,error}=await svc.from('notifications').insert({recipient_id:recipientId,sender_id:senderId||null,type,title,body,data,is_read:false,priority:'normal',channel:'in_app'}).select('*').maybeSingle();if(error)throw error;return row;}
 async function audit(svc,uid,listing,action,outcome,metadata={},target=null){const {error}=await svc.from('interface_action_events').insert({actor_user_id:uid,project_id:listing.developer_project_id||null,listing_id:listing.id,action,outcome,target_user_id:target,metadata});if(error)throw error;}
+async function findConversation(svc,a,b){const {data,error}=await svc.from('conversations').select('id,participant_ids').contains('participant_ids',[a,b]).order('created_at',{ascending:false}).limit(50);if(error)throw error;return (data||[]).find(c=>Array.isArray(c.participant_ids)&&c.participant_ids.length===2&&c.participant_ids.includes(a)&&c.participant_ids.includes(b))||null;}
 
 export default async function interfaceCitizenAction(req,res){
   if(req.method!=='POST')return{status:405,body:{error:'Method not allowed'}};
@@ -27,24 +29,23 @@ export default async function interfaceCitizenAction(req,res){
   if(ae)return{status:500,body:{error:ae.message,code:'INTERFACE_AUTHORIZATION_FAILED'}};
   if(!canAct)return{status:403,body:{error:'Interface product is not live or you are not allowed to act on it',code:'INTERFACE_ACTION_FORBIDDEN'}};
   const targetId=listing.publisher_user_id;
-  if(!targetId)return{status:409,body:{error:'Product creator is unavailable',code:'CREATOR_UNAVAILABLE'}};
+  if(!targetId||targetId===uid)return{status:403,body:{error:'Creator action is not available for this product',code:'SELF_ACTION_FORBIDDEN'}};
   const returnPath=safeReturn(listing,action,body.return_path);
   const baseMeta={source:'interface',interface_product_id:listing.id,project_id:listing.developer_project_id||listing.project_id,return_path:returnPath,action};
   let destination=action,destinationId=null,status='opened';
   if(action==='connect'){
-    const {data:existing,error:ee}=await svc.from('connections').select('id,status').or(`and(user_id.eq.${uid},connected_user_id.eq.${targetId}),and(user_id.eq.${targetId},connected_user_id.eq.${uid})`).limit(1).maybeSingle();
+    const [lo,hi]=canonicalPair(uid,targetId);
+    const {data:existing,error:ee}=await svc.from('connections').select('id,status').eq('user_id',lo).eq('connected_user_id',hi).maybeSingle();
     if(ee)throw ee;
     if(existing){destinationId=existing.id;status=existing.status||'pending';}
     else{
       const {data:c,error}=await svc.from('connections').insert({user_id:uid,connected_user_id:targetId,status:'pending'}).select('id,status').single();
-      if(error){if(error.code==='23505'){const {data:r}=await svc.from('connections').select('id,status').or(`and(user_id.eq.${uid},connected_user_id.eq.${targetId}),and(user_id.eq.${targetId},connected_user_id.eq.${uid})`).limit(1).maybeSingle();if(!r)throw error;destinationId=r.id;status=r.status||'pending';}else throw error;}
+      if(error){if(error.code!=='23505')throw error;const {data:r,error:re}=await svc.from('connections').select('id,status').eq('user_id',lo).eq('connected_user_id',hi).maybeSingle();if(re||!r)throw(re||error);destinationId=r.id;status=r.status||'pending';}
       else{destinationId=c.id;status='pending';await notify(svc,targetId,uid,'interface_connect_request','Connection request from Interface','A Merveil citizen wants to connect with you through your Interface product.',{route:'/connect',...baseMeta,connection_id:c.id});}
     }
   }else if(action==='message'){
-    let conversation=null;
-    const {data:cs,error:ce}=await svc.from('conversations').select('id,participant_ids').contains('participant_ids',[uid,targetId]).order('created_at',{ascending:false}).limit(20);
-    if(ce)throw ce;conversation=(cs||[]).find(c=>Array.isArray(c.participant_ids)&&c.participant_ids.length===2&&c.participant_ids.includes(uid)&&c.participant_ids.includes(targetId));
-    if(!conversation){const {data:c,error}=await svc.from('conversations').insert({participant_ids:[uid,targetId],context_label:`Interface · ${listing.title||'Product'}`,last_activity_at:new Date().toISOString()}).select('id,participant_ids').single();if(error)throw error;conversation=c;}
+    let conversation=await findConversation(svc,uid,targetId);
+    if(!conversation){const {data:c,error}=await svc.from('conversations').insert({participant_ids:[uid,targetId].sort(),context_label:`Interface · ${listing.title||'Product'}`,last_activity_at:new Date().toISOString()}).select('id,participant_ids').single();if(error){if(error.code!=='23505')throw error;conversation=await findConversation(svc,uid,targetId);if(!conversation)throw error;}else conversation=c;}
     destinationId=conversation.id;status='opened';
     await notify(svc,targetId,uid,'interface_message','Message opened from Interface','A conversation was opened from an Interface product.',{route:'/messages',conversation_id:conversation.id,...baseMeta});
   }else if(action==='call'){
@@ -59,6 +60,11 @@ export default async function interfaceCitizenAction(req,res){
   }
   const {data:link,error:ale}=await svc.from('interface_action_links').insert({listing_id:listing.id,project_id:listing.developer_project_id||listing.project_id||null,actor_user_id:uid,target_user_id:targetId,action,status,destination,destination_id:destinationId,metadata:baseMeta}).select('id').single();if(ale)throw ale;
   await audit(svc,uid,listing,action,status,{...baseMeta,destination,destination_id:destinationId},targetId);
-  const deepLink=action==='message'&&destinationId?`/messages?conversation=${encodeURIComponent(destinationId)}&return=${encodeURIComponent(returnPath)}`:returnPath;
-  return{status:200,body:{ok:true,action,status,destination,destination_id:destinationId,link_id:link.id,target_user_id:targetId,interface_product_id:listing.id,return_path:returnPath,deep_link:deepLink}};
+  let deepLink=returnPath;
+  if(action==='message'&&destinationId)deepLink=`/messages?conversation=${encodeURIComponent(destinationId)}&return=${encodeURIComponent(returnPath)}`;
+  else if(action==='connect'&&destinationId)deepLink=`/connect?request=${encodeURIComponent(destinationId)}&return=${encodeURIComponent(returnPath)}`;
+  else if(action==='call')deepLink=`/connect?call=request&product=${encodeURIComponent(listing.id)}&creator=${encodeURIComponent(targetId)}&return=${encodeURIComponent(returnPath)}`;
+  else if(action==='collaborate')deepLink=`/interface?product=${encodeURIComponent(listing.id)}&action=collaborate&return=${encodeURIComponent(returnPath)}`;
+  else if(action==='invest')deepLink=`/interface?product=${encodeURIComponent(listing.id)}&action=invest&return=${encodeURIComponent(returnPath)}`;
+  return{status:200,body:{ok:true,action,status,destination,destination_id:destinationId,link_id:link.id,target_user_id:targetId,interface_product_id:listing.id,project_id:listing.developer_project_id||listing.project_id||null,return_path:returnPath,deep_link:deepLink}};
 }
