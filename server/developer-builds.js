@@ -5,6 +5,7 @@ const SUPABASE_URL = 'https://dixfybqlepticyudikuz.supabase.co';
 const admin = () => createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE, { auth: { autoRefreshToken: false, persistSession: false } });
 const bodyOf = (req) => typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 const userId = async (req, res) => { const s = await getSession(req, res).catch(() => ({ user: null, jwtSub: null })); return s?.user?.id || s?.jwtSub || null; };
+const ALLOWED = new Set(['queued','running','success','failed','blocked','cancelled']);
 
 export default async function developerBuilds(req, res) {
   const uid = await userId(req, res); if (!uid) return { status: 401, body: { error: 'Sign in required', code: 'AUTH_REQUIRED' } };
@@ -19,8 +20,9 @@ export default async function developerBuilds(req, res) {
   }
   if (req.method === 'POST') {
     const status = String(body.status || 'queued').slice(0, 40);
+    if (!ALLOWED.has(status)) return { status: 400, body: { error: 'Invalid build status', code: 'INVALID_BUILD_STATUS' } };
     const logs = String(body.logs || '').slice(0, 20000);
-    const { data, error } = await db.from('developer_builds').insert({ project_id: projectId, owner_user_id: uid, status, logs, finished_at: ['success','failed','cancelled'].includes(status) ? new Date().toISOString() : null }).select('id,project_id,status,logs,created_at,finished_at').single();
+    const { data, error } = await db.from('developer_builds').insert({ project_id: projectId, owner_user_id: uid, status, logs, finished_at: ['success','failed','blocked','cancelled'].includes(status) ? new Date().toISOString() : null }).select('id,project_id,status,logs,created_at,finished_at').single();
     if (error) return { status: 500, body: { error: error.message } };
     return { status: 200, body: { ok: true, build: data } };
   }
