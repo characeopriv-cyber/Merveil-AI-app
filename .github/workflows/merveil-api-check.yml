@@ -1,4 +1,4 @@
-name: Merveil API checks
+name: Merveil Developer Platform checks
 on:
   push:
     branches: [main]
@@ -6,25 +6,28 @@ on:
     branches: [main]
 
 jobs:
-  syntax:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Check API JavaScript syntax
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check server and API JavaScript syntax
         shell: bash
         run: |
-          set -e
-          node --check api/v1.js
-          node --check api/router.js
-      - name: Check developer console JavaScript syntax
+          set -euo pipefail
+          find api server lib -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            node --check "$file"
+          done
+      - name: Check Developer Platform browser JavaScript syntax
         shell: bash
         run: |
-          set -e
-          if [ -f developer-portal/console.js ]; then
-            node --check developer-portal/console.js
-          else
-            echo "developer-portal/console.js not present; skipping stale legacy check"
-          fi
+          set -euo pipefail
+          find public/developer-portal -maxdepth 1 -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            node --check "$file"
+          done
+      - name: Build production application
+        run: npm run build
