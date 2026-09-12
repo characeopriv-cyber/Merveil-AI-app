@@ -1,8 +1,9 @@
 const SKIP = /(^|\/)(node_modules|dist|build|\.git|\.next|coverage)(\/|$)/i;
 const SECRET_FILE = /(^|\/)(\.env(?:\..*)?|.*\.(pem|key|p12|pfx)|credentials?\.json)$/i;
 const TEXT = /\.(js|jsx|ts|tsx|json|css|html|md|sql|mjs|cjs|vue|py|java|yml|yaml)$/i;
-const MAX_FILES = 500;
-const MAX_BYTES = 500_000;
+const MAX_FILES = 300;
+const MAX_FILE_BYTES = 750_000;
+const MAX_TOTAL_BYTES = 8_000_000;
 
 export function safePath(path) {
   const p = String(path || '').replace(/\\/g, '/').replace(/^\/+/, '');
@@ -10,10 +11,23 @@ export function safePath(path) {
 }
 
 export function normalizeFiles(files) {
-  return (Array.isArray(files) ? files : []).slice(0, MAX_FILES).map(f => ({
-    path: String(f?.path || '').replace(/\\/g, '/').replace(/^\/+/, ''),
-    content: String(f?.content || '')
-  })).filter(f => safePath(f.path) && f.content.length <= MAX_BYTES && TEXT.test(f.path));
+  if (!Array.isArray(files)) return [];
+  const out = [];
+  const seen = new Set();
+  let total = 0;
+  for (const f of files) {
+    const path = String(f?.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    const content = String(f?.content || '');
+    if (!path || !safePath(path) || !TEXT.test(path)) continue;
+    if (seen.has(path)) continue;
+    if (content.length > MAX_FILE_BYTES) continue;
+    total += content.length;
+    if (total > MAX_TOTAL_BYTES) break;
+    seen.add(path);
+    out.push({ path, content });
+    if (out.length >= MAX_FILES) break;
+  }
+  return out;
 }
 
 function issue(severity, code, message, file = null, line = null, fix = null) {
@@ -21,9 +35,13 @@ function issue(severity, code, message, file = null, line = null, fix = null) {
 }
 
 export function diagnose(files) {
-  const textFiles = normalizeFiles(files);
+  const input = Array.isArray(files) ? files : [];
+  const textFiles = normalizeFiles(input);
   const names = new Set(textFiles.map(f => f.path));
   const issues = [];
+  if (input.length > MAX_FILES) issues.push(issue('error', 'FILE_LIMIT_EXCEEDED', `Debug input exceeds the ${MAX_FILES}-file limit.`, null, null, 'Reduce the project to the supported file limit.'));
+  const rawBytes = input.reduce((n, f) => n + String(f?.content || '').length, 0);
+  if (rawBytes > MAX_TOTAL_BYTES) issues.push(issue('error', 'TOTAL_SIZE_EXCEEDED', `Debug input exceeds the ${MAX_TOTAL_BYTES}-byte total limit.`, null, null, 'Reduce project size or analyze the project in supported chunks.'));
   if (!names.has('package.json')) issues.push(issue('error', 'NO_MANIFEST', 'No package.json was found in the supplied project.', null, null, 'Add or identify the project package manifest.'));
   if (!names.has('src/App.jsx') && !names.has('src/App.tsx') && !names.has('src/main.jsx') && !names.has('src/main.tsx') && !names.has('index.html')) issues.push(issue('warn', 'ENTRY_NOT_FOUND', 'No common Vite/React entry file was detected.', null, null, 'Confirm the application entry point.'));
 
@@ -59,10 +77,11 @@ export function diagnose(files) {
   for (const x of issues) counts[x.severity] = (counts[x.severity] || 0) + 1;
   const score = Math.max(0, Math.min(100, 100 - counts.error * 18 - counts.warn * 6 - counts.info));
   return {
-    name: 'merveil-debug-v1', version: 1,
+    name: 'merveil-debug-v1', version: 2,
     score,
     status: score >= 90 ? 'Healthy' : score >= 70 ? 'Review needed' : 'Problems detected',
     filesScanned: textFiles.length,
+    limits: { maxFiles: MAX_FILES, maxFileBytes: MAX_FILE_BYTES, maxTotalBytes: MAX_TOTAL_BYTES },
     counts,
     issues: issues.slice(0, 200)
   };
@@ -88,9 +107,7 @@ export function propose(diagnosis) {
 
 export function repairPlan(diagnosis, selectedIds = null) {
   const proposals = propose(diagnosis).proposals;
-  const selected = Array.isArray(selectedIds) && selectedIds.length
-    ? new Set(selectedIds.map(String))
-    : null;
+  const selected = Array.isArray(selectedIds) && selectedIds.length ? new Set(selectedIds.map(String)) : null;
   return {
     pipeline: 'repair',
     readOnly: true,
