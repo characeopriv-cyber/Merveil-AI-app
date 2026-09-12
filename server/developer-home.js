@@ -19,15 +19,10 @@ function adminClient(){
   if(!key) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
   return createClient(SUPABASE_URL,key,{auth:{autoRefreshToken:false,persistSession:false}});
 }
-
-async function user(req,res){
-  const s=await getSession(req,res).catch(()=>({user:null,jwtSub:null}));
-  return s?.user?.id||s?.jwtSub||null;
-}
+async function user(req,res){ const s=await getSession(req,res).catch(()=>({user:null,jwtSub:null})); return s?.user?.id||s?.jwtSub||null; }
 
 export default async function handler(req,res){
-  const uid=await user(req,res);
-  if(!uid) return sendJson(res,401,{error:'Sign in required',code:'AUTH_REQUIRED'});
+  const uid=await user(req,res); if(!uid) return sendJson(res,401,{error:'Sign in required',code:'AUTH_REQUIRED'});
   try{
     const db=adminClient();
     const [{data:profile},{data:passport},{data:wallet},{data:projects},{data:connections}]=await Promise.all([
@@ -37,9 +32,17 @@ export default async function handler(req,res){
       db.from('developer_projects').select('id,name,slug,tagline,stage,status_label,momentum,created_at,updated_at').eq('owner_user_id',uid).order('updated_at',{ascending:false}).limit(20),
       db.from('developer_provider_connections').select('provider,external_account_name,status,updated_at').eq('owner_user_id',uid).order('updated_at',{ascending:false})
     ]);
+    const projectIds=(projects||[]).map(p=>p.id);
+    const [{data:fileRows},{data:buildRows}]=projectIds.length ? await Promise.all([
+      db.from('developer_project_files').select('project_id').in('project_id',projectIds),
+      db.from('developer_builds').select('id,project_id,status,created_at,finished_at').in('project_id',projectIds).order('created_at',{ascending:false}).limit(100)
+    ]) : [{data:[]},{data:[]}];
+    const fileCount=new Map(); (fileRows||[]).forEach(r=>fileCount.set(r.project_id,(fileCount.get(r.project_id)||0)+1));
+    const latestBuild=new Map(); (buildRows||[]).forEach(b=>{if(!latestBuild.has(b.project_id)) latestBuild.set(b.project_id,b);});
+    const projectHealth=(projects||[]).map(p=>({...p,fileCount:fileCount.get(p.id)||0,latestBuild:latestBuild.get(p.id)||null}));
     const connected=new Map((connections||[]).map(x=>[x.provider,{name:x.external_account_name,status:x.status,updated_at:x.updated_at}]));
     const integrations=CATALOG.map(x=>({...x,connected:connected.has(x.key),connection:connected.get(x.key)||null,platformReady:['github','vercel','supabase','openai','anthropic','stripe','resend','twilio','cloudflare'].includes(x.key)}));
-    return sendJson(res,200,{ok:true,profile:profile||null,passport:passport||null,wallet:wallet||{balance_usd_cents:0,currency_local:'USD'},projects:projects||[],integrations,count:integrations.length});
+    return sendJson(res,200,{ok:true,profile:profile||null,passport:passport||null,wallet:wallet||{balance_usd_cents:0,currency_local:'USD'},projects:projects||[],projectHealth,integrations,count:integrations.length});
   }catch(e){return sendJson(res,500,{error:e?.message||'Developer home failed'});}
 }
 
