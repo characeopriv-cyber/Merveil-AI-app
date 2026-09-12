@@ -1,37 +1,55 @@
 /* Merveil Studio auth bridge.
- * A Citizen session can still be settling while navigation moves from
- * junction.technology to developer.junction.technology. Keep the access
- * check pending briefly instead of allowing Studio to bounce back or show
- * Visitor during that handoff.
+ * Developer-only: never clears, refreshes, logs out, or modifies the Citizen session.
+ * Wait for the existing Citizen Supabase session and forward its current access token.
  */
 (() => {
   const originalFetch = window.fetch.bind(window);
+
+  function currentAuthHeader() {
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        const raw = key ? localStorage.getItem(key) : null;
+        if (!raw || !raw.includes('access_token')) continue;
+        try {
+          const data = JSON.parse(raw);
+          const token = data?.access_token || data?.currentSession?.access_token || data?.session?.access_token;
+          if (typeof token === 'string' && token.split('.').length === 3) {
+            return { Authorization: `Bearer ${token}` };
+          }
+        } catch {}
+      }
+    } catch {}
+    return {};
+  }
+
   window.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input?.url || '';
-    const isAccessCheck = /\/api\/studio\?action=access(?:&|$)/.test(url);
+    const isAccessCheck = /\/api\/studio(?:\?action=access)?(?:&|$)/.test(url);
     if (!isAccessCheck) return originalFetch(input, init);
 
     let lastError;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
       try {
+        const headers = new Headers(init.headers || {});
+        const auth = currentAuthHeader();
+        if (auth.Authorization) headers.set('Authorization', auth.Authorization);
+
         const response = await originalFetch(input, {
           ...init,
+          headers,
           credentials: 'include',
           cache: 'no-store',
         });
 
-        // 5xx and 401 can both be transient during the cross-subdomain
-        // Citizen -> Developer session handoff. 403 is deliberately final:
-        // it means the server has identified the citizen but the Passport
-        // requirement is not satisfied.
-        const retryable = response.status >= 500 || response.status === 401;
-        if (!retryable || attempt === 4) return response;
+        const retryable = response.status === 401 || response.status >= 500;
+        if (!retryable || attempt === 7) return response;
       } catch (error) {
         lastError = error;
-        if (attempt === 4) throw error;
+        if (attempt === 7) throw error;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 220 * (attempt + 1)));
+      await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
     }
 
     throw lastError || new Error('Studio session check failed');
