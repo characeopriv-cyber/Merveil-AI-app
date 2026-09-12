@@ -1,6 +1,8 @@
 /* Merveil Studio auth bridge.
- * Do not let a transient network/function wake-up render the Studio as Visitor.
- * 401/403 are real auth gates and must pass through unchanged.
+ * A Citizen session can still be settling while navigation moves from
+ * junction.technology to developer.junction.technology. Keep the access
+ * check pending briefly instead of allowing Studio to bounce back or show
+ * Visitor during that handoff.
  */
 (() => {
   const originalFetch = window.fetch.bind(window);
@@ -10,20 +12,28 @@
     if (!isAccessCheck) return originalFetch(input, init);
 
     let lastError;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
         const response = await originalFetch(input, {
           ...init,
           credentials: 'include',
           cache: 'no-store',
         });
-        if (response.status < 500 || attempt === 2) return response;
+
+        // 5xx and 401 can both be transient during the cross-subdomain
+        // Citizen -> Developer session handoff. 403 is deliberately final:
+        // it means the server has identified the citizen but the Passport
+        // requirement is not satisfied.
+        const retryable = response.status >= 500 || response.status === 401;
+        if (!retryable || attempt === 4) return response;
       } catch (error) {
         lastError = error;
-        if (attempt === 2) throw error;
+        if (attempt === 4) throw error;
       }
-      await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
+
+      await new Promise((resolve) => setTimeout(resolve, 220 * (attempt + 1)));
     }
+
     throw lastError || new Error('Studio session check failed');
   };
 })();
