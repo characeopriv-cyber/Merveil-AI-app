@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { realizeProject, finalizeCertificate } from '../server/developer-realization-v1.js';
 
 const base = [
-  { path: 'package.json', content: JSON.stringify({ name: 'f2-fixture', scripts: { build: 'vite build', test: 'node test.js' }, dependencies: { react: '^18.3.1', vite: '^6.1.0' } }) },
+  { path: 'package.json', content: JSON.stringify({ name: 'f2-fixture', scripts: { build: 'vite build', test: 'node test.js' }, dependencies: { react: '^18.3.1', 'react-dom': '^18.3.1', vite: '^6.1.0' } }) },
   { path: 'package-lock.json', content: '{}' },
   { path: 'index.html', content: '<div id="root"></div><script type="module" src="/src/main.jsx"></script>' },
   { path: 'src/main.jsx', content: "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\nReactDOM.createRoot(document.getElementById('root')).render(<App />);" },
