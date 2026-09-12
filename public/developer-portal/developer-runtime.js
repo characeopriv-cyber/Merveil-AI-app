@@ -1,7 +1,7 @@
-/* Merveil Developer Runtime — shared project persistence bridge.
- * Loads through config.js so Studio and Pro share the same active project.
- * Persists generated MF files, autosaves Pro edits, supplies project files
- * to Debug/Build Check, and exposes the safe build gate. No fake providers.
+/* Merveil Developer Runtime — shared project persistence and build bridge.
+ * Developer Platform only. Keeps Build, Pro and Debug on one active project.
+ * Real builds run in an isolated Vercel Sandbox; this runtime never executes
+ * project code in the application server itself.
  */
 (() => {
   if (window.__merveilDeveloperRuntime) return;
@@ -65,22 +65,6 @@
     return response;
   };
 
-  let saveTimer = 0;
-  const autosaveProEditor = (root) => {
-    const project = active(); const editor = root?.querySelector?.('#editor');
-    if (!project || !editor || editor.dataset.merveilAutosave === '1') return;
-    editor.dataset.merveilAutosave = '1';
-    editor.addEventListener('input', () => {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(async () => {
-        const node = document.querySelector('.node.on .node-name');
-        const path = node?.textContent?.trim();
-        if (!path) return;
-        try { await postJson(`/api/developer-project-files?projectId=${encodeURIComponent(project.id)}`, { projectId: project.id, files: [{ path, content: editor.value }] }); } catch {}
-      }, 900);
-    });
-  };
-
   const buildCheck = async () => {
     const p = active(); if (!p) return { ready: false, error: 'Choose an active developer project first.' };
     try {
@@ -91,25 +75,48 @@
     } catch (e) { return { ready: false, error: e?.message || String(e) }; }
   };
 
+  const sandboxBuild = async () => {
+    const p = active(); if (!p) return { ok: false, status: 'blocked', error: 'Choose an active developer project first.' };
+    const check = await buildCheck();
+    if (!check.ready) return { ok: false, status: 'blocked', error: 'Build Check blocked the sandbox build.', check };
+    try {
+      const headers = { 'content-type': 'application/json' }; const token = authToken();
+      if (token) headers.authorization = `Bearer ${token}`;
+      const r = await originalFetch('/api/developer-sandbox-build', { method: 'POST', credentials: 'include', headers, body: JSON.stringify({ projectId: p.id, buildCheckId: check.id || null }) });
+      const d = await r.json().catch(() => ({}));
+      return { ...d, httpStatus: r.status, check };
+    } catch (e) { return { ok: false, status: 'failed', error: e?.message || String(e), check }; }
+  };
+
   const mount = () => {
     const root = document.getElementById('root') || document.getElementById('pro-root');
-    if (!root) return;
-    autosaveProEditor(root);
-    if (document.getElementById('merveil-runtime-project')) return;
+    if (!root || document.getElementById('merveil-runtime-project')) return;
     const p = active(); const bar = document.createElement('div'); bar.id = 'merveil-runtime-project';
-    bar.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:10000;display:flex;gap:8px;align-items:center;padding:6px 11px;border:1px solid rgba(0,0,0,.12);border-radius:999px;background:rgba(250,247,241,.95);backdrop-filter:blur(12px);font:12px Inter,system-ui,sans-serif;color:#292723;box-shadow:0 5px 20px rgba(0,0,0,.08)';
-    bar.innerHTML = p?.id ? `<span style="width:7px;height:7px;border-radius:50%;background:#2f6f68"></span><strong>${String(p.name || 'Active project').replace(/[<>]/g,'')}</strong><span style="opacity:.55">${String(p.source || 'workspace').replace(/[<>]/g,'')}</span><button id="merveil-runtime-check" style="border:0;border-radius:999px;padding:4px 9px;background:#292723;color:#fff;cursor:pointer">Build check</button>` : `<span style="opacity:.65">No active developer project</span><a href="/developer" style="color:inherit">Choose project</a>`;
+    bar.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:10000;display:flex;gap:8px;align-items:center;padding:6px 11px;border:1px solid rgba(0,0,0,.12);border-radius:999px;background:rgba(250,247,241,.96);backdrop-filter:blur(12px);font:12px Inter,system-ui,sans-serif;color:#292723;box-shadow:0 5px 20px rgba(0,0,0,.08)';
+    const safe = (v) => String(v || '').replace(/[<>]/g, '');
+    bar.innerHTML = p?.id
+      ? `<span style="width:7px;height:7px;border-radius:50%;background:#2f6f68"></span><strong>${safe(p.name || 'Active project')}</strong><span style="opacity:.55">${safe(p.source || 'workspace')}</span><button id="merveil-runtime-check" style="border:0;border-radius:999px;padding:4px 9px;background:#292723;color:#fff;cursor:pointer">Build check</button><button id="merveil-runtime-build" style="border:0;border-radius:999px;padding:4px 9px;background:#2f6f68;color:#fff;cursor:pointer">Build in Sandbox</button>`
+      : `<span style="opacity:.65">No active developer project</span><a href="/developer" style="color:inherit">Choose project</a>`;
     root.appendChild(bar);
     bar.querySelector('#merveil-runtime-check')?.addEventListener('click', async (e) => {
       const b = e.currentTarget; b.disabled = true; b.textContent = 'Checking…';
       const result = await buildCheck();
-      const message = result.ready ? `Ready — ${result.warnings?.length || 0} warnings.` : `Blocked — ${(result.blockers || [result.error || 'Build check failed']).join(', ')}`;
-      b.textContent = result.ready ? 'Ready' : 'Blocked'; b.title = message;
-      bar.style.borderColor = result.ready ? 'rgba(47,111,104,.45)' : 'rgba(170,60,60,.45)';
+      b.textContent = result.ready ? 'Ready' : 'Blocked'; b.title = result.ready ? `Ready — ${(result.warnings || []).length} warnings.` : `Blocked — ${(result.blockers || [result.error || 'Build check failed']).join(', ')}`;
       setTimeout(() => { b.disabled = false; b.textContent = 'Build check'; }, 3500);
     });
+    bar.querySelector('#merveil-runtime-build')?.addEventListener('click', async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Building…';
+      const result = await sandboxBuild();
+      b.textContent = result.status === 'success' ? 'Build passed' : result.status === 'blocked' ? 'Blocked' : 'Build failed';
+      b.title = result.error || result.build?.logs || result.error || 'Sandbox build finished';
+      bar.style.borderColor = result.status === 'success' ? 'rgba(47,111,104,.45)' : 'rgba(170,60,60,.45)';
+      setTimeout(() => { b.disabled = false; b.textContent = 'Build in Sandbox'; }, 5000);
+      window.dispatchEvent(new CustomEvent('merveil:build:finished', { detail: result }));
+    });
   };
+
   window.merveilDeveloperBuildCheck = buildCheck;
+  window.merveilDeveloperSandboxBuild = sandboxBuild;
   new MutationObserver(mount).observe(document.documentElement, { childList: true, subtree: true });
   setTimeout(mount, 300);
 })();
