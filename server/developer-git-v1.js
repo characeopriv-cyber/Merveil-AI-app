@@ -1,23 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { getSession } from '../lib/supabaseServer.js';
-
-const URL = 'https://dixfybqlepticyudikuz.supabase.co';
-const db = () => createClient(URL, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '', { auth: { autoRefreshToken: false, persistSession: false } });
-const bodyOf = req => typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-
-export default async function developerGit(req, res) {
-  if (!['GET','POST'].includes(req.method)) return { status: 405, body: { error: 'Method not allowed' } };
-  const s = await getSession(req, res).catch(() => ({ user: null, jwtSub: null }));
-  const uid = s?.user?.id || s?.jwtSub; if (!uid) return { status: 401, body: { error: 'Sign in required' } };
-  const body = bodyOf(req); const projectId = String(req.query?.projectId || body.projectId || '');
-  if (!projectId) return { status: 400, body: { error: 'projectId is required' } };
-  const client = db();
-  const { data: project } = await client.from('developer_projects').select('id,name,owner_user_id').eq('id', projectId).eq('owner_user_id', uid).maybeSingle();
-  if (!project) return { status: 404, body: { error: 'Project not found' } };
-  if (req.method === 'GET') {
-    return { status: 200, body: { ok: true, project, git: { enabled: false, provider: null, branch: 'main', connected: false, message: 'Connect a Git provider to enable repository operations.' } } };
-  }
-  const action = String(body.action || '');
-  if (!['connect','pull','commit','push'].includes(action)) return { status: 400, body: { error: 'Unsupported Git action', supported: ['connect','pull','commit','push'] } };
-  return { status: 409, body: { ok: false, code: 'GIT_PROVIDER_REQUIRED', action, message: 'Git operation is blocked until a real provider connection is configured for this project.' } };
-}
+import { githubForProject, pullRepo, pushRepo, status as githubStatus } from './github-provider.js';
+const URL='https://dixfybqlepticyudikuz.supabase.co';
+const db=()=>createClient(URL,process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SERVICE_ROLE||'',{auth:{autoRefreshToken:false,persistSession:false}});
+const bodyOf=req=>typeof req.body==='string'?JSON.parse(req.body||'{}'):(req.body||{});
+export default async function developerGit(req,res){if(!['GET','POST'].includes(req.method))return{status:405,body:{error:'Method not allowed'}};const s=await getSession(req,res).catch(()=>({user:null,jwtSub:null}));const uid=s?.user?.id||s?.jwtSub;if(!uid)return{status:401,body:{error:'Sign in required'}};const body=bodyOf(req),projectId=String(req.query?.projectId||body.projectId||'');if(!projectId)return{status:400,body:{error:'projectId is required'}};const client=db();const{data:project}=await client.from('developer_projects').select('id,name,owner_user_id').eq('id',projectId).eq('owner_user_id',uid).maybeSingle();if(!project)return{status:404,body:{error:'Project not found'}};
+if(req.method==='GET')return{status:200,body:{ok:true,project,git:{...(await githubStatus(uid,projectId)),branch:body.branch||'main'}}};
+const action=String(body.action||'');try{if(action==='connect')return{status:302,body:{url:`/api/github-oauth?action=start&projectId=${encodeURIComponent(projectId)}`}};if(action==='pull'){const fullName=String(body.fullName||''),branch=String(body.branch||'main');const r=await pullRepo(uid,projectId,fullName,branch);const rows=r.files.map(f=>({project_id:projectId,owner_user_id:uid,path:f.path,content:f.content}));if(rows.length){await client.from('developer_project_files').upsert(rows,{onConflict:'project_id,path'})}return{status:200,body:{ok:true,action,repo:r.repo,branch:r.branch,sha:r.sha,files:r.files.length}}}if(action==='commit'||action==='push'){await githubForProject(uid,projectId);const fullName=String(body.fullName||'');const branch=String(body.branch||'main');const{data:files,error}=await client.from('developer_project_files').select('path,content').eq('project_id',projectId).eq('owner_user_id',uid).limit(300);if(error)throw error;const r=await pushRepo(uid,projectId,fullName,branch,files||[],body.message||`Update ${project.name} from Merveil Developer Platform`);return{status:200,body:{ok:true,action,repo:r.repo,branch:r.branch,commit:r.commit,url:r.url}}}return{status:400,body:{error:'Unsupported Git action',supported:['connect','pull','commit','push']}}}catch(e){const code=e?.code||null;return{status:code==='GITHUB_PROVIDER_REQUIRED'?409:e?.status===404?404:500,body:{ok:false,code,message:e?.message||'GitHub operation failed'}}}}
