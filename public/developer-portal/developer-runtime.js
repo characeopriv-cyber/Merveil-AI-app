@@ -7,6 +7,9 @@
   if (window.__merveilDeveloperRuntime) return;
   window.__merveilDeveloperRuntime = true;
   const KEY = 'merveil:developer-project';
+  const MAX_FILES = 300;
+  const MAX_FILE_BYTES = 750000;
+  const MAX_TOTAL_BYTES = 8000000;
   const readProject = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return null; } };
   const json = (v) => { try { return JSON.parse(v || '{}'); } catch { return {}; } };
   const originalFetch = window.fetch.bind(window);
@@ -15,6 +18,23 @@
     const re = /<MF:BEGIN>\s*path:\s*(\S+)\s*<MF:BYTES>\s*([\s\S]*?)<MF:END>/g;
     let m; while ((m = re.exec(text || ''))) out.push({ path: m[1], content: m[2].replace(/^\n/, '') });
     return out;
+  };
+  const validateGeneratedFiles = (files) => {
+    if (!Array.isArray(files) || !files.length) return { ok: false, error: 'GENERATION_EMPTY' };
+    if (files.length > MAX_FILES) return { ok: false, error: 'GENERATION_FILE_LIMIT' };
+    const seen = new Set(); let total = 0;
+    for (const f of files) {
+      const path = String(f?.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+      const content = String(f?.content || '');
+      if (!path || path.split('/').includes('..') || /(^|\/)(\.env(?:\..*)?|.*\.(pem|key|p12|pfx))$/i.test(path)) return { ok: false, error: 'GENERATION_UNSAFE_PATH' };
+      if (seen.has(path)) return { ok: false, error: 'GENERATION_DUPLICATE_PATH' };
+      if (content.length > MAX_FILE_BYTES) return { ok: false, error: 'GENERATION_FILE_TOO_LARGE' };
+      seen.add(path); total += content.length;
+      if (total > MAX_TOTAL_BYTES) return { ok: false, error: 'GENERATION_TOTAL_TOO_LARGE' };
+    }
+    if (!seen.has('package.json')) return { ok: false, error: 'NO_MANIFEST' };
+    if (!seen.has('index.html') && !seen.has('src/main.jsx') && !seen.has('src/main.tsx')) return { ok: false, error: 'ENTRY_NOT_FOUND' };
+    return { ok: true };
   };
   const active = () => { const p = readProject(); return p?.id ? p : null; };
   const authToken = () => {
@@ -55,12 +75,23 @@
     const response = await originalFetch(input, next);
     if (/\/api\/engine\/generate(?:\?|$)/.test(url) && response.ok) {
       try {
-        const text = await response.clone().text(); const files = mfFiles(text);
-        if (files.length) {
-          await postJson(`/api/developer-project-files?projectId=${encodeURIComponent(project.id)}`, { projectId: project.id, files });
-          await postJson(`/api/developer-builds?projectId=${encodeURIComponent(project.id)}`, { projectId: project.id, status: 'success', logs: `Merveil generated and persisted ${files.length} files.` });
+        const text = await response.clone().text(); const files = mfFiles(text); const validation = validateGeneratedFiles(files);
+        if (!validation.ok) {
+          window.dispatchEvent(new CustomEvent('merveil:generation:blocked', { detail: validation }));
+          return new Response(JSON.stringify({ error: 'Generated project failed validation.', code: validation.error }), { status: 422, headers: { 'content-type': 'application/json' } });
         }
-      } catch {}
+        const token = authToken(); const headers = { 'content-type': 'application/json' }; if (token) headers.authorization = `Bearer ${token}`;
+        const checkResponse = await originalFetch('/api/build-check', { method: 'POST', credentials: 'include', headers, body: JSON.stringify({ projectId: project.id, files }) });
+        const check = await checkResponse.json().catch(() => ({}));
+        if (!checkResponse.ok || !check.ready) {
+          window.dispatchEvent(new CustomEvent('merveil:generation:blocked', { detail: { error: 'BUILD_CHECK_BLOCKED', check } }));
+          return new Response(JSON.stringify({ error: 'Generated project was blocked by Build Check.', code: 'BUILD_CHECK_BLOCKED', check }), { status: 422, headers: { 'content-type': 'application/json' } });
+        }
+        await postJson(`/api/developer-project-files?projectId=${encodeURIComponent(project.id)}`, { projectId: project.id, files });
+        await postJson(`/api/developer-builds?projectId=${encodeURIComponent(project.id)}`, { projectId: project.id, status: 'success', logs: `Merveil generated, validated and persisted ${files.length} files.` });
+      } catch (e) {
+        window.dispatchEvent(new CustomEvent('merveil:generation:error', { detail: { error: e?.message || String(e) } }));
+      }
     }
     return response;
   };
