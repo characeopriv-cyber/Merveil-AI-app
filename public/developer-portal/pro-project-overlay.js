@@ -42,8 +42,11 @@
     const root = document.getElementById('pro-root'); if (!root || !state.loaded) return;
     const filesBody = root.querySelector('.files-body');
     if (filesBody) {
-      filesBody.innerHTML = state.files.map(f => `<div class="node ${state.active===f.path?'on':''}" data-merveil-path="${esc(f.path)}"><span class="node-ico">${icon(f.path)}</span><span class="node-name">${esc(f.path)}</span></div>`).join('') || '<div style="padding:16px;opacity:.6">Project has no files.</div>';
-      filesBody.querySelectorAll('[data-merveil-path]').forEach(n => n.addEventListener('click', () => open(n.getAttribute('data-merveil-path'))));
+      const markup = state.files.map(f => `<div class="node ${state.active===f.path?'on':''}" data-merveil-path="${esc(f.path)}"><span class="node-ico">${icon(f.path)}</span><span class="node-name">${esc(f.path)}</span></div>`).join('') || '<div style="padding:16px;opacity:.6">Project has no files.</div>';
+      if (filesBody.innerHTML !== markup) {
+        filesBody.innerHTML = markup;
+        filesBody.querySelectorAll('[data-merveil-path]').forEach(n => n.addEventListener('click', () => open(n.getAttribute('data-merveil-path'))));
+      }
     }
     const editor = root.querySelector('#editor'); const active = state.files.find(f => f.path === state.active);
     if (editor && active && editor.value !== String(active.content ?? '')) editor.value = String(active.content ?? '');
