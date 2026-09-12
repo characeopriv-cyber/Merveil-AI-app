@@ -1,0 +1,8 @@
+{
+  "name": "merveil-debug-v1",
+  "version": 1,
+  "pipeline": ["ingest", "map", "diagnose", "propose", "verify"],
+  "mutations": false,
+  "secret_policy": "never intentionally upload credential-bearing files or values",
+  "result": {"score": "0-100", "status": "Healthy|Review needed|Problems detected", "issues": [{"severity": "error|warn|info", "code": "string", "message": "string", "file": "optional", "line": "optional"}]}
+}
