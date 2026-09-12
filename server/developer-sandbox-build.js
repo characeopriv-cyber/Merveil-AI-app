@@ -18,9 +18,12 @@ const cleanPath = (value) => {
 const normalizeFiles = (files) => {
   if (!Array.isArray(files) || files.length > MAX_FILES) throw new Error('Too many project files.');
   let total = 0;
+  const seen = new Set();
   return files.map((file) => {
     const path = cleanPath(file?.path);
     if (!path) throw new Error('Unsafe project file path.');
+    if (seen.has(path)) throw new Error(`Duplicate project file path: ${path}`);
+    seen.add(path);
     const content = String(file?.content ?? '');
     const bytes = Buffer.byteLength(content, 'utf8');
     if (bytes > MAX_FILE_BYTES) throw new Error(`File too large: ${path}`);
