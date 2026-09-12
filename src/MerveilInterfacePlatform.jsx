@@ -1,30 +1,105 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-function Volume({ item, signal }) {
+const API = "/api/interface";
+
+function Volume({ item, onAction }) {
   const ref = useRef(null);
   const [live, setLive] = useState(false);
   const [supered, setSupered] = useState(false);
+
   useEffect(() => {
-    const io = new IntersectionObserver(([e]) => { const v = e.isIntersecting && e.intersectionRatio >= .6; setLive(v); if (v) signal(item,"view"); }, {threshold:[.6]});
+    const io = new IntersectionObserver(([entry]) => {
+      const visible = entry.isIntersecting && entry.intersectionRatio >= 0.6;
+      setLive(visible);
+      if (visible) onAction(item, "view");
+    }, { threshold: [0.6] });
     if (ref.current) io.observe(ref.current);
     return () => io.disconnect();
-  }, [item, signal]);
-  return <article ref={ref} className="volume">
-    <div className={`showreel ${live?"live":""}`}>
-      {item.poster_url ? <img src={item.poster_url} alt=""/> : <div className="stage"><small>{item.inscription_name||item.profession||"Merveil"}</small><strong>15s showreel</strong><span>HOOK · CRAFT · PROOF · SIGN</span></div>}
-      <b className="spine">{item.inscription_name||item.name||"Volume"}</b><i className="progress"/>
-    </div>
-    <div className="info"><div className="meta">{item.profession||"Developer"} · {item.category||"Experience"}</div><h2>{item.name||"Untitled Volume"}</h2><p>{item.description||"A living product published into the Merveil universe."}</p><div className="stats">Views {item.view_count??0} · Supers {item.super_count??0} · Velocity {item.velocity_7d??0}</div><div className="actions"><button className={supered?"on":""} onClick={()=>{setSupered(true);signal(item,"super")}}>★ Super</button><button onClick={()=>signal(item,"trio")}>Trio</button><button onClick={()=>signal(item,"buy")}>{item.price_cents?`Buy · ${(item.price_cents/100).toFixed(2)} ${item.currency||"USD"}`:"Get"}</button><button onClick={()=>signal(item,"collab")}>Collaborate</button></div></div>
-  </article>;
+  }, [item, onAction]);
+
+  const showreel = item.showreel || {};
+  return (
+    <article ref={ref} className="volume">
+      <div className={`showreel ${live ? "live" : ""}`}>
+        {showreel.video_url ? (
+          <video src={showreel.video_url} poster={showreel.poster_url || undefined} muted playsInline autoPlay={live} loop preload="metadata" />
+        ) : showreel.poster_url ? (
+          <img src={showreel.poster_url} alt="" />
+        ) : (
+          <div className="stage"><small>{item.inscription_name || item.profession || "Merveil"}</small><strong>15s showreel</strong><span>HOOK · CRAFT · PROOF · SIGN</span></div>
+        )}
+        <b className="spine">{item.inscription_name || item.title || "Volume"}</b>
+        <i className="progress" />
+      </div>
+      <div className="info">
+        <div className="meta">{item.profession || "Developer"} · {item.category || "Experience"}</div>
+        <h2>{item.title || item.name || "Untitled Volume"}</h2>
+        <p>{item.description || "A living product published into the Merveil universe."}</p>
+        <div className="stats">Views {item.view_count ?? item.stats?.view_count ?? 0} · Supers {item.super_count ?? item.stats?.super_count ?? 0} · Velocity {item.velocity_7d ?? item.stats?.velocity_7d ?? 0}</div>
+        <div className="actions">
+          <button className={supered ? "on" : ""} disabled={supered} onClick={() => { setSupered(true); onAction(item, "super"); }}>★ Super</button>
+          <button onClick={() => onAction(item, "trio")}>Trio</button>
+          <button onClick={() => onAction(item, item.price_cents ? "buy" : "download")}>{item.price_cents ? `Buy · ${(item.price_cents / 100).toFixed(2)} ${item.currency || "USD"}` : "Get"}</button>
+          <button onClick={() => onAction(item, "collab")}>Collaborate</button>
+        </div>
+      </div>
+    </article>
+  );
 }
 
-export default function MerveilInterfacePlatform(){
-  const [items,setItems]=useState([]),[query,setQuery]=useState(""),[profession,setProfession]=useState("All"),[loading,setLoading]=useState(true),[notice,setNotice]=useState("");
-  useEffect(()=>{let ok=true;fetch("/api/interface-discovery?limit=50",{credentials:"include"}).then(r=>r.ok?r.json():null).then(j=>ok&&setItems(Array.isArray(j?.items)?j.items:Array.isArray(j?.interfaces)?j.interfaces:[])).catch(()=>{}).finally(()=>ok&&setLoading(false));return()=>{ok=false}},[]);
-  const professions=useMemo(()=>["All",...new Set(items.map(x=>x.profession).filter(Boolean))],[items]);
-  const visible=useMemo(()=>items.filter(x=>{const s=`${x.name||""} ${x.description||""} ${x.profession||""} ${x.category||""}`.toLowerCase();return(!query||s.includes(query.toLowerCase()))&&(profession==="All"||x.profession===profession)}),[items,query,profession]);
-  const signal=async(item,kind)=>{try{await fetch("/api/interface/signals",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({product_id:item.product_id||item.id,kind,source:"universe"})});if(kind!=="view"){setNotice(kind==="super"?"Super recorded":kind==="buy"?"Purchase flow ready":kind==="collab"?"Collaboration request ready":"Trio requested");setTimeout(()=>setNotice(""),1800)}}catch{}};
-  return <div className="universe-shell"><style>{`*{box-sizing:border-box}html,body{margin:0;background:#eee7dc;color:#29251f;font-family:Inter,system-ui,sans-serif}.universe-shell{min-height:100dvh;background:radial-gradient(circle at 50% -10%,#fff9ef,transparent 38%),linear-gradient(#eee7dc,#dfd2c1)}.top{position:sticky;top:0;z-index:10;padding:12px 20px;background:rgba(238,231,220,.82);backdrop-filter:blur(16px);border-bottom:1px solid #cfc2b2}.nav{max-width:1280px;margin:auto;display:flex;align-items:center;gap:10px}.mark{width:34px;height:34px;border-radius:11px;background:#29251f;color:#fff;display:grid;place-items:center;font-weight:800}.brand{font-weight:800}.main{max-width:1280px;margin:auto;padding:35px 20px 80px}.hero{display:grid;grid-template-columns:1.3fr .7fr;gap:22px;align-items:end}.eyebrow,.meta{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#766c60}.title{font-size:clamp(48px,7vw,88px);line-height:.9;letter-spacing:-.07em;margin:12px 0 18px}.copy{max-width:720px;color:#675e53;line-height:1.65}.mirror{padding:22px;border:1px solid #cfc2b2;border-radius:22px;background:#ffffff45}.mirror strong{display:block;font-size:18px;margin-bottom:8px}.mirror span{font-size:12px;color:#756b60;line-height:1.6}.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:26px}.search{flex:1;min-width:230px;padding:12px;border:1px solid #cfc2b2;border-radius:12px;background:#ffffff70;outline:0}.filter,.actions button{padding:9px 12px;border:1px solid #cfc2b2;border-radius:999px;background:#ffffff65;color:#4f473e;cursor:pointer}.filter.active,.actions button.on{background:#29251f;color:#fff}.universe{margin-top:35px}.head{display:flex;justify-content:space-between;margin-bottom:14px}.head h2{margin:0}.head span{font-size:11px;color:#81766a}.volumes{display:grid;gap:18px}.volume{display:grid;grid-template-columns:.8fr 1.2fr;min-height:330px;border:1px solid #cfc2b2;border-radius:26px;overflow:hidden;background:#faf6efaa;box-shadow:0 20px 55px #8e735326}.showreel{position:relative;min-height:330px;background:radial-gradient(circle at 45% 35%,#887a68,#39342d 45%,#211e1a);display:grid;place-items:center;overflow:hidden}.showreel img{position:absolute;width:100%;height:100%;object-fit:cover;opacity:.8}.stage{color:#f8f1e7;text-align:center;display:grid;gap:9px}.stage small{font-size:10px;letter-spacing:.18em;text-transform:uppercase}.stage strong{font-size:30px}.stage span{font-size:9px;letter-spacing:.15em;opacity:.65}.spine{position:absolute;left:14px;top:14px;background:#171512c9;color:#fff;padding:7px;border-radius:8px;font-size:9px;writing-mode:vertical-rl}.progress{position:absolute;left:18px;right:18px;bottom:18px;height:3px;background:#ffffff45}.live .progress{animation:fill 15s linear infinite;background:#fff;transform-origin:left}.info{padding:28px;display:flex;flex-direction:column;justify-content:center}.info h2{font-size:35px;line-height:1;margin:12px 0}.info p{color:#6e655a;line-height:1.6;font-size:13px;max-width:620px}.stats{font-size:11px;color:#81766a;margin:8px 0 20px}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{border-radius:10px}.empty{padding:30px;text-align:center;border:1px dashed #c5b7a5;border-radius:18px;color:#776d61}.notice{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#29251f;color:#fff;padding:11px 15px;border-radius:11px;font-size:12px;z-index:20}@keyframes fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}@media(max-width:850px){.hero{grid-template-columns:1fr}.volume{grid-template-columns:1fr}.showreel{min-height:250px}}@media(max-width:600px){.main{padding:25px 14px}.title{font-size:51px}.info{padding:21px}.info h2{font-size:28px}}`}</style>
+export default function MerveilInterfacePlatform() {
+  const [items, setItems] = useState([]);
+  const [query, setQuery] = useState("");
+  const [profession, setProfession] = useState("All");
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API}/products?status=published&limit=50`, { credentials: "include" })
+      .then(async response => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || "Unable to load Interface products");
+        return body;
+      })
+      .then(body => {
+        if (!active) return;
+        const products = Array.isArray(body) ? body : (body.products || body.items || []);
+        setItems(products);
+      })
+      .catch(error => { if (active) setNotice(error.message || "Interface products are temporarily unavailable"); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const professions = useMemo(() => ["All", ...new Set(items.map(x => x.profession).filter(Boolean))], [items]);
+  const visible = useMemo(() => items.filter(item => {
+    const haystack = `${item.title || item.name || ""} ${item.description || ""} ${item.profession || ""} ${item.category || ""}`.toLowerCase();
+    return (!query || haystack.includes(query.toLowerCase())) && (profession === "All" || item.profession === profession);
+  }), [items, query, profession]);
+
+  async function onAction(item, kind) {
+    const id = item.id || item.product_id;
+    if (!id) return;
+    try {
+      if (kind === "view" || kind === "trio") {
+        await fetch(`${API}/signals`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product_id: id, kind, source: "universe" }) });
+        if (kind === "trio") setNotice("Recommendation Trio requested");
+        return;
+      }
+      const endpoint = kind === "super" ? `${API}/products/${id}/super` : kind === "buy" ? `${API}/products/${id}/buy` : kind === "download" ? `${API}/products/${id}/download` : `${API}/products/${id}/collab`;
+      const response = await fetch(endpoint, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "universe" }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || `${kind} failed`);
+      setNotice(kind === "super" ? "Super recorded" : kind === "buy" ? "Purchase completed" : kind === "download" ? "Download ready" : "Collaboration request sent");
+    } catch (error) {
+      setNotice(error.message || "Action unavailable");
+    } finally {
+      setTimeout(() => setNotice(""), 2200);
+    }
+  }
+
+  return <div className="universe-shell"><style>{`*{box-sizing:border-box}html,body{margin:0;background:#eee7dc;color:#29251f;font-family:Inter,system-ui,sans-serif}.universe-shell{min-height:100dvh;background:radial-gradient(circle at 50% -10%,#fff9ef,transparent 38%),linear-gradient(#eee7dc,#dfd2c1)}.top{position:sticky;top:0;z-index:10;padding:12px 20px;background:rgba(238,231,220,.82);backdrop-filter:blur(16px);border-bottom:1px solid #cfc2b2}.nav{max-width:1280px;margin:auto;display:flex;align-items:center;gap:10px}.mark{width:34px;height:34px;border-radius:11px;background:#29251f;color:#fff;display:grid;place-items:center;font-weight:800}.brand{font-weight:800}.main{max-width:1280px;margin:auto;padding:35px 20px 80px}.hero{display:grid;grid-template-columns:1.3fr .7fr;gap:22px;align-items:end}.eyebrow,.meta{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:#766c60}.title{font-size:clamp(48px,7vw,88px);line-height:.9;letter-spacing:-.07em;margin:12px 0 18px}.copy{max-width:720px;color:#675e53;line-height:1.65}.mirror{padding:22px;border:1px solid #cfc2b2;border-radius:22px;background:#ffffff45}.mirror strong{display:block;font-size:18px;margin-bottom:8px}.mirror span{font-size:12px;color:#756b60;line-height:1.6}.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:26px}.search{flex:1;min-width:230px;padding:12px;border:1px solid #cfc2b2;border-radius:12px;background:#ffffff70;outline:0}.filter,.actions button{padding:9px 12px;border:1px solid #cfc2b2;border-radius:999px;background:#ffffff65;color:#4f473e;cursor:pointer}.filter.active,.actions button.on{background:#29251f;color:#fff}.actions button:disabled{opacity:.7;cursor:default}.universe{margin-top:35px}.head{display:flex;justify-content:space-between;margin-bottom:14px}.head h2{margin:0}.head span{font-size:11px;color:#81766a}.volumes{display:grid;gap:18px}.volume{display:grid;grid-template-columns:.8fr 1.2fr;min-height:330px;border:1px solid #cfc2b2;border-radius:26px;overflow:hidden;background:#faf6efaa;box-shadow:0 20px 55px #8e735326}.showreel{position:relative;min-height:330px;background:radial-gradient(circle at 45% 35%,#887a68,#39342d 45%,#211e1a);display:grid;place-items:center;overflow:hidden}.showreel img,.showreel video{position:absolute;width:100%;height:100%;object-fit:cover;opacity:.8}.stage{color:#f8f1e7;text-align:center;display:grid;gap:9px}.stage small{font-size:10px;letter-spacing:.18em;text-transform:uppercase}.stage strong{font-size:30px}.stage span{font-size:9px;letter-spacing:.15em;opacity:.65}.spine{position:absolute;left:14px;top:14px;background:#171512c9;color:#fff;padding:7px;border-radius:8px;font-size:9px;writing-mode:vertical-rl}.progress{position:absolute;left:18px;right:18px;bottom:18px;height:3px;background:#ffffff45}.live .progress{animation:fill 15s linear infinite;background:#fff;transform-origin:left}.info{padding:28px;display:flex;flex-direction:column;justify-content:center}.info h2{font-size:35px;line-height:1;margin:12px 0}.info p{color:#6e655a;line-height:1.6;font-size:13px;max-width:620px}.stats{font-size:11px;color:#81766a;margin:8px 0 20px}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{border-radius:10px}.empty{padding:30px;text-align:center;border:1px dashed #c5b7a5;border-radius:18px;color:#776d61}.notice{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#29251f;color:#fff;padding:11px 15px;border-radius:11px;font-size:12px;z-index:20}@keyframes fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}@media(max-width:850px){.hero{grid-template-columns:1fr}.volume{grid-template-columns:1fr}.showreel{min-height:250px}}@media(max-width:600px){.main{padding:25px 14px}.title{font-size:51px}.info{padding:21px}.info h2{font-size:28px}}`}</style>
 <header className="top"><nav className="nav"><span className="mark">M</span><span className="brand">Merveil Interface</span><span style={{marginLeft:"auto",fontSize:12}}>Same Passport · Same Wallet</span></nav></header>
-<main className="main"><section className="hero"><div><div className="eyebrow">Digital mirror · living universe</div><h1 className="title">Every product becomes a volume.</h1><p className="copy">Walk through the universe. Watch a product breathe for 15 seconds. Super it. Discover its Trio. Own it with the same Passport and Wallet you already carry.</p></div><aside className="mirror"><strong>Not a store.</strong><span>The Interface is the living discovery layer for developer products. No second identity. No second wallet.</span></aside></section><div className="tools"><input className="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search the universe…"/>{professions.map(x=><button className={`filter ${profession===x?"active":""}`} key={x} onClick={()=>setProfession(x)}>{x}</button>)}</div><section className="universe"><div className="head"><h2>Living volumes</h2><span>{loading?"Discovering…":`${visible.length} volumes`}</span></div>{loading?<div className="empty">Discovering the universe…</div>:visible.length?<div className="volumes">{visible.map(x=><Volume key={x.id||x.product_id} item={x} signal={signal}/>)}</div>:<div className="empty">The universe is waiting for the first published developer volume.</div>}</section></main>{notice&&<div className="notice">{notice}</div>}</div>;
+<main className="main"><section className="hero"><div><div className="eyebrow">Digital mirror · living universe</div><h1 className="title">Every product becomes a volume.</h1><p className="copy">Walk through the universe. Watch a product breathe for 15 seconds. Super it. Discover its Trio. Own it with the same Passport and Wallet you already carry.</p></div><aside className="mirror"><strong>Not a store.</strong><span>The Interface is the living discovery layer for developer products. No second identity. No second wallet.</span></aside></section><div className="tools"><input className="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search the universe…"/>{professions.map(x=><button className={`filter ${profession===x?"active":""}`} key={x} onClick={()=>setProfession(x)}>{x}</button>)}</div><section className="universe"><div className="head"><h2>Living volumes</h2><span>{loading?"Discovering…":`${visible.length} volumes`}</span></div>{loading?<div className="empty">Discovering the universe…</div>:visible.length?<div className="volumes">{visible.map(x=><Volume key={x.id||x.product_id} item={x} onAction={onAction}/>)}</div>:<div className="empty">The universe is waiting for the first published developer volume.</div>}</section></main>{notice&&<div className="notice">{notice}</div>}</div>;
 }
