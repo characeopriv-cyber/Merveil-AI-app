@@ -34,6 +34,18 @@ const state = {
   cursor: { line: 1, col: 1 },
 };
 
+
+// Shared with Beginner studio (studio-v5)
+try {
+  const shared = JSON.parse(localStorage.getItem('merveil_dev_projects_v5') || '[]');
+  const activeId = localStorage.getItem('merveil_dev_active_v5');
+  const active = shared.find((x) => x.id === activeId) || shared[0];
+  if (active && active.files) {
+    state.files = { ...active.files };
+    state.repo = active.name || state.repo;
+  }
+} catch (e) { /* keep defaults */ }
+
 const root = document.getElementById('pro-root');
 
 function esc(s) {
