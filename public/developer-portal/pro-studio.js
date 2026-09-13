@@ -4,6 +4,7 @@
  */
 import { API_BASE } from './config.js';
 import { SEED_PROJECTS, blankProject } from './seeds.js';
+import { buildBrowserPreview, toDenoProject, runWasmSandbox, collectProjectErrors } from './runtime.js';
 
 const LS_KEY = 'merveil_dev_projects_v5';
 const LS_ACTIVE = 'merveil_dev_active_v5';
@@ -16,13 +17,19 @@ const state = {
   openTabs: [],
   activePath: null,
   dirty: new Set(),
-  termLines: ['Pro Studio ready.', 'Templates, editor, Ship, Debug, Profile.'],
+  termLines: ['Pro Studio ready.', 'Templates · Workflows · Agents · Console restored as portal tabs.'],
   modal: null,
   modalName: '',
   tokens: { github: '', vercel: '', githubLogin: '', vercelUser: '' },
   shipping: false,
   debugOpen: false,
   filter: '',
+  runtime: 'browser', // browser | deno | wasm
+  previewHtml: '',
+  errors: [],
+  lastError: null,
+  wasmResult: null,
+  showPreview: false,
 };
 
 const app = document.getElementById('app');
@@ -253,19 +260,34 @@ async function deployVercel() {
 
 function runDebug() {
   const p = activeProject();
+  const fileErrors = p ? collectProjectErrors(p.files) : [];
   const report = {
     project: p?.name || null,
     files: p ? pathsOf(p).length : 0,
     activePath: state.activePath,
     dirty: [...state.dirty],
     hasPackage: !!(p?.files?.['package.json']),
+    hasDeno: !!(p?.files?.['deno.json'] || p?.files?.['server.ts']),
+    hasWasm: p ? Object.keys(p.files).some((k) => k.endsWith('.wasm')) : false,
     hasIndex: !!(p?.files?.['index.html']),
     hasApp: !!(p?.files?.['src/App.tsx'] || p?.files?.['src/App.jsx']),
     github: !!state.tokens.github,
     vercel: !!state.tokens.vercel,
+    runtime: state.runtime,
+    errors: fileErrors,
     storage: (() => { try { localStorage.setItem('_d','1'); localStorage.removeItem('_d'); return 'ok'; } catch { return 'fail'; } })(),
+    portal: {
+      workflows: '/developer/workflows',
+      agents: '/developer/agents',
+      console: '/developer/classic',
+      beginner: '/developer',
+    },
   };
   state.debugOpen = true;
+  state.errors = fileErrors;
+  if (fileErrors.some((e) => e.level === 'error')) {
+    state.lastError = fileErrors.find((e) => e.level === 'error').msg;
+  }
   log('Debug report generated', 'ok');
   state._debug = report;
   render();
@@ -275,14 +297,116 @@ function render() {
   if (!app) return;
   app.innerHTML = '';
   app.appendChild(renderTop());
+  app.appendChild(renderPortalTabs());
+  if (state.lastError) app.appendChild(renderErrorStrip());
   if (state.view === 'dash') app.appendChild(renderDash());
   else app.appendChild(renderWorkspace());
   const st = document.createElement('div');
   st.className = 'status';
   const p = activeProject();
-  st.innerHTML = `<span>Pro Studio</span><span>${p ? pathsOf(p).length + ' files' : state.projects.length + ' projects'}</span><span class="r"><a href="/developer" style="color:inherit">← Beginner</a> · Ctrl+S save</span>`;
+  st.innerHTML = `<span>Pro Studio</span><span>${p ? pathsOf(p).length + ' files' : state.projects.length + ' projects'}</span><span class="r"><a href="/developer" style="color:inherit">Beginner mode</a> · Ctrl+S · Runtime: ${state.runtime}</span>`;
   app.appendChild(st);
+  app.appendChild(renderFab());
+  if (state.debugOpen) app.appendChild(renderDebugDrawer());
   if (state.modal) app.appendChild(renderModal());
+}
+
+function renderPortalTabs() {
+  const el = document.createElement('nav');
+  el.className = 'portal-tabs';
+  el.innerHTML = `
+    <button type="button" class="on">Build</button>
+    <a href="/developer/workflows">Workflows</a>
+    <a href="/developer/agents">Agents</a>
+    <a href="/developer/classic">Console</a>
+    <a href="/developer">Beginner</a>
+  `;
+  return el;
+}
+
+function renderErrorStrip() {
+  const el = document.createElement('div');
+  el.className = 'error-strip';
+  el.innerHTML = `<strong>Error</strong><span>${esc(state.lastError)}</span><span class="spacer"></span>
+    <button type="button" data-act="dismiss">Dismiss</button>
+    <button type="button" data-act="debug">Debug</button>`;
+  el.querySelector('[data-act="dismiss"]').addEventListener('click', () => { state.lastError = null; render(); });
+  el.querySelector('[data-act="debug"]').addEventListener('click', () => { state.debugOpen = true; runDebug(); });
+  return el;
+}
+
+function renderFab() {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'fab-debug' + (state.debugOpen ? ' open' : '');
+  b.title = 'Debug';
+  b.textContent = '🐛';
+  b.addEventListener('click', () => {
+    if (state.debugOpen) { state.debugOpen = false; render(); }
+    else runDebug();
+  });
+  return b;
+}
+
+function renderDebugDrawer() {
+  const p = activeProject();
+  const errs = p ? collectProjectErrors(p.files) : [];
+  state.errors = errs;
+  const el = document.createElement('div');
+  el.className = 'debug-drawer';
+  const errHtml = errs.length
+    ? errs.map((e) => `<div class="err-item"><strong>${esc(e.level)}</strong>${esc(e.msg)}</div>`).join('')
+    : '<div class="ok-item">No structural errors detected in project files.</div>';
+  el.innerHTML = `
+    <header>
+      <span>Debug</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn sm" data-act="recheck">Recheck</button>
+      <button type="button" class="btn sm ghost" data-act="close">✕</button>
+    </header>
+    <div class="body">
+      <div class="err-list">${errHtml}</div>
+      <pre>${esc(JSON.stringify(state._debug || {}, null, 2))}</pre>
+      ${state.wasmResult ? '<pre style="margin-top:8px">' + esc(JSON.stringify(state.wasmResult, null, 2)) + '</pre>' : ''}
+    </div>`;
+  el.querySelector('[data-act="close"]').addEventListener('click', () => { state.debugOpen = false; render(); });
+  el.querySelector('[data-act="recheck"]').addEventListener('click', () => runDebug());
+  return el;
+}
+
+async function runRuntime(kind) {
+  const p = activeProject();
+  if (!p) { state.lastError = 'Open a project first'; render(); return; }
+  state.runtime = kind;
+  try {
+    if (kind === 'browser') {
+      state.previewHtml = buildBrowserPreview(p.files);
+      state.showPreview = true;
+      log('Browser preview ready', 'ok');
+    } else if (kind === 'deno') {
+      const denoFiles = toDenoProject(p.files, p.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-'));
+      p.files = { ...p.files, ...denoFiles };
+      p.updatedAt = Date.now();
+      save();
+      state.openTabs = [...new Set([...state.openTabs, 'server.ts', 'deno.json'])];
+      state.activePath = 'server.ts';
+      log('Deno server.ts + deno.json added — run: deno task start', 'ok');
+    } else if (kind === 'wasm') {
+      const result = await runWasmSandbox(p.files, { a: 7, b: 11, text: p.name });
+      state.wasmResult = result;
+      state.debugOpen = true;
+      if (!result.ok) {
+        state.lastError = (result.errors || []).join('; ') || 'WASM failed';
+        log('WASM error', 'err');
+      } else {
+        log('WASM sandbox: ' + (result.logs || []).join(' | '), 'ok');
+      }
+    }
+  } catch (e) {
+    state.lastError = e.message || String(e);
+    log(state.lastError, 'err');
+  }
+  render();
 }
 
 function renderTop() {
@@ -421,17 +545,33 @@ function renderWorkspace() {
   });
   main.appendChild(tabs);
 
-  if (state.debugOpen && state._debug) {
-    const dbg = document.createElement('div');
-    dbg.className = 'debug-panel';
-    dbg.innerHTML = `<h4>Debug</h4><pre>${esc(JSON.stringify(state._debug, null, 2))}</pre>
-      <button type="button" class="btn sm" style="margin-top:8px" data-act="closedbg">Close</button>`;
-    dbg.querySelector('[data-act="closedbg"]').addEventListener('click', () => { state.debugOpen = false; render(); });
-    main.appendChild(dbg);
-  }
+  const runtimeBar = document.createElement('div');
+  runtimeBar.className = 'runtime-bar';
+  runtimeBar.innerHTML = `
+    <span class="lbl">Runtime</span>
+    <button type="button" data-rt="browser" class="${state.runtime === 'browser' ? 'on' : ''}">Browser</button>
+    <button type="button" data-rt="deno" class="${state.runtime === 'deno' ? 'on' : ''}">Deno</button>
+    <button type="button" data-rt="wasm" class="${state.runtime === 'wasm' ? 'on' : ''}">WebAssembly</button>
+    <button type="button" data-act="preview">${state.showPreview ? 'Hide preview' : 'Preview'}</button>
+  `;
+  runtimeBar.querySelectorAll('[data-rt]').forEach((b) => {
+    b.addEventListener('click', () => runRuntime(b.getAttribute('data-rt')));
+  });
+  runtimeBar.querySelector('[data-act="preview"]')?.addEventListener('click', () => {
+    if (!state.showPreview) runRuntime('browser');
+    else { state.showPreview = false; render(); }
+  });
+  main.appendChild(runtimeBar);
 
   const wrap = document.createElement('div');
   wrap.className = 'editor-wrap';
+  if (state.showPreview) {
+    wrap.style.display = 'grid';
+    wrap.style.gridTemplateColumns = '1fr 1fr';
+    wrap.style.minHeight = '0';
+    wrap.style.flex = '1';
+  }
+
   const ta = document.createElement('textarea');
   ta.className = 'editor';
   ta.spellcheck = false;
@@ -453,6 +593,16 @@ function renderWorkspace() {
     }
   });
   wrap.appendChild(ta);
+  if (state.showPreview) {
+    const pane = document.createElement('div');
+    pane.className = 'preview-pane';
+    const iframe = document.createElement('iframe');
+    iframe.sandbox = 'allow-scripts allow-same-origin';
+    iframe.title = 'Preview';
+    requestAnimationFrame(() => { iframe.srcdoc = state.previewHtml || buildBrowserPreview(p?.files || {}); });
+    pane.appendChild(iframe);
+    wrap.appendChild(pane);
+  }
   main.appendChild(wrap);
 
   const term = document.createElement('div');
