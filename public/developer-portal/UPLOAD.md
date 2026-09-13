@@ -1,33 +1,23 @@
-# Merveil Developer Platform — GitHub upload
+# Merveil Developer V8.1 — Tools pack
 
-## 1. Supabase SQL (run in order)
-1. `sql/supabase-developer-platform-LIVE.sql`  ← required (projects, builds, RPC, extends developer_accounts)
-2. `sql/supabase-developer-platform-v3-catalog.sql` ← optional sectors/templates
-3. `sql/supabase-developer-platform-v2-panels.sql` ← optional team/webhooks/billing cols
+## Beginner features
+- Circular prompt + categories (Websites, Real Estate/Interior, SaaS, Mobile, Games, Portfolio, Ecommerce, Photo/Video)
+- Deterministic rule engine (Dubai interior never ecommerce)
+- Digital Passport (same as Citizen) + project details
+- **My Projects** history (reopen / clear)
+- **Tools panel**: color themes, SEO title/description/OG, regenerate, copy HTML, share meta, open Pro, a11y check
+- Result modes: **Preview · Edit · Code**
+- Export: HTML / ZIP / GoDaddy / Namecheap / Pro Studio (theme+SEO applied)
+- Merveil cyan M logo
 
-## 2. Frontend files
-Copy entire `public/developer-portal/` into your repo at the same path.
+## Pro Studio (unchanged path)
+- IDE, templates, GitHub/Vercel ship, Debug FAB, Deno/WASM runtime
 
-Default entry: `/developer` → `studio.html` (Human Studio v3)
-Legacy: `/developer/classic` → `console.html`
+## Files (no SQL in this pack)
+- beginner.html / beginner.css / beginner.js
+- generate-engine.js
+- config.js, runtime.js, seeds.js
+- pro-studio.html / .css / .js
+- vercel.json
 
-`config.js` is already wired to live Supabase project `dixfybqlepticyudikuz`.
-
-## 3. vercel.json
-Merge routes from `vercel-developer-routes.json` or replace with included full `vercel.json`.
-
-## 4. Orchestrator (optional AI builds)
-Deploy `orchestrator/` (FastAPI) with env:
-- SUPABASE_URL
-- SUPABASE_SERVICE_ROLE_KEY
-- ANTHROPIC_API_KEY
-- VERCEL_TOKEN (optional)
-
-Point `AI_BASE` in config.js to that service.
-
-## 5. Edge functions (optional OAuth)
-`supabase/functions/integrations-connect` + `integrations-callback`
-
-## Auth note
-Studio uses **Citizen profiles** (`profiles.junction_id`) as passport identity.
-It auto-creates `developer_accounts` on first visit (same shape as `/api/developer-keys`).
+Copy into public/developer-portal/ on the app host.
