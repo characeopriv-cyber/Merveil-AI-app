@@ -92,18 +92,37 @@ function authHeader() {
 }
 
 async function loadPassport() {
+  // Soft gate only — never hard-redirect to citizen app (that caused the flash bug).
   try {
     const res = await fetch(`${API_BASE || ''}/api/studio?action=access`, {
       credentials: 'include',
       headers: { ...authHeader() },
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 || res.status === 403) {
-      window.location.href = data.redirect || '/';
+    if (res.ok && (data.citizenId || data.citizen_id)) {
+      state.passport = {
+        citizen_id: data.citizenId || data.citizen_id,
+        completionPct: data.completionPct ?? data.completion_pct ?? null,
+        display_name: data.displayName || data.display_name || null,
+      };
       return;
     }
-    if (!res.ok) throw new Error(data.error || `Access check failed (${res.status})`);
-    state.passport = { citizen_id: data.citizenId, completionPct: data.completionPct };
+    // 401/403/5xx → stay on Developer as visitor (no location.href = '/')
+    try {
+      const raw = localStorage.getItem('junction_user') || localStorage.getItem('merveil_user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u?.citizen_id || u?.id) {
+          state.passport = {
+            citizen_id: u.citizen_id || u.id,
+            display_name: u.display_name || u.name || null,
+            local: true,
+          };
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+    state.passport = { citizen_id: 'visitor', display_name: 'Visitor', offline: true };
   } catch {
     state.passport = { citizen_id: 'visitor', display_name: 'Visitor', offline: true };
   }
@@ -734,7 +753,15 @@ window.addEventListener('popstate', () => {
   render();
 });
 
-Promise.all([loadPassport(), loadIntegrations()]).then(() => {
-  if (location.search.includes('build=1')) state.screen = 'build';
-  render();
-});
+// Always paint Home — never leave a blank dotted page.
+(async () => {
+  try {
+    await Promise.all([
+      loadPassport().catch(() => {}),
+      loadIntegrations().catch(() => {}),
+    ]);
+  } finally {
+    if (location.search.includes('build=1')) state.screen = 'build';
+    render();
+  }
+})();
