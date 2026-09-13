@@ -66,19 +66,19 @@
     },
     {
       "source": "/developer",
-      "destination": "/developer-portal/studio-v5.html"
+      "destination": "/developer-portal/beginner.html"
     },
     {
       "source": "/developer/",
-      "destination": "/developer-portal/studio-v5.html"
+      "destination": "/developer-portal/beginner.html"
     },
     {
       "source": "/developer/pro",
-      "destination": "/developer-portal/pro.html"
+      "destination": "/developer-portal/pro-studio.html"
     },
     {
       "source": "/developer/pro/",
-      "destination": "/developer-portal/pro.html"
+      "destination": "/developer-portal/pro-studio.html"
     },
     {
       "source": "/developer/classic",
@@ -90,11 +90,11 @@
     },
     {
       "source": "/developer/studio",
-      "destination": "/developer-portal/studio-v5.html"
+      "destination": "/developer-portal/beginner.html"
     },
     {
       "source": "/developer/studio/",
-      "destination": "/developer-portal/studio-v5.html"
+      "destination": "/developer-portal/beginner.html"
     },
     {
       "source": "/developer/onboarding",
@@ -140,7 +140,7 @@
           "value": "developer.junction.technology"
         }
       ],
-      "destination": "/developer-portal/studio-v5.html"
+      "destination": "/developer-portal/beginner.html"
     },
     {
       "source": "/onboarding",
@@ -180,7 +180,7 @@
           "value": "developers.junction.technology"
         }
       ],
-      "destination": "/developer-portal/studio-v5.html"
+      "destination": "/developer-portal/beginner.html"
     },
     {
       "source": "/onboarding",
@@ -220,7 +220,7 @@
           "value": "developers.merveil.ai"
         }
       ],
-      "destination": "/developer-portal/studio-v5.html"
+      "destination": "/developer-portal/beginner.html"
     },
     {
       "source": "/onboarding",
