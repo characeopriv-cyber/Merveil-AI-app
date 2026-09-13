@@ -7,26 +7,70 @@
 import { API_BASE } from './config.js';
 
 const PASSPORT_KEY = 'merveil_digital_passport_v1';
-const PROJECTS_KEY = 'merveil_beginner_projects_v7';
+const PROJECTS_KEY = 'merveil_beginner_projects_v8';
+
+/** Same verified citizen identity — hydrate from junction_user / merveil session when present. */
+function hydrateFromCitizenSession() {
+  try {
+    const keys = ['junction_user', 'merveil_user', 'merveil_session_user', 'merveil:session-user'];
+    for (const k of keys) {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const u = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!u || typeof u !== 'object') continue;
+      return {
+        full_name: u.name || u.full_name || u.display_name || '',
+        company_name: u.company_name || u.company || '',
+        ceo_name: u.ceo_name || u.name || '',
+        email: u.email || '',
+        website: u.website || u.web || '',
+        socials: u.socials || '',
+        team_contacts: u.team_contacts || '',
+        location: u.location || u.city || 'Dubai, UAE',
+        citizen_id: u.id || u.user_id || u.jwtSub || '',
+        passport_tier: u.passport_tier || u.passportTier || 'core',
+        verified: !!(u.kyc_verified || u.verified || u.passport_tier),
+      };
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 export function loadPassport() {
+  const base = {
+    full_name: '',
+    company_name: '',
+    ceo_name: '',
+    email: '',
+    website: '',
+    socials: '',
+    team_contacts: '',
+    location: 'Dubai, UAE',
+    // Project details (same Digital Passport — not a second identity)
+    project_name: '',
+    project_type: '',
+    project_description: '',
+    project_status: 'draft',
+    last_project_id: '',
+    citizen_id: '',
+    passport_tier: 'core',
+    verified: false,
+  };
   try {
+    const stored = JSON.parse(localStorage.getItem(PASSPORT_KEY) || '{}');
+    const citizen = hydrateFromCitizenSession() || {};
+    // Citizen session wins for identity fields if local passport empty
     return {
-      full_name: '',
-      company_name: '',
-      ceo_name: '',
-      email: '',
-      website: '',
-      socials: '',
-      team_contacts: '',
-      location: 'Dubai, UAE',
-      ...JSON.parse(localStorage.getItem(PASSPORT_KEY) || '{}'),
+      ...base,
+      ...citizen,
+      ...stored,
+      // keep verified / tier from citizen when present
+      verified: stored.verified || citizen.verified || false,
+      passport_tier: stored.passport_tier || citizen.passport_tier || 'core',
+      citizen_id: stored.citizen_id || citizen.citizen_id || '',
     };
   } catch {
-    return {
-      full_name: '', company_name: '', ceo_name: '', email: '',
-      website: '', socials: '', team_contacts: '', location: 'Dubai, UAE',
-    };
+    return { ...base, ...(hydrateFromCitizenSession() || {}) };
   }
 }
 
@@ -110,40 +154,177 @@ function passportBlock(p) {
 }
 
 /**
+ * Deterministic Rule Engine (no AI hallucination).
+ * Specific industry keywords always win over generic "shop/product".
+ * Fixes: "Interior design website for Dubai real estate" → interior + Dubai assets,
+ * never Studio Bag / ceramic / generic ecommerce.
+ */
+const RULES = [
+  {
+    id: 'dubai-interior-re',
+    keywords: ['dubai', 'real estate', 'interior', 'luxury interior', 'design studio', 'architecture', 'villa', 'penthouse', 'marina', 'burj'],
+    requireAny: ['interior', 'design', 'architecture', 'real estate', 'villa', 'penthouse', 'luxury'],
+    kind: 'interior',
+    titleHint: 'Luxury Dubai Interiors',
+    assets: {
+      heroImage: UNSPLASH.dubai,
+      gallery: [UNSPLASH.interior, UNSPLASH.interior2, 'https://images.unsplash.com/photo-1600607687920-4e2a09c1590b?w=1200&q=80'],
+    },
+  },
+  {
+    id: 'interior-general',
+    keywords: ['interior', 'design studio', 'architecture', 'home design', 'fit-out', 'fitout'],
+    kind: 'interior',
+    titleHint: 'Interior Design Studio',
+    assets: {
+      heroImage: UNSPLASH.interior,
+      gallery: [UNSPLASH.interior2, UNSPLASH.interior],
+    },
+  },
+  {
+    id: 'restaurant',
+    keywords: ['restaurant', 'cafe', 'dining', 'menu', 'bistro', 'kitchen'],
+    kind: 'restaurant',
+    titleHint: 'Dining Experience',
+    assets: { heroImage: UNSPLASH.restaurant, gallery: [UNSPLASH.food] },
+  },
+  {
+    id: 'portfolio',
+    keywords: ['portfolio', 'creator', 'photographer', 'designer showcase', 'personal brand'],
+    kind: 'portfolio',
+    titleHint: 'Portfolio',
+    assets: { heroImage: UNSPLASH.portfolio },
+  },
+  {
+    id: 'game',
+    keywords: ['game', '3d', 'webgl', 'shooter', 'playable', 'arcade'],
+    kind: 'game',
+    titleHint: 'Play',
+    assets: { heroImage: UNSPLASH.game },
+  },
+  {
+    id: 'mobile',
+    keywords: ['mobile app', 'ios', 'android', 'fitness tracker', 'workout app'],
+    kind: 'mobile',
+    titleHint: 'App',
+    assets: { heroImage: UNSPLASH.mobile },
+  },
+  {
+    id: 'ecommerce',
+    keywords: ['ecommerce', 'e-commerce', 'online shop', 'storefront', 'shopify style', 'product catalog'],
+    // deliberately exclude bare "product" so interior/product design does not match
+    kind: 'ecommerce',
+    titleHint: 'Shop',
+    assets: { heroImage: UNSPLASH.ecommerce, gallery: [UNSPLASH.product, UNSPLASH.fashion] },
+  },
+  {
+    id: 'saas',
+    keywords: ['saas', 'dashboard', 'product platform', 'b2b', 'subscription', 'crm', 'analytics tool'],
+    kind: 'website',
+    titleHint: 'Product Platform',
+    assets: { heroImage: UNSPLASH.office, gallery: [UNSPLASH.team] },
+  },
+  {
+    id: 'real-estate-listings',
+    keywords: ['property listing', 'listings', 'broker', 'off-plan', 'apartment for sale', 'villa for sale'],
+    kind: 'interior',
+    titleHint: 'Property Listings',
+    assets: {
+      heroImage: UNSPLASH.dubai,
+      gallery: [UNSPLASH.interior, UNSPLASH.interior2, UNSPLASH.dubai],
+    },
+  },
+  {
+    id: 'website',
+    keywords: ['website', 'landing', 'brand site', 'company site'],
+    kind: 'website',
+    titleHint: 'Studio',
+    assets: { heroImage: UNSPLASH.office, gallery: [UNSPLASH.team] },
+  },
+];
+
+function matchRule(prompt, type) {
+  const lower = (prompt || '').toLowerCase();
+  const typeMap = {
+    website: 'website', websites: 'website',
+    mobile: 'mobile', ecommerce: 'ecommerce',
+    portfolio: 'portfolio', game: 'game',
+    photo_video: 'website',
+    interior: 'interior', saas: 'website',
+  };
+  const preferred = typeMap[type] || null;
+
+  // Score rules by keyword hits (specific first in array)
+  let best = null;
+  let bestScore = 0;
+  for (const rule of RULES) {
+    let score = 0;
+    for (const kw of rule.keywords) {
+      if (lower.includes(kw)) score += kw.split(' ').length; // multi-word stronger
+    }
+    if (rule.requireAny) {
+      const hasReq = rule.requireAny.some((k) => lower.includes(k));
+      if (!hasReq && score > 0) score = Math.max(0, score - 2);
+    }
+    // Preferred category only boosts rules that already matched keywords
+    if (preferred && rule.kind === preferred && score > 0) score += 1.5;
+    if (score > bestScore) {
+      bestScore = score;
+      best = rule;
+    }
+  }
+  if (best && bestScore > 0) return best;
+
+  // Fallback by explicit category only
+  if (preferred) {
+    const byKind = RULES.find((r) => r.kind === preferred);
+    if (byKind) return byKind;
+  }
+  return RULES.find((r) => r.id === 'website');
+}
+
+/**
  * Generate complete HTML for beginner projects.
- * Always returns a full document string.
+ * Deterministic: rule engine → exact template + assets. No generic bag/ceramic.
  */
 export function generateSite(prompt, type, passport, boostMeta = {}) {
   const p = passportBlock(passport || {});
-  const lower = (prompt || '').toLowerCase();
-  let kind = type || 'website';
-  if (kind === 'websites') kind = 'website';
-  if (/menu|restaurant|cafe|dining/.test(lower)) kind = 'restaurant';
-  else if (/shop|store|e-?commerce|product/.test(lower) || type === 'ecommerce') kind = 'ecommerce';
-  else if (/portfolio|creator|designer|photographer/.test(lower) || type === 'portfolio') kind = 'portfolio';
-  else if (/interior|design studio|architecture/.test(lower)) kind = 'interior';
-  else if (/game|3d|webgl/.test(lower) || type === 'game') kind = 'game';
-  else if (/mobile|app/.test(lower) || type === 'mobile') kind = 'mobile';
-
-  const title = deriveTitle(prompt, kind, p.company);
+  const rule = matchRule(prompt, type);
+  const kind = rule.kind;
+  const title = deriveTitle(prompt, kind, p.company, rule.titleHint);
   const generators = { restaurant, ecommerce, portfolio, interior, game, mobile, website };
   const fn = generators[kind] || website;
-  const html = fn(title, prompt, p, boostMeta);
-  return { title, kind, html, deployment: deployOptions(kind) };
+  // Pass matched assets into generators that support them
+  const html = fn(title, prompt, p, { ...(boostMeta || {}), assets: rule.assets || {} });
+  return {
+    title,
+    kind,
+    ruleId: rule.id,
+    assets: rule.assets || {},
+    html,
+    deployment: deployOptions(kind),
+  };
 }
 
-function deriveTitle(prompt, kind, company) {
-  const cleaned = (prompt || '').replace(/^(a|an|the|build|make|create)\s+/i, '').trim();
-  if (cleaned.length > 3 && cleaned.length < 50) return cleaned.split(/[.!?]/)[0].slice(0, 48);
-  return company || ({
-    restaurant: 'Dining Experience',
-    ecommerce: 'Shop',
-    portfolio: 'Portfolio',
-    interior: 'Design Studio',
-    game: 'Play',
-    mobile: 'App',
-    website: 'Studio',
-  }[kind] || 'Project');
+function deriveTitle(prompt, kind, company, hint) {
+  const cleaned = (prompt || '').replace(/^(a|an|the|build|make|create|an?)\s+/i, '').trim();
+  if (/dubai/i.test(prompt || '') && /interior|real estate|design/i.test(prompt || '')) {
+    return company && company !== 'Your Company'
+      ? `${company} — Luxury Dubai Interiors`
+      : (hint || 'Luxury Dubai Interiors');
+  }
+  if (cleaned.length > 3 && cleaned.length < 56) return cleaned.split(/[.!?]/)[0].slice(0, 52);
+  return company && company !== 'Your Company'
+    ? company
+    : (hint || ({
+      restaurant: 'Dining Experience',
+      ecommerce: 'Shop',
+      portfolio: 'Portfolio',
+      interior: 'Design Studio',
+      game: 'Play',
+      mobile: 'App',
+      website: 'Studio',
+    }[kind] || 'Project'));
 }
 
 function deployOptions(kind) {
@@ -389,25 +570,56 @@ function portfolio(title, prompt, p) {
 ` + baseFoot(p);
 }
 
-function interior(title, prompt, p) {
+function interior(title, prompt, p, meta = {}) {
+  const assets = meta.assets || {};
+  const hero = assets.heroImage || UNSPLASH.dubai;
+  const g = assets.gallery || [UNSPLASH.interior, UNSPLASH.interior2, UNSPLASH.dubai];
+  const isDubai = /dubai|uae|marina|burj|emirates/i.test(prompt || '') || /dubai/i.test(title || '');
+  const lead = isDubai
+    ? (prompt.slice(0, 200) || 'Bespoke interior architecture for residences, villas and hospitality across Dubai and the UAE.')
+    : (prompt.slice(0, 200) || 'Interior architecture for residences and hospitality.');
   return baseHead(title) + `
 <header class="nav"><div class="wrap inner">
   <div class="logo"><i></i><span data-edit>${esc(p.company || title)}</span></div>
-  <nav class="nav-links"><a href="#projects">Projects</a><a href="#contact">Contact</a></nav>
+  <nav class="nav-links"><a href="#projects">Projects</a><a href="#services">Services</a><a href="#contact">Contact</a></nav>
+  <a class="btn" href="#contact">Book consultation</a>
 </div></header>
 <main>
   <section class="hero wrap">
     <h1 data-edit>${esc(title)}</h1>
-    <p " data-edit>${esc(prompt.slice(0, 180) || 'Interior architecture for residences and hospitality across Dubai.')}</p>
-    <img data-img src="${UNSPLASH.interior}" alt="" style="margin-top:28px;border-radius:20px;height:380px;width:100%;object-fit:cover"/>
+    <p data-edit>${esc(lead)}</p>
+    <div class="hero-cta">
+      <a class="btn" href="#projects">View projects</a>
+      <a class="btn ghost" href="#contact">Talk to ${esc(p.ceo)}</a>
+    </div>
+    <img data-img src="${hero}" alt="Dubai interiors" style="margin-top:28px;border-radius:20px;height:420px;width:100%;object-fit:cover"/>
   </section>
   <section class="section" id="projects"><div class="wrap">
-    <h2 " data-edit>Projects</h2>
+    <h2 data-edit>Selected projects</h2>
+    <p class="lead" data-edit>${isDubai ? 'Residences and hospitality interiors across Dubai Marina, Downtown and Palm.' : 'Recent residential and hospitality work.'}</p>
     <div class="grid grid-3">
-      <article class="card"><img data-img src="${UNSPLASH.interior2}" style="height:200px;width:100%;object-fit:cover"/><div class="body"><h3 " data-edit>Marina residence</h3><p " data-edit>Full apartment redesign</p></div></article>
-      <article class="card"><img data-img src="${UNSPLASH.interior}" style="height:200px;width:100%;object-fit:cover"/><div class="body"><h3 " data-edit>Boutique hotel</h3><p " data-edit>Lobby + suites</p></div></article>
-      <article class="card"><img data-img src="${UNSPLASH.dubai}" style="height:200px;width:100%;object-fit:cover"/><div class="body"><h3 " data-edit>Office loft</h3><p " data-edit>Workspace for ${esc(p.company)}</p></div></article>
+      <article class="card"><img data-img src="${g[0] || UNSPLASH.interior}" style="height:200px;width:100%;object-fit:cover"/><div class="body"><h3 data-edit>Marina residence</h3><p data-edit>Full apartment redesign · Dubai Marina</p></div></article>
+      <article class="card"><img data-img src="${g[1] || UNSPLASH.interior2}" style="height:200px;width:100%;object-fit:cover"/><div class="body"><h3 data-edit>Boutique hotel</h3><p data-edit>Lobby + suites · Downtown</p></div></article>
+      <article class="card"><img data-img src="${g[2] || UNSPLASH.dubai}" style="height:200px;width:100%;object-fit:cover"/><div class="body"><h3 data-edit>Palm villa</h3><p data-edit>Indoor–outdoor living for ${esc(p.company)}</p></div></article>
     </div>
+  </div></section>
+  <section class="section" id="services"><div class="wrap">
+    <h2 data-edit>Services</h2>
+    <div class="grid grid-3">
+      <article class="card"><div class="body"><h3 data-edit>Concept &amp; spatial design</h3><p data-edit>Layouts, material language, lighting.</p></div></article>
+      <article class="card"><div class="body"><h3 data-edit>Fit-out management</h3><p data-edit>Contractor coordination across the UAE.</p></div></article>
+      <article class="card"><div class="body"><h3 data-edit>FF&amp;E styling</h3><p data-edit>Furniture, art and finishing packages.</p></div></article>
+    </div>
+  </div></section>
+  <section class="section" id="contact"><div class="wrap">
+    <h2 data-edit>Contact</h2>
+    <p class="lead" data-edit>${esc(p.loc)} · <a href="mailto:${esc(p.email)}">${esc(p.email)}</a> · ${esc(p.web)}</p>
+    <form onsubmit="event.preventDefault();alert('Message sent to ${esc(p.email)}');" style="max-width:420px;display:grid;gap:10px">
+      <input required placeholder="Your name" style="padding:12px;border:1px solid var(--line);border-radius:10px"/>
+      <input type="email" required placeholder="Email" style="padding:12px;border:1px solid var(--line);border-radius:10px"/>
+      <textarea required rows="4" placeholder="Project details (villa, apartment, commercial…)" style="padding:12px;border:1px solid var(--line);border-radius:10px"></textarea>
+      <button class="btn" type="submit">Request consultation</button>
+    </form>
   </div></section>
 </main>
 ` + baseFoot(p);
@@ -520,7 +732,8 @@ export async function generateProject({ prompt, type, passport, boost = true, on
     project_type: result.kind,
     prompt,
     generated_code: result.html,
-    assets: [],
+    assets: result.assets || [],
+    rule_id: result.ruleId || null,
     passport_snapshot: passport,
     deployment_options: result.deployment,
     status: 'completed',
@@ -531,5 +744,17 @@ export async function generateProject({ prompt, type, passport, boost = true, on
   const list = loadProjects();
   list.unshift(project);
   saveProjects(list);
+
+  // Same Digital Passport: write project details back (Citizen-linked identity)
+  try {
+    const pp = { ...(passport || loadPassport()) };
+    pp.project_name = result.title;
+    pp.project_type = result.kind;
+    pp.project_description = (prompt || '').slice(0, 400);
+    pp.project_status = 'completed';
+    pp.last_project_id = project.id;
+    savePassport(pp);
+  } catch { /* ignore */ }
+
   return { project, html: result.html, deployment: result.deployment, boost: boostMeta };
 }

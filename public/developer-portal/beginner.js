@@ -1,19 +1,29 @@
 /**
- * Merveil Beginner V7 — circular prompt, cyan, real HTML generation, visual edit, passport
+ * Merveil Beginner V8 — circular prompt, tools panel, history, code view, deterministic engine
  */
 import { API_BASE } from './config.js';
 import {
-  loadPassport, savePassport, generateProject, loadProjects,
+  loadPassport, savePassport, generateProject, loadProjects, saveProjects,
+  publishToInterface,
 } from './generate-engine.js';
 
 const CATS = [
   { id: 'website', label: 'Websites', desc: 'Landing & brand sites', icon: '◈' },
+  { id: 'interior', label: 'Real Estate / Interior', desc: 'Dubai luxury & fit-out', icon: '⌂' },
+  { id: 'saas', label: 'SaaS / Product', desc: 'Dashboards & tools', icon: '⬡' },
   { id: 'mobile', label: 'Mobile Apps', desc: 'App-style prototypes', icon: '▦' },
   { id: 'game', label: '3D / Games', desc: 'Playable HTML5', icon: '✦' },
-  { id: 'photo_video', label: 'Photo / Video', desc: 'Labs & showreels', icon: '◉' },
   { id: 'portfolio', label: 'Portfolios', desc: 'Creator showcases', icon: '◇' },
   { id: 'ecommerce', label: 'E-commerce', desc: 'Shops & catalogs', icon: '▣' },
+  { id: 'photo_video', label: 'Photo / Video', desc: 'Labs & showreels', icon: '◉' },
 ];
+
+const THEMES = {
+  cyan: { name: 'Merveil Cyan', accent: '#3fe0e8', ink: '#12141a', bg: '#f7f5f1' },
+  sand: { name: 'Desert Sand', accent: '#c4a574', ink: '#1a1612', bg: '#f5f0e8' },
+  midnight: { name: 'Midnight', accent: '#7c5cff', ink: '#e8e6f0', bg: '#0f1118' },
+  emerald: { name: 'Emirates Green', accent: '#10b981', ink: '#0f1a14', bg: '#f0f7f3' },
+};
 
 const state = {
   screen: 'home',
@@ -23,11 +33,13 @@ const state = {
   passport: loadPassport(),
   project: null,
   html: '',
-  mode: 'preview', // preview | edit
-  sheet: null, // export | passport | null
+  mode: 'preview', // preview | edit | code
+  sheet: null, // export | passport | tools | history | null
   genLabel: '',
   toast: '',
   attachment: null,
+  themeId: (typeof localStorage !== 'undefined' && localStorage.getItem('merveil_beg_theme')) || 'cyan',
+  seo: { title: '', description: '', ogImage: '' },
 };
 
 const app = document.getElementById('app');
@@ -149,6 +161,8 @@ function render() {
   else app.appendChild(renderResult());
   if (state.sheet === 'passport') app.appendChild(renderPassport());
   if (state.sheet === 'export') app.appendChild(renderExport());
+  if (state.sheet === 'tools') app.appendChild(renderTools());
+  if (state.sheet === 'history') app.appendChild(renderHistory());
   if (state.toast) {
     const t = document.createElement('div');
     t.className = 'toast';
@@ -157,17 +171,59 @@ function render() {
   }
 }
 
+/** Apply theme CSS variables into generated HTML */
+function applyThemeToHtml(html) {
+  const t = THEMES[state.themeId] || THEMES.cyan;
+  const inject = `:root{--cyan:${t.accent}!important;--bg:${t.bg}!important;--ink:${t.ink}!important}`;
+  if (/:root\s*\{/.test(html)) {
+    return html.replace(/:root\s*\{[^}]*\}/, (m) => m + inject);
+  }
+  return html.replace('</head>', `<style id="merveil-theme">${inject}</style></head>`);
+}
+
+function applySeoToHtml(html) {
+  let out = html;
+  const title = state.seo.title || state.project?.title;
+  const desc = state.seo.description || state.prompt?.slice(0, 160);
+  if (title) {
+    out = out.replace(/<title>[^<]*<\/title>/i, `<title>${esc(title)}</title>`);
+    if (!/<title>/i.test(out)) out = out.replace('</head>', `<title>${esc(title)}</title></head>`);
+  }
+  if (desc) {
+    if (/name=["']description["']/i.test(out)) {
+      out = out.replace(/<meta[^>]*name=["']description["'][^>]*>/i, `<meta name="description" content="${esc(desc)}"/>`);
+    } else {
+      out = out.replace('</head>', `<meta name="description" content="${esc(desc)}"/></head>`);
+    }
+  }
+  if (state.seo.ogImage) {
+    out = out.replace('</head>', `<meta property="og:image" content="${esc(state.seo.ogImage)}"/></head>`);
+  }
+  return out;
+}
+
+function currentHtml() {
+  return applySeoToHtml(applyThemeToHtml(state.html || ''));
+}
+
 function renderNav() {
   const nav = document.createElement('header');
   nav.className = 'nav';
   nav.innerHTML = `
-    <div class="brand"><span class="mark"></span> Merveil</div>
+    <div class="brand">
+      <span class="logo-m" aria-hidden="true">M</span>
+      <span class="brand-text">Merveil <span class="ai">AI</span></span>
+    </div>
     <div class="nav-right">
+      <button type="button" class="nav-link" data-act="history">My Projects</button>
+      <button type="button" class="nav-link" data-act="tools">Tools</button>
       <button type="button" class="nav-link" data-act="passport">Digital Passport</button>
       ${state.screen !== 'home' ? '<button type="button" class="nav-link" data-act="home">New idea</button>' : ''}
       <a class="nav-link pro" href="/developer/pro">Pro mode</a>
     </div>`;
   nav.querySelector('[data-act="passport"]')?.addEventListener('click', () => { state.sheet = 'passport'; render(); });
+  nav.querySelector('[data-act="tools"]')?.addEventListener('click', () => { state.sheet = 'tools'; render(); });
+  nav.querySelector('[data-act="history"]')?.addEventListener('click', () => { state.sheet = 'history'; render(); });
   nav.querySelector('[data-act="home"]')?.addEventListener('click', () => { state.screen = 'home'; state.sheet = null; render(); });
   return nav;
 }
@@ -234,35 +290,57 @@ function renderResult() {
   const el = document.createElement('main');
   el.className = 'result-shell';
   const title = state.project?.title || 'Project';
+  const rule = state.project?.rule_id ? ` · ${state.project.rule_id}` : '';
+  const chromeHint = state.mode === 'edit'
+    ? 'Click any text or image to edit'
+    : state.mode === 'code'
+      ? 'Full HTML source — edits apply on Apply'
+      : 'Live prototype';
   el.innerHTML = `
     <div class="result-bar">
       <h2>${esc(title)}</h2>
-      <span class="chip">${state.project?.boost_score ? 'Boost ' + state.project.boost_score : 'Ready'}</span>
+      <span class="chip">${state.project?.boost_score ? 'Boost ' + state.project.boost_score : 'Ready'}${esc(rule)}</span>
       <div class="mode-tabs">
         <button type="button" class="${state.mode === 'preview' ? 'on' : ''}" data-mode="preview">Preview</button>
-        <button type="button" class="${state.mode === 'edit' ? 'on' : ''}" data-mode="edit">Edit my project</button>
+        <button type="button" class="${state.mode === 'edit' ? 'on' : ''}" data-mode="edit">Edit</button>
+        <button type="button" class="${state.mode === 'code' ? 'on' : ''}" data-mode="code">Code</button>
       </div>
+      <button type="button" class="btn ghost" data-act="tools">Tools</button>
       <button type="button" class="btn ghost" data-act="home">New</button>
       <button type="button" class="btn primary" data-act="export">Export / Deploy</button>
     </div>
     <div class="preview-frame">
       <div class="preview-chrome">
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-        <span style="margin-left:8px;font-size:12px;color:#8b919c">${state.mode === 'edit' ? 'Click any text or image to edit' : 'Live prototype'}</span>
+        <span style="margin-left:8px;font-size:12px;color:#8b919c">${chromeHint}</span>
+        ${state.mode === 'code' ? '<button type="button" class="btn sm" data-act="apply-code" style="margin-left:auto">Apply code</button>' : ''}
       </div>
-      <iframe id="preview" sandbox="allow-scripts allow-same-origin allow-forms" title="Prototype"></iframe>
+      ${state.mode === 'code'
+        ? `<textarea id="code-editor" class="code-editor" spellcheck="false">${esc(currentHtml())}</textarea>`
+        : `<iframe id="preview" sandbox="allow-scripts allow-same-origin allow-forms" title="Prototype"></iframe>`}
     </div>`;
   el.querySelectorAll('[data-mode]').forEach((b) => {
     b.addEventListener('click', () => { state.mode = b.getAttribute('data-mode'); render(); });
   });
   el.querySelector('[data-act="home"]').addEventListener('click', () => { state.screen = 'home'; render(); });
   el.querySelector('[data-act="export"]').addEventListener('click', () => { state.sheet = 'export'; render(); });
+  el.querySelector('[data-act="tools"]')?.addEventListener('click', () => { state.sheet = 'tools'; render(); });
+  el.querySelector('[data-act="apply-code"]')?.addEventListener('click', () => {
+    const ta = el.querySelector('#code-editor');
+    if (ta) {
+      state.html = ta.value;
+      if (state.project) state.project.generated_code = state.html;
+      state.mode = 'preview';
+      toast('Code applied');
+      render();
+    }
+  });
   const iframe = el.querySelector('#preview');
-  requestAnimationFrame(() => {
-    let html = state.html;
-    if (state.mode === 'edit') {
-      // ensure editable
-      html = html.replace('</body>', `<style>[data-edit]{outline:1px dashed #3fe0e8!important;cursor:text}[data-img]{cursor:pointer;outline:1px dashed #3fe0e8}</style>
+  if (iframe) {
+    requestAnimationFrame(() => {
+      let html = currentHtml();
+      if (state.mode === 'edit') {
+        html = html.replace('</body>', `<style>[data-edit]{outline:1px dashed #3fe0e8!important;cursor:text}[data-img]{cursor:pointer;outline:1px dashed #3fe0e8}</style>
 <script>
 document.querySelectorAll('[data-edit]').forEach(el=>{el.contentEditable='true';});
 document.querySelectorAll('[data-img]').forEach(el=>{
@@ -272,21 +350,21 @@ document.querySelectorAll('img:not([data-img])').forEach(el=>{
   el.addEventListener('click',()=>{const u=prompt('Image URL',el.src||'');if(u)el.src=u;});
 });
 <\/script></body>`);
-    }
-    iframe.srcdoc = html;
-    // persist edits when leaving edit mode
-    iframe.addEventListener('load', () => {
-      try {
-        const doc = iframe.contentDocument;
-        if (!doc) return;
-        const obs = new MutationObserver(() => {
-          state.html = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
-          if (state.project) state.project.generated_code = state.html;
-        });
-        obs.observe(doc.body, { subtree: true, characterData: true, childList: true, attributes: true });
-      } catch { /* */ }
+      }
+      iframe.srcdoc = html;
+      iframe.addEventListener('load', () => {
+        try {
+          const doc = iframe.contentDocument;
+          if (!doc) return;
+          const obs = new MutationObserver(() => {
+            state.html = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+            if (state.project) state.project.generated_code = state.html;
+          });
+          obs.observe(doc.body, { subtree: true, characterData: true, childList: true, attributes: true });
+        } catch { /* */ }
+      });
     });
-  });
+  }
   return el;
 }
 
@@ -294,35 +372,253 @@ function renderPassport() {
   const p = state.passport;
   const bg = document.createElement('div');
   bg.className = 'sheet-bg';
+  const verifiedBadge = p.verified
+    ? `<span class="verified-pill">✓ Citizen verified · ${esc(p.passport_tier || 'core')}</span>`
+    : `<span class="verified-pill muted">Same Passport as Citizen app — sign in on Merveil to verify</span>`;
   bg.innerHTML = `
-    <div class="sheet">
+    <div class="sheet sheet-wide">
       <h3>Digital Passport</h3>
-      <p>Injected into every generated project — header, footer, contact.</p>
-      <label>Full name</label><input id="full_name" value="${esc(p.full_name)}"/>
-      <label>Company name</label><input id="company_name" value="${esc(p.company_name)}"/>
-      <label>CEO name</label><input id="ceo_name" value="${esc(p.ceo_name)}"/>
-      <label>Email</label><input id="email" type="email" value="${esc(p.email)}"/>
-      <label>Website</label><input id="website" value="${esc(p.website)}"/>
-      <label>Location</label><input id="location" value="${esc(p.location)}"/>
-      <label>Socials</label><input id="socials" value="${esc(p.socials)}"/>
-      <label>Team contacts</label><textarea id="team_contacts" rows="2">${esc(p.team_contacts)}</textarea>
+      <p>One identity with the Citizen app. Injected into every project (header, footer, contact).</p>
+      ${verifiedBadge}
+      <div class="pass-grid">
+        <div>
+          <h4>Identity</h4>
+          <label>Full name</label><input id="full_name" value="${esc(p.full_name)}"/>
+          <label>Company name</label><input id="company_name" value="${esc(p.company_name)}"/>
+          <label>CEO name</label><input id="ceo_name" value="${esc(p.ceo_name)}"/>
+          <label>Email</label><input id="email" type="email" value="${esc(p.email)}"/>
+          <label>Website</label><input id="website" value="${esc(p.website)}"/>
+          <label>Location</label><input id="location" value="${esc(p.location)}"/>
+          <label>Socials</label><input id="socials" value="${esc(p.socials)}"/>
+          <label>Team contacts</label><textarea id="team_contacts" rows="2">${esc(p.team_contacts)}</textarea>
+        </div>
+        <div>
+          <h4>Project details</h4>
+          <p class="hint">Attached to this Passport for the current build (not a second account).</p>
+          <label>Project name</label><input id="project_name" value="${esc(p.project_name)}"/>
+          <label>Project type</label>
+          <select id="project_type">
+            ${['', 'website', 'mobile', 'game', 'portfolio', 'ecommerce', 'interior', 'other'].map((t) =>
+              `<option value="${t}" ${p.project_type === t ? 'selected' : ''}>${t || '—'}</option>`
+            ).join('')}
+          </select>
+          <label>Project description</label><textarea id="project_description" rows="3">${esc(p.project_description)}</textarea>
+          <label>Status</label>
+          <select id="project_status">
+            ${['draft', 'generating', 'completed', 'deployed'].map((s) =>
+              `<option value="${s}" ${p.project_status === s ? 'selected' : ''}>${s}</option>`
+            ).join('')}
+          </select>
+          <label>Last project id</label><input id="last_project_id" value="${esc(p.last_project_id)}" readonly />
+        </div>
+      </div>
       <div class="sheet-actions">
         <button type="button" class="btn ghost" data-act="close">Close</button>
-        <button type="button" class="btn primary" data-act="save">Save</button>
+        <button type="button" class="btn primary" data-act="save">Save Passport</button>
       </div>
     </div>`;
   bg.addEventListener('click', (e) => { if (e.target === bg) { state.sheet = null; render(); } });
   bg.querySelector('[data-act="close"]').addEventListener('click', () => { state.sheet = null; render(); });
   bg.querySelector('[data-act="save"]').addEventListener('click', () => {
-    const fields = ['full_name','company_name','ceo_name','email','website','location','socials','team_contacts'];
-    fields.forEach((f) => { state.passport[f] = bg.querySelector('#' + f).value.trim(); });
+    const fields = [
+      'full_name', 'company_name', 'ceo_name', 'email', 'website', 'location',
+      'socials', 'team_contacts', 'project_name', 'project_type', 'project_description',
+      'project_status', 'last_project_id',
+    ];
+    fields.forEach((f) => {
+      const el = bg.querySelector('#' + f);
+      if (el) state.passport[f] = el.value.trim();
+    });
     savePassport(state.passport);
     state.sheet = null;
-    toast('Passport saved');
+    toast('Passport saved · same identity as Citizen');
     if (state._pendingGenerate) {
       state._pendingGenerate = false;
       startGenerate();
     } else render();
+  });
+  return bg;
+}
+
+function renderTools() {
+  const bg = document.createElement('div');
+  bg.className = 'sheet-bg';
+  const themeOpts = Object.entries(THEMES).map(([id, t]) =>
+    `<button type="button" class="theme-swatch ${state.themeId === id ? 'on' : ''}" data-theme="${id}" style="--sw:${t.accent}">
+      <span class="sw"></span><strong>${esc(t.name)}</strong>
+    </button>`
+  ).join('');
+  const hasProject = !!(state.html && state.project);
+  bg.innerHTML = `
+    <div class="sheet sheet-wide">
+      <h3>Developer Tools</h3>
+      <p>Theme, SEO, regenerate, share — applied to the current project.</p>
+      <h4 class="tool-h">Color theme</h4>
+      <div class="theme-row">${themeOpts}</div>
+      <h4 class="tool-h">SEO</h4>
+      <label>Page title</label><input id="seo_title" value="${esc(state.seo.title || state.project?.title || '')}" placeholder="Luxury Dubai Interiors"/>
+      <label>Meta description</label><textarea id="seo_desc" rows="2" placeholder="Short description for search &amp; social">${esc(state.seo.description || state.prompt?.slice(0, 160) || '')}</textarea>
+      <label>OG image URL</label><input id="seo_og" value="${esc(state.seo.ogImage)}" placeholder="https://…"/>
+      <h4 class="tool-h">Actions</h4>
+      <div class="opts">
+        <button type="button" class="opt" data-tool="regenerate" ${hasProject ? '' : 'disabled'}>
+          <div><strong>Regenerate</strong><span>Same prompt · new deterministic build</span></div>
+        </button>
+        <button type="button" class="opt" data-tool="copy-html" ${hasProject ? '' : 'disabled'}>
+          <div><strong>Copy HTML</strong><span>Clipboard · full single file</span></div>
+        </button>
+        <button type="button" class="opt" data-tool="share-link" ${hasProject ? '' : 'disabled'}>
+          <div><strong>Share preview data</strong><span>Copy project JSON for Pro / teammates</span></div>
+        </button>
+        <button type="button" class="opt" data-tool="open-pro" ${hasProject ? '' : 'disabled'}>
+          <div><strong>Open in Pro Studio</strong><span>IDE · GitHub · Vercel · Debug</span></div>
+        </button>
+        <button type="button" class="opt" data-tool="a11y" ${hasProject ? '' : 'disabled'}>
+          <div><strong>Quick a11y check</strong><span>Missing alt, empty titles, contrast hints</span></div>
+        </button>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" data-act="close">Close</button>
+        <button type="button" class="btn primary" data-act="apply">Apply theme &amp; SEO</button>
+      </div>
+    </div>`;
+  bg.addEventListener('click', (e) => { if (e.target === bg) { state.sheet = null; render(); } });
+  bg.querySelector('[data-act="close"]').addEventListener('click', () => { state.sheet = null; render(); });
+  bg.querySelectorAll('[data-theme]').forEach((b) => {
+    b.addEventListener('click', () => {
+      state.themeId = b.getAttribute('data-theme');
+      localStorage.setItem('merveil_beg_theme', state.themeId);
+      bg.querySelectorAll('[data-theme]').forEach((x) => x.classList.toggle('on', x === b));
+      toast('Theme: ' + (THEMES[state.themeId]?.name || state.themeId));
+    });
+  });
+  bg.querySelector('[data-act="apply"]').addEventListener('click', () => {
+    state.seo.title = bg.querySelector('#seo_title').value.trim();
+    state.seo.description = bg.querySelector('#seo_desc').value.trim();
+    state.seo.ogImage = bg.querySelector('#seo_og').value.trim();
+    state.sheet = null;
+    if (state.screen === 'result') toast('Theme & SEO applied to preview');
+    else toast('Theme & SEO saved');
+    render();
+  });
+  bg.querySelectorAll('[data-tool]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const tool = b.getAttribute('data-tool');
+      if (b.disabled) return;
+      if (tool === 'regenerate') {
+        state.sheet = null;
+        await startGenerate();
+        return;
+      }
+      if (tool === 'copy-html') {
+        try {
+          await navigator.clipboard.writeText(currentHtml());
+          toast('HTML copied');
+        } catch {
+          toast('Copy failed — use Export → Download HTML');
+        }
+      }
+      if (tool === 'share-link') {
+        const payload = JSON.stringify({
+          title: state.project?.title,
+          prompt: state.prompt,
+          kind: state.project?.project_type,
+          rule_id: state.project?.rule_id,
+          passport: state.passport?.company_name,
+        }, null, 2);
+        try {
+          await navigator.clipboard.writeText(payload);
+          toast('Project meta copied');
+        } catch {
+          toast('Could not copy');
+        }
+      }
+      if (tool === 'open-pro') {
+        try {
+          const id = 'beg-' + Date.now();
+          const projects = JSON.parse(localStorage.getItem('merveil_dev_projects_v5') || '[]');
+          projects.unshift({
+            id,
+            name: state.project?.title || 'Beginner project',
+            tag: state.project?.project_type || 'website',
+            desc: state.prompt,
+            color: '#3fe0e8',
+            files: { 'index.html': currentHtml(), 'README.md': '# ' + (state.project?.title || 'Project') },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          localStorage.setItem('merveil_dev_projects_v5', JSON.stringify(projects));
+          localStorage.setItem('merveil_dev_active_v5', id);
+        } catch { /* */ }
+        location.href = '/developer/pro';
+        return;
+      }
+      if (tool === 'a11y') {
+        const html = currentHtml();
+        const issues = [];
+        const imgs = (html.match(/<img\b[^>]*>/gi) || []);
+        const missingAlt = imgs.filter((t) => !/\balt\s*=/.test(t)).length;
+        if (missingAlt) issues.push(`${missingAlt} image(s) missing alt`);
+        if (!/<title>[^<]+<\/title>/i.test(html)) issues.push('Missing or empty <title>');
+        if (!/name=["']description["']/i.test(html)) issues.push('No meta description');
+        if (!/<html[^>]*lang=/i.test(html)) issues.push('html lang attribute missing');
+        toast(issues.length ? 'A11y: ' + issues.join(' · ') : 'A11y: no basic issues found');
+      }
+    });
+  });
+  return bg;
+}
+
+function renderHistory() {
+  const list = loadProjects();
+  const bg = document.createElement('div');
+  bg.className = 'sheet-bg';
+  const rows = list.length
+    ? list.map((p) => `
+      <button type="button" class="opt hist" data-id="${esc(p.id)}">
+        <div>
+          <strong>${esc(p.title || 'Untitled')}</strong>
+          <span>${esc(p.project_type || '')} · ${p.created_at ? new Date(p.created_at).toLocaleString() : ''}</span>
+        </div>
+      </button>`).join('')
+    : '<p class="hint">No saved projects yet. Generate one to see it here.</p>';
+  bg.innerHTML = `
+    <div class="sheet">
+      <h3>My Projects</h3>
+      <p>Reopen a previous beginner build (stored on this device).</p>
+      <div class="opts">${rows}</div>
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" data-act="clear" ${list.length ? '' : 'disabled'}>Clear all</button>
+        <button type="button" class="btn primary" data-act="close">Close</button>
+      </div>
+    </div>`;
+  bg.addEventListener('click', (e) => { if (e.target === bg) { state.sheet = null; render(); } });
+  bg.querySelector('[data-act="close"]').addEventListener('click', () => { state.sheet = null; render(); });
+  bg.querySelector('[data-act="clear"]')?.addEventListener('click', () => {
+    if (!list.length) return;
+    if (confirm('Clear all local beginner projects?')) {
+      saveProjects([]);
+      toast('Projects cleared');
+      state.sheet = 'history';
+      render();
+    }
+  });
+  bg.querySelectorAll('[data-id]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const id = b.getAttribute('data-id');
+      const p = list.find((x) => x.id === id);
+      if (!p) return;
+      state.project = p;
+      state.html = p.generated_code || '';
+      state.prompt = p.prompt || '';
+      state.kind = p.project_type || 'website';
+      state.screen = 'result';
+      state.mode = 'preview';
+      state.sheet = null;
+      state.deployment = p.deployment_options;
+      toast('Opened: ' + (p.title || 'project'));
+      render();
+    });
   });
   return bg;
 }
@@ -344,6 +640,7 @@ function renderExport() {
           'Download ZIP then upload via their file manager'
         }</span></div></button>`).join('')}
         <button type="button" class="opt" data-opt="html"><div><strong>Download HTML</strong><span>Single file</span></div></button>
+        <button type="button" class="opt" data-opt="interface"><div><strong>Publish to Interface</strong><span>Live in Merveil Store · Citizens can open</span></div></button>
         <button type="button" class="opt" data-opt="pro"><div><strong>Open in Pro Studio</strong><span>Full IDE, GitHub, Vercel</span></div></button>
       </div>
       <div class="sheet-actions"><button type="button" class="btn ghost" data-act="close">Close</button></div>
@@ -353,15 +650,28 @@ function renderExport() {
   bg.querySelectorAll('[data-opt]').forEach((b) => {
     b.addEventListener('click', () => {
       const o = b.getAttribute('data-opt');
+      const htmlOut = currentHtml();
+      if (o === 'interface') {
+        try {
+          const pub = publishToInterface(state.project, htmlOut);
+          state.project = { ...(state.project || {}), id: pub.id, is_public: true, status: 'published' };
+          toast('Published to Interface Store');
+        } catch (e) {
+          toast(e.message || 'Publish failed');
+        }
+        state.sheet = null;
+        render();
+        return;
+      }
       if (o === 'html') {
-        const blob = new Blob([state.html], { type: 'text/html' });
+        const blob = new Blob([htmlOut], { type: 'text/html' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = (state.project?.title || 'site').replace(/\s+/g, '-').toLowerCase() + '.html';
         a.click();
         toast('HTML downloaded');
       } else if (o.includes('ZIP') || o.includes('Download') || o.includes('GoDaddy') || o.includes('Namecheap') || o.includes('Itch')) {
-        exportZip(state.html, state.project?.title);
+        exportZip(htmlOut, state.project?.title);
         toast(o.includes('GoDaddy') || o.includes('Namecheap') ? 'ZIP ready — upload index.html in your host file manager' : 'ZIP downloaded');
       } else if (o.includes('GitHub') || o.includes('Vercel') || o === 'pro') {
         try {
@@ -370,7 +680,7 @@ function renderExport() {
           projects.unshift({
             id, name: state.project?.title || 'Beginner project', tag: state.project?.project_type || 'website',
             desc: state.prompt, color: '#3fe0e8',
-            files: { 'index.html': state.html, 'README.md': '# ' + (state.project?.title || 'Project') },
+            files: { 'index.html': htmlOut, 'README.md': '# ' + (state.project?.title || 'Project') },
             createdAt: Date.now(), updatedAt: Date.now(),
           });
           localStorage.setItem('merveil_dev_projects_v5', JSON.stringify(projects));
