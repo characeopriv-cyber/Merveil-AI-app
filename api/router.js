@@ -13,14 +13,6 @@ import {
   getAccessToken,
 } from "../lib/supabaseServer.js";
 
-// Presence "connected" window — Facebook-style: a citizen is considered
-// connected/online for as long as their session is realistically still
-// open, not just for a few minutes of polling. Real disconnects (tab
-// close, app kill) send an explicit "offline" beacon immediately, so this
-// long window is purely a safety net for sessions that crashed without
-// getting to send that beacon.
-const PRESENCE_STALE_MS = 24 * 60 * 60 * 1000; // 24h
-
 // Server-side FCM (native) + Web Push (PWA). Path works when pushSend.js
 // sits next to the API router or under lib/.
 let pushSendMod = null;
@@ -1061,14 +1053,7 @@ export default async function handler(req, res) {
         // Prefer full session; if refresh race left us without a live token,
         // still restore the UI from jwtSub via service role so the citizen
         // is not bounced to "Sign in" every few minutes.
-        // NOTE: a prior edit added a `|| decodeJwtSub(getRefreshToken(req) || "")`
-        // fallback here, but getRefreshToken is not defined/imported anywhere
-        // in this file — every call with no live access token (token just
-        // rotated, common) threw ReferenceError and crashed this endpoint
-        // with a 500. That, in turn, broke merveilFetch's 401-retry path
-        // for the whole app. Removed; sessionResult.jwtSub already covers
-        // refresh-token-derived session resolution via getSession().
-        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "");
+        const uid = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "") || decodeJwtSub(getRefreshToken(req) || "");
         if (!uid) return sendJson(res, 200, { user: null });
         let profile = null;
         if (user && token) {
@@ -1926,26 +1911,23 @@ export default async function handler(req, res) {
       if (method === "GET" && action === "presence") {
         const ids = (req.query.userIds || "").split(",").filter(Boolean);
         if (!ids.length) return sendJson(res, 200, { presence: {} });
-        const { data } = await sb.from("presence").select("*").in("user_id", ids);
+        // Always use service role — citizen RLS must never hide other
+        // citizens' presence from the Connect directory / dots.
+        let presenceReader = sb;
+        try { presenceReader = adminClient(); } catch { /* keep user client */ }
+        const { data } = await presenceReader.from("presence").select("*").in("user_id", ids);
         const presence = {};
-        // Facebook-style presence: a citizen stays "connected" for as long as
-        // their session is open — no short polling window flips them offline.
-        // The client sends an explicit "offline" beacon on real disconnect
-        // (tab close / app kill), so that's the primary offline signal.
-        // PRESENCE_STALE_MS is only a safety net for crashed/killed sessions
-        // that never got to send that beacon.
-        const cutoff = Date.now() - PRESENCE_STALE_MS;
+        // 300s window — clients beat ~30s when visible / ~90s when away;
+        // tolerates several missed beats (background tab, flaky network).
+        const cutoff = Date.now() - 300 * 1000;
         for (const row of data || []) {
           const fresh = row.updated_at && new Date(row.updated_at).getTime() > cutoff;
           const st = (row.status || "online").toLowerCase();
-          if (!fresh || st === "offline") {
+          if (!fresh || st === "offline" || st === "away") {
             presence[row.user_id] = "offline";
           } else if (st === "busy") {
             presence[row.user_id] = "busy";
           } else {
-            // "away" (backgrounded tab) still counts as connected/online —
-            // matches directory's handling below, and matches "as long as
-            // citizen is connected" rather than penalizing a minimized app.
             presence[row.user_id] = "online";
           }
         }
@@ -2046,7 +2028,7 @@ export default async function handler(req, res) {
         const visible = (people || []).filter((p) => p.discoverable !== false);
         const ids = visible.map((p) => p.id);
         let presenceMap = {};
-        const cutoff = Date.now() - PRESENCE_STALE_MS;
+        const cutoff = Date.now() - 300 * 1000;
         if (ids.length) {
           const { data: pres } = await svcDir.from("presence").select("*").in("user_id", ids);
           for (const row of pres || []) {
@@ -7172,6 +7154,50 @@ export default async function handler(req, res) {
       }
     }
 
+    // Insert a system line into the 1:1 conversation for missed / ended calls
+    // so Messages shows "Missed call" with unread, WhatsApp-style.
+    async function writeCallSystemMessage(svc, call, bodyText) {
+      if (!svc || !call?.caller_id || !call?.receiver_id || !bodyText) return;
+      const a = String(call.caller_id);
+      const b = String(call.receiver_id);
+      // Prefer existing 1:1 conversation
+      let convId = null;
+      const { data: shared } = await svc.from("conversations")
+        .select("id, participant_ids")
+        .contains("participant_ids", [a])
+        .limit(80);
+      const hit = (shared || []).find((c) => {
+        const ids = (c.participant_ids || []).map(String);
+        return ids.length === 2 && ids.includes(a) && ids.includes(b);
+      });
+      if (hit?.id) {
+        convId = hit.id;
+      } else {
+        const { data: created } = await svc.from("conversations").insert({
+          participant_ids: [a, b],
+          last_message_at: new Date().toISOString(),
+          last_body: bodyText,
+        }).select("id").maybeSingle();
+        convId = created?.id || null;
+      }
+      if (!convId) return;
+      // Sender = caller for missed; system line still attributed to a participant
+      const senderId = call.status === "ringing" || bodyText.toLowerCase().includes("missed")
+        ? call.caller_id
+        : call.caller_id;
+      // body only — message_type column is optional and not required for preview
+      await svc.from("messages").insert({
+        conversation_id: convId,
+        sender_id: senderId,
+        body: bodyText,
+      }).catch(() => {});
+      await svc.from("conversations").update({
+        last_message_at: new Date().toISOString(),
+        last_body: bodyText,
+        updated_at: new Date().toISOString(),
+      }).eq("id", convId).catch(() => {});
+    }
+
     // Call state + authorization. The frontend does its own WebRTC
     // signaling over a private Supabase Realtime channel named
     // 'call:<call id>' (locked down by Realtime Authorization policies
@@ -7440,6 +7466,10 @@ export default async function handler(req, res) {
         if (String(call.receiver_id) !== me) return sendJson(res, 403, { error: "Only the receiver can reject." });
         const { error } = await svc.from("calls").update({ status: "rejected", ended_at: new Date().toISOString() }).eq("id", call.id);
         if (error) return sendJson(res, 400, { error: error.message });
+        // Leave a system line in the 1:1 chat so both sides see "Missed call"
+        try {
+          await writeCallSystemMessage(svc, call, "Missed call");
+        } catch {}
       } else {
         const endedAt = new Date();
         const duration = call.connected_at ? Math.max(0, Math.round((endedAt - new Date(call.connected_at)) / 1000)) : 0;
@@ -7447,6 +7477,14 @@ export default async function handler(req, res) {
         const finalStatus = call.status === "ringing" ? "missed" : "ended";
         const { error } = await svc.from("calls").update({ status: finalStatus, ended_at: endedAt.toISOString(), duration_seconds: duration }).eq("id", call.id);
         if (error) return sendJson(res, 400, { error: error.message });
+        try {
+          const label = finalStatus === "missed"
+            ? (call.type === "video" ? "Missed video call" : "Missed call")
+            : (duration > 0
+              ? `${call.type === "video" ? "Video" : "Voice"} call · ${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`
+              : "Call ended");
+          await writeCallSystemMessage(svc, call, label);
+        } catch {}
       }
       return sendJson(res, 200, { ok: true });
     }
@@ -10821,520 +10859,77 @@ export default async function handler(req, res) {
       return sendJson(res, 404, { error: "Unknown AI Call action." });
     }
 
-    // ---------------------------------------------------------- /api/status
-    // Merveil 3D Status — circular spatial identity environment (not Reels)
-    // Max video 40s; visibility; multi-status per citizen; block override
-    if (resource === "status") {
-      // Always prefer jwtSub — same as directory/messages — so refresh races don't 401
-      const me = String(
-        user?.id || citizen?.id || jwtSub || sessionResult?.jwtSub || decodeJwtSub(getAccessToken(req) || "") || ""
-      );
-      let svc;
-      try { svc = adminClient(); } catch (e) {
-        return sendJson(res, 500, {
-          error: e.message || "Server misconfiguration.",
-          hint: "Set SUPABASE_SERVICE_ROLE_KEY on Vercel (service role, not anon key).",
-        });
+    
+    // ---------------------------------------------------------- /api/enrich
+    // Content Enrichment Engine (Developer Platform).
+    // Uses `resource` (first /api segment) — same pattern as share, calls, etc.
+    // Optional cache via enrichment_cache when service role is configured.
+    if (resource === "enrich") {
+      if (method === "OPTIONS") {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
+        return sendJson(res, 204, {});
       }
+      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
+      try {
+        const body = await readBody(req);
+        const prompt = String(body?.prompt || "").trim();
+        if (!prompt) return sendJson(res, 400, { error: "prompt_required" });
 
-      async function loadStatusConfig() {
-        const defaults = { default_expires_hours: 24, max_video_seconds: 60, max_active_per_citizen: 5 };
+        let enrichment = null;
+        let cached = false;
         try {
-          const { data } = await svc.from("merveil_status_config").select("key,value");
-          for (const row of data || []) {
-            if (row.key === "default_expires_hours") defaults.default_expires_hours = Math.max(1, parseInt(row.value, 10) || 24);
-            if (row.key === "max_video_seconds") defaults.max_video_seconds = Math.max(1, parseInt(row.value, 10) || 40);
-            if (row.key === "max_active_per_citizen") defaults.max_active_per_citizen = Math.max(1, parseInt(row.value, 10) || 5);
-          }
-        } catch { /* table may not exist yet */ }
-        return defaults;
-      }
-
-      async function circleIdsFor(uid) {
-        const ids = [];
-        const { data: conns } = await svc
-          .from("connections")
-          .select("user_id, connected_user_id, status")
-          .or(`user_id.eq.${uid},connected_user_id.eq.${uid}`)
-          .eq("status", "accepted")
-          .limit(400);
-        for (const c of conns || []) {
-          const other = String(c.user_id) === String(uid) ? c.connected_user_id : c.user_id;
-          if (other) ids.push(String(other));
-        }
-        return ids;
-      }
-
-      async function blockedSet(uid) {
-        const set = new Set();
-        try {
-          const { data: blocks } = await svc
-            .from("blocked_users")
-            .select("blocker_id, blocked_id")
-            .or(`blocker_id.eq.${uid},blocked_id.eq.${uid}`);
-          for (const b of blocks || []) {
-            set.add(String(b.blocker_id === uid ? b.blocked_id : b.blocker_id));
-          }
-        } catch { /* optional table */ }
-        return set;
-      }
-
-      function canSeeStatus(row, viewerId, circleSet, blocked) {
-        const owner = String(row.user_id);
-        if (owner === String(viewerId)) return true;
-        if (blocked.has(owner)) return false;
-        const vis = String(row.visibility || row.audience || "everyone").toLowerCase();
-        if (vis === "nobody") return false;
-        if (vis === "circle") return circleSet.has(owner);
-        if (vis === "selected") {
-          const arr = row.visible_to || [];
-          return Array.isArray(arr) && arr.map(String).includes(String(viewerId));
-        }
-        if (vis === "citizens" || vis === "everyone") return true;
-        return true;
-      }
-
-      // GET list — returns identity nodes (one primary circle per citizen) + items[]
-      if (method === "GET" && (!action || action === "list")) {
-        if (!me) return sendJson(res, 200, { identities: [], mine: null, config: { max_video_seconds: 60 } });
-        const cfg = await loadStatusConfig();
-        const nowIso = new Date().toISOString();
-        const limit = Math.min(80, Math.max(1, parseInt(req.query.limit || "48", 10) || 48));
-        const since = req.query.since || null; // for soft realtime delta
-
-        const [circleIds, blocked] = await Promise.all([circleIdsFor(me), blockedSet(me)]);
-        const circleSet = new Set(circleIds);
-
-        let q = svc
-          .from("citizen_status")
-          .select("id,user_id,content_type,body_text,media_url,media_mime,media_duration_seconds,thumbnail_url,location_label,activity_label,audience,visibility,visible_to,lifecycle,expires_at,view_count,created_at")
-          .gt("expires_at", nowIso)
-          .or("lifecycle.eq.active,lifecycle.is.null")
-          .order("created_at", { ascending: false })
-          .limit(limit * 3);
-
-        if (since) q = q.gt("created_at", since);
-
-        const { data: rows, error } = await q;
-        if (error) {
-          // fallback without lifecycle/visibility cols if migration not run
-          const { data: rows2, error: e2 } = await svc
-            .from("citizen_status")
-            .select("id,user_id,content_type,body_text,media_url,media_mime,media_duration_seconds,thumbnail_url,location_label,activity_label,audience,expires_at,view_count,created_at")
-            .gt("expires_at", nowIso)
-            .order("created_at", { ascending: false })
-            .limit(limit * 3);
-          if (e2) return sendJson(res, 400, { error: e2.message });
-          var rawRows = rows2 || [];
-        } else {
-          var rawRows = rows || [];
-        }
-
-        const visible = rawRows.filter((r) => canSeeStatus(r, me, circleSet, blocked));
-
-        // Group by citizen — one identity, multiple status items
-        const byUser = new Map();
-        for (const r of visible) {
-          const uid = String(r.user_id);
-          if (!byUser.has(uid)) byUser.set(uid, []);
-          byUser.get(uid).push(r);
-        }
-
-        const userIds = [...byUser.keys()];
-        let profiles = {};
-        if (userIds.length) {
-          const { data: profs } = await svc
-            .from("profiles")
-            .select("id,name,avatar_url,role_label,passport_tier")
-            .in("id", userIds);
-          for (const p of profs || []) profiles[p.id] = p;
-        }
-
-        // Super counts for all status rows in this page
-        const allStatusIds = visible.map((r) => r.id).filter(Boolean);
-        const superByStatus = {};
-        if (allStatusIds.length) {
-          try {
-            const { data: rx } = await svc
-              .from("status_reactions")
-              .select("status_id")
-              .in("status_id", allStatusIds)
-              .eq("reaction", "super");
-            for (const row of rx || []) {
-              const sid = row.status_id;
-              superByStatus[sid] = (superByStatus[sid] || 0) + 1;
+          const crypto = await import("crypto");
+          const hash = crypto.createHash("md5").update(prompt.toLowerCase()).digest("hex");
+          const svc = (() => { try { return adminClient(); } catch { return null; } })();
+          if (svc) {
+            const { data: row } = await svc
+              .from("enrichment_cache")
+              .select("enriched_data")
+              .eq("prompt_hash", hash)
+              .gt("expires_at", new Date().toISOString())
+              .maybeSingle();
+            if (row?.enriched_data) {
+              enrichment = row.enriched_data;
+              cached = true;
             }
-          } catch { /* table may not exist */ }
+          }
+        } catch { /* cache optional */ }
+
+        const { enrichProject, assetsFromEnrichment, determineProjectType } = await import(
+          "../lib/enrichmentEngine.js"
+        );
+        if (!enrichment) {
+          enrichment = await enrichProject(prompt, process.env);
+          try {
+            const crypto = await import("crypto");
+            const hash = crypto.createHash("md5").update(prompt.toLowerCase()).digest("hex");
+            const svc = (() => { try { return adminClient(); } catch { return null; } })();
+            if (svc) {
+              await svc.from("enrichment_cache").upsert(
+                {
+                  prompt_hash: hash,
+                  prompt,
+                  enriched_data: enrichment,
+                  expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+                },
+                { onConflict: "prompt_hash" }
+              );
+            }
+          } catch { /* cache write optional */ }
         }
-        const decorate = (st) => st ? { ...st, super_count: superByStatus[st.id] || 0 } : st;
-
-        // Order: me first, then by latest status created_at
-        const identities = [...byUser.entries()]
-          .map(([uid, items]) => {
-            const sorted = items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(decorate);
-            const primary = sorted[0];
-            return {
-              user_id: uid,
-              user: profiles[uid] || { id: uid, name: "Citizen" },
-              has_status: true,
-              primary,
-              items: sorted.slice(0, cfg.max_active_per_citizen),
-              latest_at: primary?.created_at,
-            };
-          })
-          .sort((a, b) => {
-            if (a.user_id === me) return -1;
-            if (b.user_id === me) return 1;
-            return new Date(b.latest_at || 0) - new Date(a.latest_at || 0);
-          })
-          .slice(0, limit);
-
-        // Ensure viewer appears even with no status (Your Status ring)
-        if (!identities.some((x) => x.user_id === me)) {
-          const { data: meProf } = await svc.from("profiles").select("id,name,avatar_url,role_label,passport_tier").eq("id", me).maybeSingle();
-          identities.unshift({
-            user_id: me,
-            user: meProf || { id: me, name: user?.name || "You" },
-            has_status: false,
-            primary: null,
-            items: [],
-            latest_at: null,
-            is_you: true,
-          });
-        } else {
-          identities[0].is_you = identities[0].user_id === me;
-        }
-
-        const mine = identities.find((x) => x.user_id === me) || null;
-        // Flat statuses for backward compat
-        const statuses = identities
-          .filter((x) => x.primary)
-          .map((x) => ({ ...x.primary, user: x.user }));
 
         return sendJson(res, 200, {
-          identities,
-          statuses,
-          mine,
-          config: cfg,
-          server_time: nowIso,
+          success: true,
+          cached,
+          enrichment,
+          assets: assetsFromEnrichment(enrichment),
+          projectType: determineProjectType(enrichment.entities || [], prompt),
         });
+      } catch (e) {
+        return sendJson(res, 500, { error: e?.message || "enrich_failed" });
       }
-
-      if (method === "GET" && action === "get") {
-        const id = req.query.id;
-        if (!id) return sendJson(res, 400, { error: "id required" });
-        const { data: row, error } = await svc.from("citizen_status").select("*").eq("id", id).maybeSingle();
-        if (error) return sendJson(res, 400, { error: error.message });
-        if (!row) return sendJson(res, 404, { error: "Status not found" });
-        if (new Date(row.expires_at) <= new Date()) return sendJson(res, 410, { error: "Status expired" });
-        return sendJson(res, 200, { status: row });
-      }
-
-      if (method === "GET" && action === "config") {
-        const cfg = await loadStatusConfig();
-        return sendJson(res, 200, { config: cfg });
-      }
-
-      if (method === "POST" && (!action || action === "create")) {
-        if (!me) return sendJson(res, 401, { error: "Sign in to post a Status." });
-        const cfg = await loadStatusConfig();
-        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-        const contentType = String(body.content_type || "").toLowerCase();
-        const allowed = ["photo", "video", "text", "voice", "location", "activity"];
-        if (!allowed.includes(contentType)) {
-          return sendJson(res, 400, { error: "content_type must be photo|video|text|voice|location|activity" });
-        }
-
-        let duration = body.media_duration_seconds != null ? Number(body.media_duration_seconds) : null;
-        if (contentType === "video" || contentType === "voice") {
-          if (duration == null || !Number.isFinite(duration) || duration <= 0) {
-            return sendJson(res, 400, { error: "media_duration_seconds required for video/voice" });
-          }
-          if (duration > cfg.max_video_seconds) {
-            return sendJson(res, 400, { error: `Maximum Status duration is ${cfg.max_video_seconds} seconds.` });
-          }
-        } else {
-          duration = null;
-        }
-
-        if (contentType === "text" && !String(body.body_text || "").trim()) {
-          return sendJson(res, 400, { error: "Text Status needs body_text" });
-        }
-        if ((contentType === "photo" || contentType === "video" || contentType === "voice") && !body.media_url) {
-          return sendJson(res, 400, { error: "media_url required for this content type" });
-        }
-
-        const visRaw = String(body.visibility || body.audience || "everyone").toLowerCase();
-        const visibility = ["everyone", "citizens", "circle", "selected", "nobody"].includes(visRaw) ? visRaw : "everyone";
-        const visible_to = visibility === "selected" && Array.isArray(body.visible_to)
-          ? body.visible_to.map(String).slice(0, 100)
-          : null;
-
-        const expiresHours = Math.min(72, Math.max(1, Number(body.expires_hours) || cfg.default_expires_hours));
-        const expiresAt = new Date(Date.now() + expiresHours * 3600 * 1000).toISOString();
-
-        // Cap active items per citizen
-        const nowIso = new Date().toISOString();
-        const { data: existing } = await svc
-          .from("citizen_status")
-          .select("id,created_at")
-          .eq("user_id", me)
-          .gt("expires_at", nowIso)
-          .order("created_at", { ascending: false });
-        const active = existing || [];
-        if (active.length >= cfg.max_active_per_citizen) {
-          const drop = active.slice(cfg.max_active_per_citizen - 1);
-          await svc.from("citizen_status").delete().in("id", drop.map((d) => d.id));
-        }
-
-        const insert = {
-          user_id: me,
-          content_type: contentType,
-          body_text: body.body_text ? String(body.body_text).slice(0, 2000) : null,
-          media_url: body.media_url || null,
-          media_mime: body.media_mime || null,
-          media_duration_seconds: duration,
-          thumbnail_url: body.thumbnail_url || null,
-          location_label: body.location_label ? String(body.location_label).slice(0, 200) : null,
-          location_lat: body.location_lat != null ? Number(body.location_lat) : null,
-          location_lng: body.location_lng != null ? Number(body.location_lng) : null,
-          activity_label: body.activity_label ? String(body.activity_label).slice(0, 120) : null,
-          audience: visibility === "circle" ? "circle" : "everyone",
-          visibility,
-          visible_to,
-          lifecycle: "active",
-          expires_at: expiresAt,
-          view_count: 0,
-        };
-
-        const { data: created, error } = await svc.from("citizen_status").insert(insert).select("*").single();
-        if (error) {
-          const legacy = { ...insert };
-          delete legacy.visibility;
-          delete legacy.visible_to;
-          delete legacy.lifecycle;
-          delete legacy.visible_to;
-          const { data: created2, error: e2 } = await svc.from("citizen_status").insert(legacy).select("*").single();
-          if (e2) {
-            const msg = e2.message || error.message || "Insert failed";
-            const hint = /permission denied/i.test(msg)
-              ? "Run supabase-status-ALL-COPY.sql grants in Supabase, and confirm Vercel SUPABASE_SERVICE_ROLE_KEY is the service_role secret."
-              : /foreign key/i.test(msg)
-                ? "Your profile row is missing — open Passport once to create profiles."
-                : undefined;
-            return sendJson(res, 400, { error: msg, hint });
-          }
-          return sendJson(res, 200, { status: created2 });
-        }
-        return sendJson(res, 200, { status: created });
-      }
-
-      if (method === "POST" && action === "view") {
-        if (!me) return sendJson(res, 401, { error: "Sign in required" });
-        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-        const statusId = body.status_id || body.id;
-        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
-        const { data: st } = await svc.from("citizen_status").select("id,user_id,expires_at,view_count").eq("id", statusId).maybeSingle();
-        if (!st || new Date(st.expires_at) <= new Date()) return sendJson(res, 404, { error: "Status not found" });
-        if (String(st.user_id) === me) return sendJson(res, 200, { ok: true, own: true });
-        await svc.from("status_views").upsert(
-          { status_id: statusId, viewer_id: me, viewed_at: new Date().toISOString() },
-          { onConflict: "status_id,viewer_id" }
-        );
-        await svc.from("citizen_status").update({ view_count: (st.view_count || 0) + 1 }).eq("id", statusId);
-        return sendJson(res, 200, { ok: true });
-      }
-
-      if (method === "POST" && action === "react") {
-        if (!me) return sendJson(res, 401, { error: "Sign in required" });
-        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-        const statusId = body.status_id || body.id;
-        const reaction = String(body.reaction || "like").toLowerCase();
-        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
-        if (!["like", "super", "fire", "support"].includes(reaction)) {
-          return sendJson(res, 400, { error: "invalid reaction" });
-        }
-        const { error } = await svc.from("status_reactions").upsert(
-          { status_id: statusId, citizen_id: me, reaction, created_at: new Date().toISOString() },
-          { onConflict: "status_id,citizen_id" }
-        );
-        if (error) return sendJson(res, 400, { error: error.message });
-        return sendJson(res, 200, { ok: true });
-      }
-
-      // Poster-only: who viewed / who Super'd (circular people list)
-      if (method === "GET" && action === "audience") {
-        if (!me) return sendJson(res, 401, { error: "Sign in required" });
-        const statusId = req.query.status_id || req.query.id;
-        const kind = String(req.query.kind || "view").toLowerCase();
-        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
-        const { data: st } = await svc.from("citizen_status").select("id,user_id").eq("id", statusId).maybeSingle();
-        if (!st) return sendJson(res, 404, { error: "Status not found" });
-        if (String(st.user_id) !== String(me)) {
-          return sendJson(res, 403, { error: "Only the poster can see who viewed or Super'd." });
-        }
-        let ids = [];
-        if (kind === "super" || kind === "reaction") {
-          const { data: rows } = await svc
-            .from("status_reactions")
-            .select("citizen_id")
-            .eq("status_id", statusId)
-            .eq("reaction", "super")
-            .limit(200);
-          ids = (rows || []).map((r) => r.citizen_id).filter(Boolean);
-        } else {
-          const { data: rows } = await svc
-            .from("status_views")
-            .select("viewer_id")
-            .eq("status_id", statusId)
-            .order("viewed_at", { ascending: false })
-            .limit(200);
-          ids = (rows || []).map((r) => r.viewer_id).filter(Boolean);
-        }
-        let people = [];
-        if (ids.length) {
-          const { data: profs } = await svc.from("profiles").select("id,name,avatar_url").in("id", ids);
-          const map = Object.fromEntries((profs || []).map((p) => [p.id, p]));
-          people = ids.map((id) => map[id] || { id, name: "Citizen" });
-        }
-        return sendJson(res, 200, { people, kind });
-      }
-
-      // Signed upload URL for Status media (same pattern as world video-upload-url)
-
-      if (method === "POST" && action === "comment") {
-        if (!me) return sendJson(res, 401, { error: "Sign in required" });
-        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-        const statusId = body.status_id || body.id;
-        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
-        const voice_url = body.voice_url || null;
-        const body_text = body.body_text ? String(body.body_text).slice(0, 2000) : null;
-        if (!voice_url && !body_text) return sendJson(res, 400, { error: "text or voice_url required" });
-        let duration = body.media_duration_seconds != null ? Number(body.media_duration_seconds) : null;
-        if (voice_url && duration != null && duration > 60) {
-          return sendJson(res, 400, { error: "Voice comment max 60 seconds" });
-        }
-        const { data, error } = await svc.from("status_comments").insert({
-          status_id: statusId,
-          citizen_id: me,
-          body_text,
-          voice_url,
-          media_duration_seconds: duration,
-        }).select("*").single();
-        if (error) return sendJson(res, 400, { error: error.message });
-        return sendJson(res, 200, { comment: data });
-      }
-
-      if (method === "GET" && action === "comments") {
-        const statusId = req.query.status_id || req.query.id;
-        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
-        const { data, error } = await svc
-          .from("status_comments")
-          .select("id,status_id,citizen_id,body_text,voice_url,media_duration_seconds,created_at")
-          .eq("status_id", statusId)
-          .order("created_at", { ascending: true })
-          .limit(100);
-        if (error) return sendJson(res, 400, { error: error.message });
-        const ids = [...new Set((data || []).map((c) => c.citizen_id))];
-        let profiles = {};
-        if (ids.length) {
-          const { data: profs } = await svc.from("profiles").select("id,name,avatar_url").in("id", ids);
-          for (const p of profs || []) profiles[p.id] = p;
-        }
-        return sendJson(res, 200, {
-          comments: (data || []).map((c) => ({ ...c, user: profiles[c.citizen_id] || { id: c.citizen_id } })),
-        });
-      }
-
-      if (method === "POST" && action === "save") {
-        if (!me) return sendJson(res, 401, { error: "Sign in required" });
-        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-        const statusId = body.status_id || body.id;
-        if (!statusId) return sendJson(res, 400, { error: "status_id required" });
-        const { error } = await svc.from("status_saves").upsert(
-          { status_id: statusId, citizen_id: me, created_at: new Date().toISOString() },
-          { onConflict: "status_id,citizen_id" }
-        );
-        if (error) return sendJson(res, 400, { error: error.message });
-        return sendJson(res, 200, { ok: true });
-      }
-
-      if (method === "POST" && action === "upload-url") {
-        if (!me) return sendJson(res, 401, { error: "Sign in required" });
-        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-        const safeName = String(body.fileName || body.name || "status-media.bin").replace(/[^a-zA-Z0-9._-]/g, "_");
-        const path = `status/${me}/${Date.now()}-${safeName}`;
-        let storageClient = sb;
-        try { storageClient = adminClient(); } catch { /* */ }
-        let bucket = "uploads";
-        let data, error;
-        ({ data, error } = await storageClient.storage.from("uploads").createSignedUploadUrl(path));
-        if (error) {
-          bucket = "media";
-          const alt = await storageClient.storage.from("media").createSignedUploadUrl(path).catch(() => null);
-          if (!alt?.data) return sendJson(res, 400, { error: error.message || "Could not prepare Status upload." });
-          data = alt.data;
-        }
-        const { data: pub } = storageClient.storage.from(bucket).getPublicUrl(path);
-        return sendJson(res, 200, {
-          signedUrl: data.signedUrl,
-          token: data.token,
-          path,
-          publicUrl: pub.publicUrl,
-          bucket,
-        });
-      }
-
-      // Multipart fallback upload for Status
-      if (method === "POST" && action === "upload") {
-        if (!me) return sendJson(res, 401, { error: "Sign in required" });
-        try {
-          const form = formidable({ maxFileSize: 80 * 1024 * 1024 });
-          const [fields, files] = await form.parse(req);
-          const file = files.file?.[0];
-          if (!file) return sendJson(res, 400, { error: "No file provided." });
-          const fs = await import("fs");
-          const buffer = fs.readFileSync(file.filepath);
-          const safeName = (file.originalFilename || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
-          const path = `status/${me}/${Date.now()}-${safeName}`;
-          let storageClient = sb;
-          try { storageClient = adminClient(); } catch { /* */ }
-          let bucket = "uploads";
-          let { error } = await storageClient.storage.from(bucket).upload(path, buffer, {
-            contentType: file.mimetype || "application/octet-stream",
-            upsert: true,
-          });
-          if (error) {
-            bucket = "media";
-            const alt = await storageClient.storage.from(bucket).upload(path, buffer, {
-              contentType: file.mimetype || "application/octet-stream",
-              upsert: true,
-            });
-            error = alt.error;
-          }
-          if (error) return sendJson(res, 400, { error: error.message || "Upload failed." });
-          const { data: pub } = storageClient.storage.from(bucket).getPublicUrl(path);
-          return sendJson(res, 200, { url: pub.publicUrl, publicUrl: pub.publicUrl, path, bucket });
-        } catch (e) {
-          return sendJson(res, 400, { error: e.message || "Upload parse failed" });
-        }
-      }
-
-      if (method === "DELETE" || (method === "POST" && action === "delete")) {
-        if (!me) return sendJson(res, 401, { error: "Sign in required" });
-        const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-        const statusId = body.id || req.query.id;
-        if (!statusId) {
-          await svc.from("citizen_status").delete().eq("user_id", me);
-          return sendJson(res, 200, { ok: true });
-        }
-        const { data: st } = await svc.from("citizen_status").select("id,user_id").eq("id", statusId).maybeSingle();
-        if (!st || String(st.user_id) !== me) return sendJson(res, 403, { error: "Not your Status" });
-        await svc.from("citizen_status").delete().eq("id", statusId);
-        return sendJson(res, 200, { ok: true });
-      }
-
-      return sendJson(res, 404, { error: "Unknown status action" });
     }
 
     return sendJson(res, 404, { error: "Unknown API route" });
