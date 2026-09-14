@@ -2,118 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#0a0b0f" />
-  <meta name="description" content="Merveil Developer — idea to shipped product in under 3 minutes. Passport-gated, AI-native." />
-  <title>Merveil Developer — Idea to ship in 3 minutes</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/developer-portal/console.css" />
-  <style>
-    body{background:var(--bg)}
-    .mk-nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:14px 24px;background:rgba(10,11,15,.85);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
-    .mk-nav .brand{display:flex;align-items:center;gap:10px;font-weight:800}
-    .mk-nav .brand .orb{width:24px;height:24px;border-radius:50%;background:var(--grad)}
-    .mk-nav nav{display:flex;gap:22px;margin-left:24px}
-    .mk-nav nav a{color:var(--txt-2);font-size:13.5px;font-weight:500}
-    .mk-nav .spacer{flex:1}
-    .mk-hero{padding:80px 24px 60px;text-align:center;max-width:1000px;margin:0 auto;position:relative}
-    .mk-hero::before{content:"";position:absolute;inset:-20% 10% auto 10%;height:500px;background:radial-gradient(closest-side,rgba(124,92,255,.25),transparent 70%);z-index:-1;filter:blur(40px)}
-    .mk-hero h1{font-size:clamp(32px,5vw,58px);font-weight:900;line-height:1.08;margin:0 0 18px;letter-spacing:-.02em}
-    .mk-hero h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-    .mk-hero p{font-size:17px;color:var(--txt-2);max-width:640px;margin:0 auto 28px;line-height:1.6}
-    .mk-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-    .mk-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;background:var(--bg-2);border:1px solid var(--line-2);font-size:12.5px;color:var(--txt-2);margin-bottom:20px}
-    .mk-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--acc-3);box-shadow:0 0 10px var(--acc-3)}
-    .mk-section{padding:72px 24px;max-width:1200px;margin:0 auto}
-    .mk-section h2{font-size:clamp(24px,3.2vw,36px);font-weight:800;margin:0 0 12px;text-align:center}
-    .mk-section .lead{font-size:16px;color:var(--txt-2);text-align:center;max-width:620px;margin:0 auto 44px}
-    .mk-features{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-    .mk-feature{padding:24px;border-radius:16px;background:var(--bg-1);border:1px solid var(--line)}
-    .mk-feature:hover{border-color:var(--acc)}
-    .mk-feature .ico{font-size:22px;margin-bottom:10px}
-    .mk-feature h3{font-size:16px;margin:0 0 6px}
-    .mk-feature p{font-size:13.5px;color:var(--txt-2);line-height:1.6;margin:0}
-    .mk-kinds{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
-    .mk-kind{padding:20px;border-radius:14px;background:var(--bg-1);border:1px solid var(--line);text-align:center}
-    .mk-kind .emoji{font-size:28px;margin-bottom:6px}
-    .mk-pricing{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
-    .mk-plan{padding:24px;border-radius:16px;background:var(--bg-1);border:1px solid var(--line)}
-    .mk-plan.best{border-color:var(--acc)}
-    .mk-plan .price{font-size:28px;font-weight:800;margin:8px 0 12px}
-    .mk-plan ul{list-style:none;padding:0;margin:0 0 16px;font-size:13px;color:var(--txt-2);line-height:1.9}
-    .mk-foot{padding:40px 24px;text-align:center;color:var(--txt-3);font-size:13px;border-top:1px solid var(--line)}
-  </style>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f5f1" />
+  <meta http-equiv="refresh" content="0;url=/developer" />
+  <title>Merveil Developer</title>
+  <link rel="stylesheet" href="/developer-portal/beginner.css" />
+  <script>location.replace('/developer');</script>
 </head>
 <body>
-<header class="mk-nav">
-  <div class="brand"><div class="orb"></div><span>MERVEIL · Developer</span></div>
-  <nav>
-    <a href="#features">Platform</a>
-    <a href="#pricing">Pricing</a>
-    <a href="/developer/quickstart">Docs</a>
-  </nav>
-  <div class="spacer"></div>
-  <a class="mv-btn ghost" href="/developer">Sign in</a>
-  <a class="mv-btn" href="/developer">Open Command Center →</a>
-</header>
-
-<section class="mk-hero">
-  <div class="mk-badge"><span class="dot"></span> Passport-gated · AI-native · Powered by Merveil AI</div>
-  <h1>Idea to <span>shipped product</span> in under 3 minutes.</h1>
-  <p>Describe anything. Merveil AI plans, codes, deploys, and hands you a live prototype — agents, apps, games, video, music, books.</p>
-  <div class="mk-cta">
-    <a class="mv-btn" href="/developer">Start building →</a>
-    <a class="mv-btn ghost" href="/developer/quickstart">View quickstart</a>
+  <div id="app" style="min-height:100vh;display:grid;place-items:center;font-family:Manrope,system-ui;background:#f7f5f1;color:#12141a">
+    <div style="text-align:center">
+      <div style="width:40px;height:40px;border-radius:12px;background:#0a0b0f;color:#3fe0e8;display:grid;place-items:center;margin:0 auto 16px;font-weight:800;font-size:20px">M</div>
+      <p style="margin:0 0 12px;font-weight:600">Opening Merveil Developer…</p>
+      <a href="/developer" style="color:#1ab8c0;font-weight:600">Continue →</a>
+    </div>
   </div>
-</section>
-
-<section class="mk-section" id="features">
-  <h2>One workspace. Everything you build.</h2>
-  <p class="lead">Same Passport as the Citizen app. Same AI. Same reach across the ecosystem.</p>
-  <div class="mk-features">
-    <div class="mk-feature"><div class="ico">✨</div><h3>Merveil AI co-pilot</h3><p>Plans architecture, writes code, deploys — one prompt with live progress.</p></div>
-    <div class="mk-feature"><div class="ico">🛂</div><h3>Passport-gated</h3><p>Only Merveil Citizens develop. One identity across the platform.</p></div>
-    <div class="mk-feature"><div class="ico">🚀</div><h3>Deploy anywhere</h3><p>Vercel, Cloudflare, or Merveil Edge with preview URLs.</p></div>
-    <div class="mk-feature"><div class="ico">🔌</div><h3>Integrations</h3><p>GitHub, Vercel, Supabase, Stripe, OpenAI, Anthropic, Replicate, ElevenLabs.</p></div>
-    <div class="mk-feature"><div class="ico">🏪</div><h3>Merveil Interface</h3><p>Publish to the marketplace for Citizens to install.</p></div>
-    <div class="mk-feature"><div class="ico">🔐</div><h3>Row-level security</h3><p>Your data stays private unless you publish it.</p></div>
-  </div>
-</section>
-
-<section class="mk-section">
-  <h2>Builders for anything</h2>
-  <div class="mk-kinds">
-    <div class="mk-kind"><div class="emoji">🤖</div>AI Agents</div>
-    <div class="mk-kind"><div class="emoji">🌐</div>Websites</div>
-    <div class="mk-kind"><div class="emoji">📱</div>Apps</div>
-    <div class="mk-kind"><div class="emoji">🎮</div>Games</div>
-    <div class="mk-kind"><div class="emoji">🎬</div>Video</div>
-    <div class="mk-kind"><div class="emoji">🎵</div>Music</div>
-    <div class="mk-kind"><div class="emoji">📚</div>Books</div>
-    <div class="mk-kind"><div class="emoji">🔌</div>APIs</div>
-  </div>
-</section>
-
-<section class="mk-section" id="pricing">
-  <h2>Simple pricing</h2>
-  <p class="lead">Start free. Upgrade when you ship.</p>
-  <div class="mk-pricing">
-    <div class="mk-plan"><h3>Citizen</h3><div class="price">Free</div><ul><li>1,000 credits / mo</li><li>3 projects</li><li>Public deploys</li></ul><a class="mv-btn ghost" href="/developer">Start free</a></div>
-    <div class="mk-plan best"><h3>Developer Pro</h3><div class="price">$29<span style="font-size:13px;color:var(--txt-3)">/mo</span></div><ul><li>50,000 credits</li><li>50 projects</li><li>Private deploys</li><li>All integrations</li></ul><a class="mv-btn" href="/developer">Upgrade</a></div>
-    <div class="mk-plan"><h3>Studio</h3><div class="price">$199<span style="font-size:13px;color:var(--txt-3)">/mo</span></div><ul><li>500,000 credits</li><li>Team seats</li><li>White-label</li></ul><a class="mv-btn ghost" href="/developer">Choose Studio</a></div>
-    <div class="mk-plan"><h3>Enterprise</h3><div class="price">Custom</div><ul><li>SSO / SAML</li><li>Dedicated infra</li><li>24/7 support</li></ul><a class="mv-btn ghost" href="mailto:sales@merveil.ai">Contact sales</a></div>
-  </div>
-</section>
-
-<section class="mk-section">
-  <h2>Ready to ship?</h2>
-  <p class="lead">Your Passport is your key.</p>
-  <div class="mk-cta"><a class="mv-btn" href="/developer">Open Command Center →</a></div>
-</section>
-
-<footer class="mk-foot">
-  © Merveil · Junction Technology — <a href="/">Citizen App</a> · <a href="/developer/quickstart">Docs</a> · <a href="mailto:developers@merveil.ai">developers@merveil.ai</a>
-</footer>
 </body>
 </html>

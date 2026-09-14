@@ -196,8 +196,22 @@ const RULES = [
     assets: { heroImage: UNSPLASH.portfolio },
   },
   {
+    id: 'game-stack',
+    keywords: ['stack', 'tower', 'burj', 'floor rise', 'brick stack', 'build tower'],
+    kind: 'game',
+    titleHint: 'Tower Rise',
+    assets: { heroImage: UNSPLASH.game },
+  },
+  {
+    id: 'game-connect',
+    keywords: ['connecta', 'network game', 'link nodes', 'chain links', 'connection game'],
+    kind: 'game',
+    titleHint: 'Connecta',
+    assets: { heroImage: UNSPLASH.game },
+  },
+  {
     id: 'game',
-    keywords: ['game', '3d', 'webgl', 'shooter', 'playable', 'arcade'],
+    keywords: ['game', '3d', 'webgl', 'shooter', 'playable', 'arcade', 'arena'],
     kind: 'game',
     titleHint: 'Play',
     assets: { heroImage: UNSPLASH.game },
@@ -653,30 +667,193 @@ function mobile(title, prompt, p) {
 ` + baseFoot(p);
 }
 
+/**
+ * Arena-grade games (deterministic) — quality bar: Burj Rise / Connecta.
+ * Keywords: stack|tower|burj|floor → stacker; connect|network|node → linker; else arcade.
+ */
 function game(title, prompt, p) {
-  return baseHead(title, `
-canvas{display:block;width:100%;max-width:640px;margin:20px auto;background:#0b1220;border-radius:16px;border:1px solid var(--line)}
-`) + `
-<header class="nav"><div class="wrap inner"><div class="logo"><i></i><span data-edit>${esc(p.company || 'Arena')}</span></div></div></header>
-<main class="wrap">
-  <section class="hero" style="text-align:center">
-    <h1 data-edit>${esc(title)}</h1>
-    <p " data-edit>${esc(prompt.slice(0, 120) || 'Click or tap to score. Built for Merveil.')}</p>
-    <canvas id="c" width="640" height="360"></canvas>
-    <p id="score" style="margin-top:10px;font-family:Unbounded,sans-serif">Score: 0</p>
-  </section>
-</main>
-<script>
-const c=document.getElementById('c'),ctx=c.getContext('2d');
-let score=0,x=320,y=180,vx=3,vy=2;
-function loop(){
-  ctx.fillStyle='#0b1220';ctx.fillRect(0,0,640,360);
-  ctx.fillStyle='#3fe0e8';ctx.beginPath();ctx.arc(x,y,18,0,Math.PI*2);ctx.fill();
-  x+=vx;y+=vy;if(x<18||x>622)vx*=-1;if(y<18||y>342)vy*=-1;
-  requestAnimationFrame(loop);
+  const lower = (prompt || title || '').toLowerCase();
+  if (/stack|tower|burj|floor|rise|brick|build/.test(lower)) return gameStacker(title, prompt, p);
+  if (/connect|network|node|link|chain|graph/.test(lower)) return gameConnecta(title, prompt, p);
+  return gameArcade(title, prompt, p);
 }
-c.onclick=()=>{score++;document.getElementById('score').textContent='Score: '+score;vx*=1.05;vy*=1.05};
-loop();
+
+function gameStacker(title, prompt, p) {
+  const name = esc(title || 'Tower Rise');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>${name} — Merveil Arena</title>
+<style>
+:root{--bg:#0B0E14;--orange:#06B6D4;--gold:#D4A24C;--text:#F3F4F6;--dim:#9CA3AF}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{height:100%;background:var(--bg);overflow:hidden;font-family:system-ui,sans-serif;color:var(--text)}
+#wrap{position:relative;width:100%;height:100dvh;display:flex;flex-direction:column}
+canvas{display:block;width:100%;height:100%;touch-action:none;background:linear-gradient(180deg,#1a2140 0%,#0B0E14 60%)}
+#hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top,0px)) 18px 0;z-index:10;pointer-events:none}
+#brand{font-size:11px;letter-spacing:2px;font-weight:700;color:var(--orange);text-transform:uppercase}
+#score{font-size:28px;font-weight:800;text-align:right;line-height:1}
+#score small{display:block;font-size:10px;letter-spacing:1.5px;color:var(--dim);margin-top:3px;text-transform:uppercase}
+#goalBar{position:absolute;top:calc(64px + env(safe-area-inset-top,0px));left:18px;right:18px;height:3px;background:rgba(255,255,255,.08);border-radius:4px;z-index:10;overflow:hidden}
+#goalFill{height:100%;width:0%;background:linear-gradient(90deg,var(--orange),var(--gold));transition:width .2s}
+#combo{position:absolute;top:calc(78px + env(safe-area-inset-top,0px));right:18px;font-size:12px;font-weight:700;color:var(--gold);opacity:0;transition:opacity .25s;z-index:10}
+#tapHint{position:absolute;bottom:calc(18px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;color:var(--dim);font-size:12px;letter-spacing:1px;z-index:5;opacity:.7;pointer-events:none}
+.screen{position:absolute;inset:0;background:rgba(8,10,16,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:30;padding:24px;text-align:center}
+.screen.hidden{display:none}
+.screen h1{font-size:28px;font-weight:800;letter-spacing:2px;margin-bottom:8px}
+.screen .tag{font-size:11px;letter-spacing:3px;color:var(--orange);text-transform:uppercase;font-weight:700;margin-bottom:8px}
+.screen .sub{color:var(--dim);font-size:14px;max-width:300px;line-height:1.5;margin-bottom:20px}
+.btn{background:var(--orange);color:#fff;border:none;padding:14px 36px;font-size:15px;font-weight:700;border-radius:100px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--dim);border:1px solid rgba(255,255,255,.12);margin-top:10px;padding:11px 28px;font-size:13px}
+.by{margin-top:16px;font-size:10px;letter-spacing:2px;color:var(--dim);opacity:.5;text-transform:uppercase}
+</style></head><body>
+<div id="wrap">
+  <div id="hud"><div><div id="brand">${name} <span style="color:var(--dim);font-weight:500">· Arena</span></div></div><div id="score">0<small>Floors</small></div></div>
+  <div id="goalBar"><div id="goalFill"></div></div>
+  <div id="combo">PERFECT STACK</div>
+  <canvas id="game"></canvas>
+  <div id="tapHint">tap or space to drop</div>
+  <div id="home" class="screen">
+    <div class="tag">Merveil Arena</div>
+    <h1 data-edit>${name}</h1>
+    <div class="sub" data-edit>${esc((prompt||'').slice(0,140)||'Stack precise floors. Align for Perfect Stack. Reach the goal.')}</div>
+    <button class="btn" id="startBtn">Start</button>
+    <div class="by">${esc(p.company||'Merveil')} · By IVONIX</div>
+  </div>
+  <div id="result" class="screen hidden"></div>
+</div>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const scoreEl=document.getElementById('score'),goalFill=document.getElementById('goalFill'),comboEl=document.getElementById('combo');
+const home=document.getElementById('home'),result=document.getElementById('result');
+function resize(){canvas.width=innerWidth*devicePixelRatio;canvas.height=innerHeight*devicePixelRatio;canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+resize();addEventListener('resize',resize);
+const GOAL=15,BLOCK_H=36,palette=['#06B6D4','#22D3EE','#0891B2','#D97706','#818CF8','#A78BFA'];
+let blocks=[],moving=null,camY=0,speed=2.8,dir=1,combo=0,running=false;
+function baseW(){return Math.min(210,innerWidth*0.48)}
+function shade(hex,amt){const n=parseInt(hex.slice(1),16);let r=(n>>16)+Math.round(255*amt),g=((n>>8)&255)+Math.round(255*amt),b=(n&255)+Math.round(255*amt);return\`rgb(\${Math.max(0,Math.min(255,r))},\${Math.max(0,Math.min(255,g))},\${Math.max(0,Math.min(255,b))})\`}
+function drawBrick(x,y,w,h,color,perfect,active){
+  const d=11;ctx.save();ctx.shadowColor=perfect?'rgba(212,162,76,.55)':'rgba(6,182,212,.18)';ctx.shadowBlur=perfect?16:6;
+  ctx.fillStyle=color;ctx.fillRect(x,y,w,h-2);
+  ctx.fillStyle=shade(color,.32);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+d,y-d*.65);ctx.lineTo(x+w+d,y-d*.65);ctx.lineTo(x+w,y);ctx.closePath();ctx.fill();
+  ctx.fillStyle=shade(color,-.28);ctx.beginPath();ctx.moveTo(x+w,y);ctx.lineTo(x+w+d,y-d*.65);ctx.lineTo(x+w+d,y+h-2-d*.65);ctx.lineTo(x+w,y+h-2);ctx.closePath();ctx.fill();
+  if(perfect){ctx.fillStyle='rgba(212,162,76,.95)';ctx.fillRect(x,y,w,3)}
+  if(active){ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=1.5;ctx.strokeRect(x+.5,y+.5,w-1,h-3)}
+  ctx.restore();
+}
+function init(){blocks=[];camY=0;speed=2.8;combo=0;const w=baseW();blocks.push({x:innerWidth/2-w/2,w,color:'#3A4270',perfect:false,y:0});blocks.push({x:innerWidth/2-w/2+6,w:w-12,color:'#4C5490',perfect:false,y:1});spawn();hud()}
+function spawn(){const top=blocks[blocks.length-1];moving={x:16,w:top.w,color:palette[blocks.length%palette.length],y:blocks.length};dir=Math.random()<.5?-1:1;speed=Math.min(10,2.6+blocks.length*.1)}
+function hud(){const floors=Math.max(0,blocks.length-2);scoreEl.innerHTML=floors+'<small>Floors</small>';goalFill.style.width=Math.min(100,(floors/GOAL)*100)+'%';if(floors>=GOAL&&running)win()}
+function drop(){if(!running||!moving)return;const top=blocks[blocks.length-1];const left=Math.max(moving.x,top.x),right=Math.min(moving.x+moving.w,top.x+top.w),overlap=right-left;if(overlap<=5){lose();return}const perfect=Math.abs(moving.x-top.x)<5&&Math.abs(moving.w-top.w)<4;const newW=perfect?top.w:overlap,newX=perfect?top.x:left;blocks.push({x:newX,w:newW,color:moving.color,perfect,y:blocks.length});if(perfect){combo++;comboEl.style.opacity=1;comboEl.textContent=combo>1?'PERFECT ×'+combo:'PERFECT STACK';clearTimeout(drop._t);drop._t=setTimeout(()=>comboEl.style.opacity=0,700)}else combo=0;hud();const stackTop=innerHeight-140-blocks.length*BLOCK_H+camY;if(stackTop<innerHeight*.38)camY+=(innerHeight*.38-stackTop);spawn()}
+function win(){running=false;result.classList.remove('hidden');result.innerHTML='<div class="tag">Level Complete</div><h1>${name}</h1><div class="sub">Goal reached. Built with Merveil Developer.</div><button class="btn" id="again">Play again</button><button class="btn ghost" id="homeBtn">Home</button><div class="by">${esc(p.company||'Merveil')}</div>';document.getElementById('again').onclick=()=>{result.classList.add('hidden');init();running=true};document.getElementById('homeBtn').onclick=()=>{result.classList.add('hidden');home.classList.remove('hidden')}}
+function lose(){running=false;result.classList.remove('hidden');result.innerHTML='<div class="tag">Try Again</div><h1>Tower Down</h1><div class="sub">Misaligned drop. Reach '+GOAL+' floors.</div><button class="btn" id="retry">Retry</button><div class="by">${esc(p.company||'Merveil')}</div>';document.getElementById('retry').onclick=()=>{result.classList.add('hidden');init();running=true}}
+document.getElementById('startBtn').onclick=()=>{home.classList.add('hidden');init();running=true};
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();drop()}});
+canvas.addEventListener('pointerdown',drop);
+function loop(){if(running&&moving){moving.x+=dir*speed;if(moving.x<=0){moving.x=0;dir=1}if(moving.x+moving.w>=innerWidth){moving.x=innerWidth-moving.w;dir=-1}}ctx.clearRect(0,0,innerWidth,innerHeight);const baseY=innerHeight-115;for(const b of blocks){const y=baseY-b.y*BLOCK_H+camY;if(y<-BLOCK_H||y>innerHeight)continue;drawBrick(b.x,y,b.w,BLOCK_H,b.color,b.perfect,false)}if(moving&&running){const y=baseY-moving.y*BLOCK_H+camY;drawBrick(moving.x,y,moving.w,BLOCK_H,moving.color,false,true)}requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>`;
+}
+
+function gameConnecta(title, prompt, p) {
+  const name = esc(title || 'Connecta');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>${name} — Merveil Arena</title>
+<style>
+:root{--bg:#070A12;--orange:#06B6D4;--indigo:#818CF8;--gold:#D4A24C;--teal:#3FBFA0;--danger:#E5626B;--text:#EDEFF7;--dim:#7C82A6}
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--bg);font-family:system-ui,sans-serif;color:var(--text)}
+#wrap{position:relative;width:100%;height:100dvh}
+canvas{display:block;width:100%;height:100%;touch-action:none;background:radial-gradient(ellipse at 50% 28%,#101830 0%,#070A12 70%)}
+#hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top,0px)) 18px 0;z-index:10;pointer-events:none}
+#brand{font-size:11px;letter-spacing:2px;font-weight:700;color:var(--orange);text-transform:uppercase}
+#score{font-size:28px;font-weight:800;text-align:right;line-height:1}
+#score small{display:block;font-size:10px;color:var(--dim);letter-spacing:1.5px;margin-top:3px;text-transform:uppercase}
+#timerBar{position:absolute;top:calc(60px + env(safe-area-inset-top,0px));left:18px;right:18px;height:3px;background:rgba(255,255,255,.08);border-radius:4px;z-index:10;overflow:hidden}
+#timerFill{height:100%;width:100%;background:linear-gradient(90deg,var(--teal),var(--indigo));transition:width .15s linear}
+#combo{position:absolute;top:calc(74px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);font-size:12px;font-weight:700;color:var(--gold);opacity:0;z-index:10}
+.screen{position:absolute;inset:0;background:rgba(5,7,13,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:30;padding:24px;text-align:center}
+.screen.hidden{display:none}
+.screen h1{font-size:32px;font-weight:800;letter-spacing:3px;margin-bottom:8px}
+.screen .tag{font-size:11px;letter-spacing:3px;color:var(--orange);text-transform:uppercase;font-weight:700;margin-bottom:8px}
+.screen .sub{color:var(--dim);font-size:14px;max-width:300px;line-height:1.5;margin-bottom:18px}
+.btn{background:var(--orange);color:#fff;border:none;padding:14px 36px;font-size:15px;font-weight:700;border-radius:100px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--dim);border:1px solid rgba(255,255,255,.12);margin-top:10px;padding:11px 28px;font-size:13px}
+.legend{display:flex;gap:14px;margin-bottom:16px;font-size:11px;color:var(--dim);flex-wrap:wrap;justify-content:center}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:4px}
+.by{margin-top:16px;font-size:10px;letter-spacing:2px;color:var(--dim);opacity:.5;text-transform:uppercase}
+</style></head><body>
+<div id="wrap">
+  <div id="hud"><div id="brand">${name} <span style="color:var(--dim)">· Arena</span></div><div id="score">0<small>Connections</small></div></div>
+  <div id="timerBar"><div id="timerFill"></div></div>
+  <div id="combo">CHAIN BONUS</div>
+  <canvas id="game"></canvas>
+  <div id="home" class="screen">
+    <div class="tag">Merveil Arena</div>
+    <h1 data-edit>${name}</h1>
+    <div class="sub" data-edit>${esc((prompt||'').slice(0,140)||'Link opportunity and investor nodes. Avoid risk. Chain for combos.')}</div>
+    <div class="legend"><span><span class="dot" style="background:#818CF8"></span>Opportunity</span><span><span class="dot" style="background:#D4A24C"></span>Investor</span><span><span class="dot" style="background:#E5626B"></span>Risk</span></div>
+    <button class="btn" id="startBtn">Start</button>
+    <div class="by">${esc(p.company||'Merveil')} · By IVONIX</div>
+  </div>
+  <div id="result" class="screen hidden"></div>
+</div>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const scoreEl=document.getElementById('score'),timerFill=document.getElementById('timerFill'),comboEl=document.getElementById('combo');
+const home=document.getElementById('home'),result=document.getElementById('result');
+function resize(){canvas.width=innerWidth*devicePixelRatio;canvas.height=innerHeight*devicePixelRatio;canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+resize();addEventListener('resize',resize);
+let nodes=[],links=[],dragFrom=null,dragPos=null,score=0,combo=0,timeLeft=45,timeMax=45,running=false,nid=0;
+function rand(a,b){return a+Math.random()*(b-a)}
+function makeNode(){const r=Math.random();const type=r<.55?'opportunity':(r<.82?'investor':'risk');const color=type==='opportunity'?'#818CF8':type==='investor'?'#D4A24C':'#E5626B';const m=56;return{id:nid++,x:rand(m,innerWidth-m),y:rand(innerHeight*.18,innerHeight*.78),r:15,type,color,pulse:Math.random()*Math.PI*2}}
+function init(){nodes=[];links=[];score=0;combo=0;nid=0;timeMax=45;timeLeft=45;for(let i=0;i<8;i++)nodes.push(makeNode());hud()}
+function hud(){scoreEl.innerHTML=score+'<small>Connections</small>';timerFill.style.width=Math.max(0,(timeLeft/timeMax)*100)+'%'}
+function nodeAt(x,y){for(const n of nodes)if(Math.hypot(n.x-x,n.y-y)<28)return n;return null}
+function already(a,b){return links.some(l=>(l.a===a.id&&l.b===b.id)||(l.a===b.id&&l.b===a.id))}
+function tryConnect(a,b){if(already(a,b))return;if(a.type==='risk'||b.type==='risk'){combo=0;score=Math.max(0,score-2);links.push({a:a.id,b:b.id,life:30,color:'#E5626B'});hud();return}combo++;const inv=(a.type==='investor'||b.type==='investor')?1:0;const gain=1+Math.floor(combo/3)+inv;score+=gain;links.push({a:a.id,b:b.id,life:9999,color:inv?'#D4A24C':'#818CF8'});if(combo>1){comboEl.style.opacity=1;comboEl.textContent='CHAIN ×'+combo;clearTimeout(tryConnect._c);tryConnect._c=setTimeout(()=>comboEl.style.opacity=0,650)}hud();if(Math.random()<.45&&nodes.length<18)nodes.push(makeNode())}
+canvas.addEventListener('pointerdown',e=>{if(!running)return;const n=nodeAt(e.clientX,e.clientY);if(n){dragFrom=n;dragPos={x:e.clientX,y:e.clientY}}});
+canvas.addEventListener('pointermove',e=>{if(dragFrom)dragPos={x:e.clientX,y:e.clientY}});
+canvas.addEventListener('pointerup',e=>{if(!dragFrom)return;const t=nodeAt(e.clientX,e.clientY);if(t&&t.id!==dragFrom.id)tryConnect(dragFrom,t);dragFrom=null;dragPos=null});
+function endGame(){running=false;const win=score>=12;result.classList.remove('hidden');result.innerHTML='<div class="tag">'+(win?'Level Complete':'Run Complete')+'</div><h1>${name}</h1><div class="sub">Score '+score+' · Built with Merveil Developer</div><button class="btn" id="again">Play again</button><button class="btn ghost" id="homeBtn">Home</button><div class="by">${esc(p.company||'Merveil')}</div>';document.getElementById('again').onclick=()=>{result.classList.add('hidden');init();running=true};document.getElementById('homeBtn').onclick=()=>{result.classList.add('hidden');home.classList.remove('hidden')}}
+document.getElementById('startBtn').onclick=()=>{home.classList.add('hidden');init();running=true};
+let last=performance.now();
+function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;if(running){timeLeft-=dt;if(timeLeft<=0){timeLeft=0;endGame()}hud()}for(const n of nodes)n.pulse+=dt*2;links=links.filter(l=>l.life===9999||l.life-->0);ctx.clearRect(0,0,innerWidth,innerHeight);const byId=id=>nodes.find(n=>n.id===id);for(const l of links){const a=byId(l.a),b=byId(l.b);if(!a||!b)continue;ctx.save();ctx.strokeStyle=l.color;ctx.globalAlpha=l.life===9999?.55:(l.life/40);ctx.lineWidth=2.2;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.restore()}if(dragFrom&&dragPos){ctx.save();ctx.strokeStyle='#EDEFF7';ctx.globalAlpha=.5;ctx.setLineDash([5,5]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(dragFrom.x,dragFrom.y);ctx.lineTo(dragPos.x,dragPos.y);ctx.stroke();ctx.restore()}for(const n of nodes){const glow=5+Math.sin(n.pulse)*2.5;ctx.save();ctx.shadowColor=n.color;ctx.shadowBlur=glow;ctx.strokeStyle=n.color;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(n.x,n.y,n.r+3,0,Math.PI*2);ctx.stroke();ctx.fillStyle=n.color;ctx.globalAlpha=.35;ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fill();ctx.restore()}requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>`;
+}
+
+function gameArcade(title, prompt, p) {
+  return baseHead(title, `
+html,body{height:100%;margin:0;background:#0B0E14;color:#F3F4F6;font-family:system-ui,sans-serif;overflow:hidden}
+#wrap{position:relative;width:100%;height:100dvh}
+canvas{display:block;width:100%;height:100%;touch-action:none;background:radial-gradient(ellipse at 50% 30%,#152038,#0B0E14)}
+#hud{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:18px;right:18px;display:flex;justify-content:space-between;z-index:5;pointer-events:none}
+#hud b{color:#06B6D4;letter-spacing:2px;font-size:11px;text-transform:uppercase}
+#hud span{font-size:22px;font-weight:800}
+.screen{position:absolute;inset:0;background:rgba(8,10,16,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;text-align:center;padding:24px}
+.screen.hidden{display:none}
+.btn{background:#06B6D4;color:#fff;border:0;padding:14px 32px;border-radius:999px;font-weight:700;cursor:pointer}
+`) + `
+<div id="wrap">
+  <div id="hud"><b data-edit>${esc(title||'Arena')}</b><span id="sc">0</span></div>
+  <canvas id="c"></canvas>
+  <div id="home" class="screen">
+    <h1 style="font-size:28px;letter-spacing:2px;margin-bottom:8px" data-edit>${esc(title||'Play')}</h1>
+    <p style="color:#9CA3AF;max-width:280px;margin-bottom:20px" data-edit>${esc((prompt||'').slice(0,120)||'Tap to score. Survive the rising pace.')}</p>
+    <button class="btn" id="go">Start</button>
+    <p style="margin-top:16px;font-size:10px;letter-spacing:2px;color:#6b7280;text-transform:uppercase">${esc(p.company||'Merveil')} · Arena</p>
+  </div>
+</div>
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d'),sc=document.getElementById('sc'),home=document.getElementById('home');
+function resize(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;c.style.width=innerWidth+'px';c.style.height=innerHeight+'px';ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}
+resize();addEventListener('resize',resize);
+let score=0,x=0,y=0,vx=0,vy=0,orbs=[],running=false,t0=0;
+function reset(){score=0;x=innerWidth/2;y=innerHeight/2;vx=0;vy=0;orbs=[];for(let i=0;i<6;i++)orbs.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,r:10+Math.random()*14,vx:(Math.random()-.5)*2,vy:(Math.random()-.5)*2,c:['#06B6D4','#818CF8','#D4A24C'][i%3]});sc.textContent='0'}
+function loop(ts){if(!running){requestAnimationFrame(loop);return}const dt=.016;x+=vx;y+=vy;vx*=.98;vy*=.98;if(x<20||x>innerWidth-20)vx*=-1;if(y<20||y>innerHeight-20)vy*=-1;ctx.clearRect(0,0,innerWidth,innerHeight);for(const o of orbs){o.x+=o.vx;o.y+=o.vy;if(o.x<o.r||o.x>innerWidth-o.r)o.vx*=-1;if(o.y<o.r||o.y>innerHeight-o.r)o.vy*=-1;ctx.beginPath();ctx.fillStyle=o.c;ctx.globalAlpha=.85;ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;if(Math.hypot(o.x-x,o.y-y)<o.r+14){score++;sc.textContent=String(score);o.x=Math.random()*innerWidth;o.y=Math.random()*innerHeight;vx+=(Math.random()-.5)*1.5;vy+=(Math.random()-.5)*1.5}}ctx.beginPath();ctx.fillStyle='#F3F4F6';ctx.arc(x,y,14,0,Math.PI*2);ctx.fill();requestAnimationFrame(loop)}
+c.addEventListener('pointermove',e=>{if(!running)return;vx=(e.clientX-x)*0.08;vy=(e.clientY-y)*0.08});
+c.addEventListener('pointerdown',e=>{if(!running)return;x=e.clientX;y=e.clientY});
+document.getElementById('go').onclick=()=>{home.classList.add('hidden');reset();running=true};
+requestAnimationFrame(loop);
 </script>
 ` + baseFoot(p);
 }
@@ -684,14 +861,81 @@ loop();
 /**
  * Try LLM generate API, fall back to local engine.
  */
+
+/** Local content enrichment (no paid APIs). Entity extract + contextual Unsplash URLs. */
+export function extractEntities(prompt) {
+  const entities = [];
+  const patterns = {
+    locations: /\b(dubai|london|new york|paris|tokyo|uae|usa|marina|palm|downtown)\b/gi,
+    industries: /\b(real estate|interior design|fashion|technology|health|fitness|education|food|travel|saas|ecommerce)\b/gi,
+    products: /\b(website|app|game|dashboard|ecommerce|portfolio|blog|tower|connect)\b/gi,
+  };
+  for (const regex of Object.values(patterns)) {
+    const matches = String(prompt || '').match(regex);
+    if (matches) entities.push(...matches.map((m) => m.toLowerCase()));
+  }
+  return [...new Set(entities)];
+}
+
+export function enrichLocal(prompt) {
+  const entities = extractEntities(prompt);
+  const q = entities.length ? entities.join(' ') : (prompt || 'modern design').slice(0, 80);
+  // Deterministic Unsplash source URLs by entity (no API key)
+  const map = {
+    dubai: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1600&q=80',
+    interior: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1600&q=80',
+    'real estate': 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1600&q=80',
+    marina: 'https://images.unsplash.com/photo-1600607687920-4e2a09c1590b?w=1200&q=80',
+    fashion: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1600&q=80',
+    technology: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1600&q=80',
+    fitness: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=1200&q=80',
+    food: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1200&q=80',
+  };
+  const images = [];
+  for (const e of entities) {
+    if (map[e]) images.push({ url: map[e], alt: e });
+  }
+  if (!images.length) {
+    images.push({ url: map.dubai, alt: 'hero' });
+  }
+  // Always add second interior if dubai/real estate
+  if (entities.some((e) => /dubai|real estate|interior|marina/.test(e))) {
+    images.push({ url: map.interior, alt: 'interior' });
+    images.push({ url: map.marina || map['real estate'], alt: 'property' });
+  }
+  return {
+    prompt,
+    entities,
+    images,
+    heroTitle: /dubai/i.test(prompt) && /interior|real estate/i.test(prompt)
+      ? 'Luxury Dubai Interiors'
+      : (prompt || 'Project').slice(0, 48),
+    heroSubtitle: entities.length
+      ? `Built for ${entities.slice(0, 4).join(' · ')}`
+      : 'Generated with Merveil Developer',
+    sources: [],
+    metadata: { enrichedAt: new Date().toISOString(), mode: 'local' },
+  };
+}
+
 export async function generateProject({ prompt, type, passport, boost = true, onProgress }) {
   onProgress?.('Boost');
   const boostMeta = await applyMerveilBoost(prompt, boost);
+  onProgress?.('Enrich');
+  const localEnrich = enrichLocal(boostMeta.prompt || prompt);
   onProgress?.('Generate');
 
   // Prefer local high-quality HTML for beginners (always real, complete)
-  // Then optionally enrich via engine if available
-  let result = generateSite(boostMeta.prompt || prompt, type, passport, boostMeta);
+  // Inject enrichment assets into boostMeta for generators that accept meta.assets
+  const genMeta = {
+    ...boostMeta,
+    assets: {
+      heroImage: localEnrich.images[0]?.url,
+      gallery: localEnrich.images.slice(1).map((i) => i.url),
+    },
+    enrichment: localEnrich,
+  };
+  let result = generateSite(boostMeta.prompt || prompt, type, passport, genMeta);
 
   try {
     const ctrl = new AbortController();
@@ -757,4 +1001,50 @@ export async function generateProject({ prompt, type, passport, boost = true, on
   } catch { /* ignore */ }
 
   return { project, html: result.html, deployment: result.deployment, boost: boostMeta };
+}
+
+
+/** Interface Platform catalog — published projects appear in /interface Store */
+const INTERFACE_CATALOG_KEY = 'merveil_interface_catalog_v1';
+
+export function loadInterfaceCatalog() {
+  try { return JSON.parse(localStorage.getItem(INTERFACE_CATALOG_KEY) || '[]'); }
+  catch { return []; }
+}
+
+export function publishToInterface(project, html) {
+  const item = {
+    id: project?.id || ('pub_' + Date.now().toString(36)),
+    title: project?.title || 'Untitled',
+    project_type: project?.project_type || 'website',
+    prompt: project?.prompt || '',
+    rule_id: project?.rule_id || null,
+    thumbnail_url: null,
+    status: 'published',
+    html: html || project?.generated_code || '',
+    company: project?.passport_snapshot?.company_name || project?.passport_snapshot?.company || '',
+    published_at: Date.now(),
+    source: 'developer-beginner',
+  };
+  const list = loadInterfaceCatalog().filter((x) => x.id !== item.id);
+  list.unshift(item);
+  localStorage.setItem(INTERFACE_CATALOG_KEY, JSON.stringify(list.slice(0, 60)));
+  // Mark on beginner projects store
+  try {
+    const projects = loadProjects().map((p) =>
+      p.id === item.id ? { ...p, is_public: true, status: 'published' } : p
+    );
+    const exists = projects.some((p) => p.id === item.id);
+    if (!exists && project) {
+      projects.unshift({ ...project, is_public: true, status: 'published', generated_code: item.html });
+    }
+    saveProjects(projects);
+  } catch { /* */ }
+  return item;
+}
+
+export function unpublishFromInterface(id) {
+  const list = loadInterfaceCatalog().filter((x) => x.id !== id);
+  localStorage.setItem(INTERFACE_CATALOG_KEY, JSON.stringify(list));
+  return list;
 }
