@@ -9,15 +9,15 @@
       "destination": "/api/share?type=invite"
     },
     {
-      "source": "/interface/(.*)",
-      "destination": "/interface/$1"
+      "source": "/interface",
+      "destination": "/interface/index.html"
     },
     {
       "source": "/interface/",
       "destination": "/interface/index.html"
     },
     {
-      "source": "/interface",
+      "source": "/interface.html",
       "destination": "/interface/index.html"
     },
     {
@@ -265,12 +265,16 @@
       "destination": "/api/studio/$1"
     },
     {
-      "source": "/api/(.*)",
-      "destination": "/api/router"
+      "source": "/api/enrich",
+      "destination": "/api/enrich"
     },
     {
-      "source": "/((?!api/|assets/|favicon|sw\\.js|arena/|manifest\\.webmanifest|icons/|\\.well-known/|developer(?:/|$)|developer-portal(?:/|$)|interface(?:/|$)|admin(?:/|$)|merveil-admin-x9k2(?:/|$)|onboarding(?:/|$)|oauth(?:/|$)).*)",
-      "destination": "/index.html"
+      "source": "/api/enrich/",
+      "destination": "/api/enrich"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/router"
     }
   ],
   "headers": [
