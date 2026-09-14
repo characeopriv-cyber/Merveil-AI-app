@@ -1,162 +1,68 @@
-/* Merveil Boost — one AI core, channel-specific presentation. */
+/* Merveil Boost — proactive capability layer. No simulated results. */
 (function () {
   const API = '/api/v1/boost';
+  const PACKAGE_API = '/api/v1/boost/package';
   const STYLE_ID = 'merveil-boost-style';
-
   const CSS = `
-#merveil-boost-root{position:fixed;right:22px;bottom:22px;z-index:2147483000;font-family:Inter,system-ui,sans-serif;color:#29251f}
-#merveil-boost-btn{width:76px;height:76px;border-radius:24px;border:1px solid #b9aa98;background:linear-gradient(145deg,#fffaf2,#d9cbb9);box-shadow:12px 14px 30px #6d5b482e,inset 2px 2px 8px #fff;cursor:grab;display:grid;place-items:center;transform:perspective(500px) rotateX(7deg) rotateY(-7deg);transition:.2s;font-weight:900;letter-spacing:.12em}
-#merveil-boost-btn:hover{transform:perspective(500px) rotateX(0) rotateY(0) translateY(-3px)}
-#merveil-boost-btn:active{cursor:grabbing}
-#merveil-boost-btn span{font-size:12px}
-#merveil-boost-panel{position:absolute;right:0;bottom:88px;width:min(460px,calc(100vw - 28px));max-height:min(76vh,680px);overflow:auto;border:1px solid #c9bba9;border-radius:24px;background:#f7f0e7f2;backdrop-filter:blur(22px);box-shadow:0 30px 80px #493a2d38;padding:18px;display:none}
-#merveil-boost-panel.open{display:block}
-.mb-head{display:flex;align-items:center;justify-content:space-between}
-.mb-head strong{font-size:18px}
-.mb-x{border:0;background:transparent;font-size:20px;cursor:pointer}
-.mb-sub{font-size:11px;color:#766b5e;line-height:1.55;margin:5px 0 15px}
-.mb-grid{display:grid;gap:9px}
-.mb-grid input,.mb-grid textarea,.mb-grid select{width:100%;box-sizing:border-box;border:1px solid #cbbdac;border-radius:11px;background:#fffaf4;padding:10px;color:#302a24;outline:0;font:inherit;font-size:12px}
-.mb-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-.mb-checks{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-.mb-check{display:flex;align-items:center;gap:7px;padding:9px;border:1px solid #d3c6b7;border-radius:11px;background:#fffaf4;font-size:11px;cursor:pointer}
-.mb-check input{width:auto}
-.mb-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
-.mb-actions button{border:1px solid #b9aa98;border-radius:10px;padding:9px 12px;background:#fffaf4;color:#332c25;cursor:pointer;font-weight:700;font-size:11px}
-.mb-actions .primary{background:#29251f;color:#fff}
-.mb-result{margin-top:14px;padding:13px;border-radius:15px;background:#fffaf4;border:1px solid #d4c6b5;font-size:11px;line-height:1.55}
-.mb-tag{display:inline-block;border:1px solid #c9bba9;border-radius:999px;padding:4px 7px;margin:2px;font-size:9px}
-.mb-muted{color:#776d62}
-.mb-error{color:#7c4939}
-.mb-price{font-size:20px;font-weight:900;margin:5px 0}
-.mb-divider{height:1px;background:#e2d7c8;margin:12px 0}
+#merveil-boost-root{position:fixed;right:22px;bottom:22px;z-index:2147483000;font-family:Inter,system-ui,sans-serif;color:#26332d}
+#merveil-boost-btn{width:76px;height:76px;border-radius:50%;border:1px solid #9dc8b4;background:radial-gradient(circle at 35% 30%,#fff,#dff5e9 55%,#b9e6d1);box-shadow:0 16px 38px #3d7c5a30,inset 2px 2px 10px #fff;cursor:pointer;display:grid;place-items:center;transition:.22s;font-weight:800}
+#merveil-boost-btn:hover{transform:translateY(-3px) scale(1.03)} #merveil-boost-btn span{font-size:11px;letter-spacing:.1em}
+#merveil-boost-panel{position:absolute;right:0;bottom:88px;width:min(500px,calc(100vw - 28px));max-height:min(80vh,720px);overflow:auto;border:1px solid #b8d8c6;border-radius:26px;background:#fbfffcf5;backdrop-filter:blur(24px);box-shadow:0 30px 80px #31584324;padding:20px;display:none}
+#merveil-boost-panel.open{display:block}.mb-head{display:flex;align-items:center;justify-content:space-between}.mb-head strong{font-size:19px}.mb-x{border:0;background:transparent;font-size:20px;cursor:pointer}
+.mb-sub{font-size:12px;color:#607067;line-height:1.55;margin:6px 0 16px}.mb-grid{display:grid;gap:9px}.mb-grid input,.mb-grid textarea{width:100%;box-sizing:border-box;border:1px solid #c5ded0;border-radius:12px;background:#fff;padding:10px;color:#26332d;outline:0;font:inherit;font-size:12px}.mb-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.mb-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}.mb-actions button{border:1px solid #a9ccb9;border-radius:999px;padding:9px 13px;background:#fff;color:#294337;cursor:pointer;font-weight:700;font-size:11px}.mb-actions .primary{background:#276b4b;color:#fff;border-color:#276b4b}
+.mb-result{margin-top:14px;padding:14px;border-radius:17px;background:#fff;border:1px solid #cfe4d8;font-size:12px;line-height:1.6}.mb-rec{padding:12px;margin-top:9px;border:1px solid #cfe4d8;border-radius:14px;background:#f6fcf8}.mb-rec b{display:block;margin-bottom:4px}.mb-ready{font-size:10px;color:#8a6a34}.mb-tag{display:inline-block;border:1px solid #c4ded0;border-radius:999px;padding:4px 8px;margin:2px;font-size:9px}.mb-muted{color:#6d7a73}.mb-error{color:#9a4d3e}.mb-price{font-size:19px;font-weight:800;margin:5px 0}.mb-divider{height:1px;background:#dfece5;margin:12px 0}
 `;
+  const el = id => document.getElementById(id);
+  const esc = v => String(v || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function projectId(){try{const p=JSON.parse(localStorage.getItem('merveil:developer-project')||'null');return p?.id||p?.projectId||'';}catch{return '';}}
+  function selected(){return [...document.querySelectorAll('#merveil-boost-panel input[data-agent]:checked')].map(x=>x.value);}
 
-  function escapeHtml(v) {
-    return String(v || '').replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-    }[c]));
+  function render(action, body){
+    if(action==='recommend'){
+      const r=body.result||{};
+      if(!r.recommendations?.length) return `<b>Merveil needs a little more context.</b><br><span class="mb-muted">No capability is recommended until the project gives enough evidence.</span>`;
+      return `<b>Merveil found useful capabilities for this project.</b><br><span class="mb-muted">These are recommendations from the project context, not advertisements.</span>`+
+        r.recommendations.map(x=>`<div class="mb-rec"><b>${esc(x.label)}</b><span>${esc(x.description)}</span><br><span class="mb-ready">${esc(x.readiness_message)}</span><br><label class="mb-tag"><input data-agent type="checkbox" value="${esc(x.agent)}"> Select</label></div>`).join('');
+    }
+    if(action==='package-price'){
+      const r=body.config||{};
+      if(!r.monthly_usd) return `<span class="mb-muted">Pricing is not configured for the selected capability set.</span>`;
+      return `<b>Configured package estimate</b><div class="mb-price">$${Number(r.monthly_usd).toLocaleString()} / month</div><span class="mb-muted">$${Number(r.yearly_usd).toLocaleString()} / year · ${r.bundle_discount_pct||0}% configured bundle discount.</span><div class="mb-divider"></div><span class="mb-muted">This is configuration pricing, not simulated performance or customer results. Advertising spend remains separate.</span>`;
+    }
+    if(action==='activate') return `<b>Capability configuration saved.</b><br><span class="mb-muted">Activation remains provider-dependent. No unavailable provider is represented as live.</span>`;
+    const x=body.result||body;
+    if(x.value){const v=x.value||{};const range=v.range?`<b>$${Number(v.range.low).toLocaleString()} – $${Number(v.range.high).toLocaleString()} ${v.range.currency||''}</b>`:'Insufficient evidence — test before scaling.';return `<b>${esc(x.core||'Merveil AI')}</b><br><span class="mb-tag">${esc(v.label||'ESTIMATE')}</span> ${range}<br><br><b>Market</b><br><span class="mb-muted">${esc(x.market?.primary_market?.reason||'Evidence required before a market score can be issued.')}</span><br><br><b>Next moves</b><br>${(x.growth?.moves||[]).map(m=>'• '+esc(m)).join('<br/>')||'Validate a real conversion event.'}`;}
+    return `<span class="mb-muted">${esc(JSON.stringify(x).slice(0,900))}</span>`;
   }
 
-  function field(id) {
-    return document.getElementById(id);
+  async function post(action, extra={}, endpoint=API){
+    const payload={projectId:el('mb-project')?.value||projectId(),product:el('mb-product')?.value||'',market:el('mb-market')?.value||'',what_built:el('mb-built')?.value||'',target_customer:el('mb-customer')?.value||'',notes:el('mb-notes')?.value||'',...extra,action};
+    try{const r=await fetch(endpoint+'?projectId='+encodeURIComponent(payload.projectId||''),{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b.error||'Boost unavailable');el('mb-result').innerHTML=render(action,b);return b;}catch(e){el('mb-result').innerHTML=`<span class="mb-error">${esc(e.message||'Boost unavailable')}</span>`;return null;}
   }
 
-  function selected() {
-    return [...document.querySelectorAll('#merveil-boost-panel .mb-check input:checked')].map((el) => el.value);
-  }
-
-  function projectId() {
-    try {
-      const raw = localStorage.getItem('merveil:developer-project');
-      const p = raw ? JSON.parse(raw) : null;
-      return p?.id || p?.projectId || '';
-    } catch {
-      return '';
-    }
-  }
-
-  function render(action, x) {
-    if (action === 'package-price') {
-      const r = x.result || {};
-      return `<b>Package ready</b><div class="mb-price">$${Number(r.monthly || 0).toLocaleString()} / month</div>
-        <b>$${Number(r.yearly || 0).toLocaleString()} / year</b><br/>
-        <span class="mb-muted">Annual saving: $${Number(r.annual_saving || 0).toLocaleString()} · Bundle discount: ${r.bundle_discount_pct || 0}%</span>
-        <div class="mb-divider"></div>
-        ${(x.agents || []).map((a) => `<span class="mb-tag">${escapeHtml(a.label || a.name)}</span>`).join('')}
-        <br/><br/><span class="mb-muted">One Merveil AI core. Advertising spend is separate.</span>`;
-    }
-    if (action === 'activate') {
-      return `<b>Boost activated</b><br/><span class="mb-muted">Merveil AI is ready for this project. Selected channel names are presentation layers.</span>`;
-    }
-    const x2 = x.result || x;
-    if (x2.value) {
-      const v = x2.value || {};
-      const range = v.range
-        ? `<b>$${Number(v.range.low).toLocaleString()} – $${Number(v.range.high).toLocaleString()} ${v.range.currency || ''}</b>`
-        : 'Insufficient evidence — test before scaling.';
-      return `<b>${escapeHtml(x2.core || 'Merveil AI')}</b><br/><span class="mb-tag">${escapeHtml(v.label || 'ESTIMATE')}</span> ${range}
-        <br/><br/><b>Market</b><br/><span class="mb-muted">${escapeHtml(x2.market?.primary_market?.reason || 'Evidence required before a market score can be issued.')}</span>
-        <br/><br/><b>Next moves</b><br/>${(x2.growth?.moves || []).map((m) => '• ' + escapeHtml(m)).join('<br/>') || 'Validate the core audience and measure a real conversion event.'}`;
-    }
-    return `<b>Boost</b><br/><span class="mb-muted">${escapeHtml(JSON.stringify(x2).slice(0, 800))}</span>`;
-  }
-
-  async function run(action, extra = {}) {
-    const p = {
-      projectId: field('mb-project')?.value || projectId(),
-      product: field('mb-product')?.value || '',
-      market: field('mb-market')?.value || '',
-      notes: field('mb-notes')?.value || '',
-      ...extra,
-    };
-    try {
-      const r = await fetch(API + '?projectId=' + encodeURIComponent(p.projectId || ''), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...p, action }),
-      });
-      const b = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(b.error || 'Boost unavailable');
-      field('mb-result').innerHTML = render(action, b);
-    } catch (e) {
-      field('mb-result').innerHTML = `<span class="mb-error">${escapeHtml(e.message || 'Boost unavailable')}</span>`;
-    }
-  }
-
-  function mount() {
-    if (document.getElementById('merveil-boost-root')) return;
-    if (!document.getElementById(STYLE_ID)) {
-      const s = document.createElement('style');
-      s.id = STYLE_ID;
-      s.textContent = CSS;
-      document.head.appendChild(s);
-    }
-    const root = document.createElement('div');
-    root.id = 'merveil-boost-root';
-    root.innerHTML = `
+  function mount(){
+    if(document.getElementById('merveil-boost-root'))return;
+    const s=document.createElement('style');s.id=STYLE_ID;s.textContent=CSS;document.head.appendChild(s);
+    const root=document.createElement('div');root.id='merveil-boost-root';root.innerHTML=`
       <div id="merveil-boost-panel">
-        <div class="mb-head"><strong>Merveil Boost</strong><button type="button" class="mb-x" id="mb-close" aria-label="Close">×</button></div>
-        <p class="mb-sub">One AI core. Package pricing, market read, and channel presentation for this project.</p>
+        <div class="mb-head"><strong>Merveil Boost</strong><button type="button" class="mb-x" id="mb-close">×</button></div>
+        <p class="mb-sub">Merveil understands what you built and can recommend useful capabilities. Provider status is respected: unavailable providers are never presented as live.</p>
         <div class="mb-grid">
-          <input id="mb-project" placeholder="Project id (optional)" value="${escapeHtml(projectId())}" />
-          <div class="mb-row">
-            <input id="mb-product" placeholder="Product name" />
-            <input id="mb-market" placeholder="Primary market" />
-          </div>
-          <textarea id="mb-notes" rows="3" placeholder="Notes / positioning"></textarea>
-          <div class="mb-checks">
-            <label class="mb-check"><input type="checkbox" value="discovery" checked /> Discovery</label>
-            <label class="mb-check"><input type="checkbox" value="conversion" checked /> Conversion</label>
-            <label class="mb-check"><input type="checkbox" value="retention" /> Retention</label>
-            <label class="mb-check"><input type="checkbox" value="support" /> Support</label>
-          </div>
+          <input id="mb-project" placeholder="Project id" value="${esc(projectId())}" />
+          <div class="mb-row"><input id="mb-product" placeholder="What did you build?" /><input id="mb-market" placeholder="Primary market" /></div>
+          <input id="mb-built" placeholder="Business, product or creation type" />
+          <input id="mb-customer" placeholder="Who is it for?" />
+          <textarea id="mb-notes" rows="3" placeholder="What should customers be able to do? e.g. ask questions, call, book a visit, request a quote…"></textarea>
         </div>
-        <div class="mb-actions">
-          <button type="button" id="mb-value">Value</button>
-          <button type="button" id="mb-analyze">Analyze</button>
-          <button type="button" id="mb-price">Package price</button>
-          <button type="button" class="primary" id="mb-activate">Activate</button>
-        </div>
-        <div class="mb-result" id="mb-result"><span class="mb-muted">Run Value or Analyze to start.</span></div>
-      </div>
-      <button type="button" id="merveil-boost-btn" title="Merveil Boost"><span>BOOST</span></button>
-    `;
+        <div class="mb-actions"><button class="primary" id="mb-recommend">Recommend capabilities</button><button id="mb-analyze">Analyze</button><button id="mb-price">Package estimate</button><button id="mb-activate">Save configuration</button></div>
+        <div class="mb-result" id="mb-result"><span class="mb-muted">Start with a real project. Merveil will recommend only from the supplied context.</span></div>
+      </div><button type="button" id="merveil-boost-btn" title="Merveil Boost"><span>BOOST</span></button>`;
     document.body.appendChild(root);
-
-    const panel = field('merveil-boost-panel');
-    field('merveil-boost-btn').onclick = () => panel.classList.toggle('open');
-    field('mb-close').onclick = () => panel.classList.remove('open');
-    field('mb-value').onclick = () => run('value');
-    field('mb-analyze').onclick = () => run('analyze');
-    field('mb-price').onclick = () => run('package-price', { agents: selected() });
-    field('mb-activate').onclick = () => run('activate', { agents: selected() });
+    const panel=el('merveil-boost-panel');el('merveil-boost-btn').onclick=()=>panel.classList.toggle('open');el('mb-close').onclick=()=>panel.classList.remove('open');
+    el('mb-recommend').onclick=()=>post('recommend');el('mb-analyze').onclick=()=>post('analyze');
+    el('mb-price').onclick=()=>post('package-price',{agents:selected(),audience_level:'local',engagement:'medium',volume:1},PACKAGE_API);
+    el('mb-activate').onclick=()=>post('activate',{selected_agents:selected()});
   }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', mount);
-  } else {
-    mount();
-  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
 })();
