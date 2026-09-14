@@ -922,16 +922,38 @@ export async function generateProject({ prompt, type, passport, boost = true, on
   onProgress?.('Boost');
   const boostMeta = await applyMerveilBoost(prompt, boost);
   onProgress?.('Enrich');
-  const localEnrich = enrichLocal(boostMeta.prompt || prompt);
+  let localEnrich = enrichLocal(boostMeta.prompt || prompt);
+  // Live enrichment when /api/enrich is deployed (SerpApi / Firecrawl / Unsplash + cache)
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const er = await fetch(`${API_BASE}/api/enrich`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: boostMeta.prompt || prompt }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (er.ok) {
+      const pack = await er.json();
+      if (pack?.enrichment?.images?.length) {
+        localEnrich = {
+          ...localEnrich,
+          ...pack.enrichment,
+          images: pack.enrichment.images,
+          heroTitle: pack.enrichment.heroTitle || localEnrich.heroTitle,
+          heroSubtitle: pack.enrichment.heroSubtitle || localEnrich.heroSubtitle,
+        };
+      }
+    }
+  } catch { /* keep localEnrich */ }
   onProgress?.('Generate');
 
-  // Prefer local high-quality HTML for beginners (always real, complete)
-  // Inject enrichment assets into boostMeta for generators that accept meta.assets
   const genMeta = {
     ...boostMeta,
     assets: {
-      heroImage: localEnrich.images[0]?.url,
-      gallery: localEnrich.images.slice(1).map((i) => i.url),
+      heroImage: localEnrich.images?.[0]?.url || localEnrich.images?.[0],
+      gallery: (localEnrich.images || []).slice(1).map((i) => i.url || i),
     },
     enrichment: localEnrich,
   };
