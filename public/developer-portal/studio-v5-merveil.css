@@ -1,0 +1,16 @@
+/* Merveil Studio surface — warm, human outer shell; technical editor stays readable. */
+:root{--bg:#f2eee8;--bg-1:#f8f6f2;--bg-2:#eee9e2;--bg-3:#e5dfd7;--line:#d8d0c6;--line-2:#c9c0b5;--txt:#24232a;--txt-2:#68646d;--txt-3:#8c8790;--cyan:#22c8d1;--purple:#8066e8;--orange:#ef8f73;--green:#3aa77a;--red:#d96565;--mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;--sans:'DM Sans',Inter,system-ui,sans-serif;--grad:linear-gradient(120deg,#22c8d1,#8066e8,#ef8f73)}
+body{font-family:var(--sans);background:var(--bg);color:var(--txt)}
+.top{background:rgba(248,246,242,.94);border-bottom-color:var(--line);backdrop-filter:blur(14px)}
+.brand{font-family:'Fraunces',Georgia,serif;font-size:16px}.brand .orb{border-radius:50%;box-shadow:0 0 18px rgba(34,200,209,.25)}
+.mode-switch,.pill,.btn,.health .item,.card,.panel,.hero,.step,.empty-box{border-color:var(--line)}
+.mode-switch{background:var(--bg-2)}.mode-switch button.on{background:var(--bg-1);box-shadow:0 0 0 1px var(--line-2)}
+.btn{background:var(--bg-1);color:var(--txt)}.btn:hover{background:var(--bg-2);border-color:var(--line-2)}.btn.primary{background:linear-gradient(120deg,#20bfc8,#8066e8);color:#fff}.btn.ship{background:linear-gradient(120deg,#3aa77a,#2f8f6a)}
+.rail,.panel,.guide,.tabs{background:var(--bg-1);border-color:var(--line)}.rail button:hover,.rail button.on{background:var(--bg-2)}
+.main{background:var(--bg)}.hero{background:radial-gradient(600px 200px at 10% -20%,rgba(34,200,209,.13),transparent 60%),radial-gradient(500px 180px at 90% 0%,rgba(128,102,232,.12),transparent 55%),radial-gradient(400px 160px at 50% 120%,rgba(239,143,115,.1),transparent 50%),var(--bg-1);box-shadow:0 18px 50px rgba(56,48,40,.07)}
+.hero h1{font-family:'Fraunces',Georgia,serif;background:none;color:var(--txt);font-weight:600;letter-spacing:-.025em}.hero p{color:var(--txt-2)}
+.card{background:var(--bg-1);box-shadow:0 8px 26px rgba(56,48,40,.045)}.card:hover{box-shadow:0 14px 34px rgba(56,48,40,.09)}
+.tree-item.on{background:rgba(34,200,209,.1);color:#159ca5}.editor{background:#20232a;color:#e8edf5}.guide{color:var(--txt)}
+.section-t,.panel-h{color:var(--txt-3)}
+@media(max-width:900px){.guide{display:none}.panel{width:220px}.dash{padding:20px 16px 42px}.steps{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.rail{display:none}.panel{width:190px}.top{padding:0 10px}.top .proj-name{display:none}.dash{padding:16px 12px 36px}.hero{padding:22px 18px}.cards{grid-template-columns:1fr}.steps{grid-template-columns:1fr}.editor{font-size:12px}}
