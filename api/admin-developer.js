@@ -9,12 +9,7 @@ function adminUrl(req) {
 
 function withTimeout(promise, ms = 8000, fallback = null) {
   let timer;
-  return Promise.race([
-    promise,
-    new Promise((resolve) => {
-      timer = setTimeout(() => resolve(fallback), ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
+  return Promise.race([promise, new Promise((resolve) => { timer = setTimeout(() => resolve(fallback), ms); })]).finally(() => clearTimeout(timer));
 }
 
 async function getAdmin(req) {
@@ -25,14 +20,11 @@ async function getAdmin(req) {
     if (!r || !r.ok) return null;
     const body = await withTimeout(r.json().catch(() => null), 4000, null);
     return body?.admin || null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function allowed(admin, permission) {
-  if (!admin) return false;
-  return admin.role === 'super_admin' || (Array.isArray(admin.permissions) && (admin.permissions.includes('*') || admin.permissions.includes(permission)));
+  return !!admin && (admin.role === 'super_admin' || (Array.isArray(admin.permissions) && (admin.permissions.includes('*') || admin.permissions.includes(permission))));
 }
 
 function service() {
@@ -62,26 +54,41 @@ export default async function handler(req, res) {
         withTimeout(usagePromise, 8000, { count: 0, error: null }),
       ]);
       if (applicationResult?.error) return json(res, 500, { error: applicationResult.error.message });
-      return json(res, 200, { applications: applicationResult?.data || [], usage24h: usageResult?.count || 0 });
+      return json(res, 200, { applications: applicationResult?.data || [], usage24h: usageResult?.count || 0, usageSource: 'api_usage_logs' });
     }
 
     if (action === 'overview' && req.method === 'GET') {
       if (!allowed(admin, 'analytics.read')) return json(res, 403, { error: 'Not authorized.' });
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const activeSince = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       const queries = [
         svc.from('api_applications').select('*', { count: 'exact', head: true }),
         svc.from('api_applications').select('*', { count: 'exact', head: true }).eq('status', 'active'),
         svc.from('api_applications').select('*', { count: 'exact', head: true }).eq('status', 'revoked'),
         svc.from('api_usage_logs').select('*', { count: 'exact', head: true }).gte('created_at', since),
         svc.from('api_webhooks').select('*', { count: 'exact', head: true }),
+        svc.from('profiles').select('*', { count: 'exact', head: true }),
+        svc.from('analytics_events').select('*', { count: 'exact', head: true }).gte('created_at', since),
+        svc.from('security_events').select('*', { count: 'exact', head: true }).gte('created_at', since),
+        svc.from('security_events').select('*', { count: 'exact', head: true }).gte('created_at', since).eq('severity', 'critical'),
+        svc.from('security_events').select('*', { count: 'exact', head: true }).gte('created_at', since).eq('severity', 'high'),
+        svc.from('user_sessions').select('*', { count: 'exact', head: true }).is('revoked_at', null).gte('last_active_at', activeSince),
+        svc.from('calls').select('*', { count: 'exact', head: true }).gte('created_at', since),
+        svc.from('reports').select('*', { count: 'exact', head: true }),
+        svc.from('reports').select('*', { count: 'exact', head: true }).in('status', ['open', 'pending', 'in_review']),
       ];
-      const results = await Promise.all(queries.map((q) => withTimeout(q, 8000, { count: 0, error: null })));
+      const results = await Promise.all(queries.map((q) => withTimeout(q, 8000, { count: null, error: { message: 'Metric query timed out.' } })));
+      const value = (i) => results[i]?.count ?? null;
       return json(res, 200, {
-        applications: results[0]?.count || 0,
-        active: results[1]?.count || 0,
-        revoked: results[2]?.count || 0,
-        usage24h: results[3]?.count || 0,
-        webhooks: results[4]?.count || 0,
+        applications: value(0), active: value(1), revoked: value(2), usage24h: value(3), webhooks: value(4),
+        citizens: value(5), activity24h: value(6), securityEvents24h: { total: value(7), critical: value(8), high: value(9) },
+        activeSessions: value(10), calls24h: value(11), reportsTotal: value(12), reportsOpen: value(13),
+        generatedAt: new Date().toISOString(),
+        evidence: {
+          citizens: 'profiles', activity24h: 'analytics_events', securityEvents24h: 'security_events', activeSessions: 'user_sessions',
+          calls24h: 'calls', reports: 'reports', developerApplications: 'api_applications', apiUsage24h: 'api_usage_logs', webhooks: 'api_webhooks'
+        },
+        truthPolicy: 'Observed production database records only. Null means the metric could not be measured; no synthetic fallback is used.'
       });
     }
 
