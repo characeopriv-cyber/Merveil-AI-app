@@ -1080,6 +1080,23 @@ export default async function handler(req, res) {
         });
       }
 
+      // GET /api/auth/realtime-token — hands the HttpOnly access JWT to the
+      // browser ONLY for supabase.realtime.setAuth so postgres_changes can
+      // evaluate RLS (auth.uid()). Cookie remains source of truth for /api/*.
+      // Without this, OAuth signOut + HttpOnly cookies leave Realtime anonymous
+      // and every message/connection event is filtered out server-side.
+      if (sub === "realtime-token" && method === "GET") {
+        const rtToken = token || sessionResult.token || getAccessToken(req) || null;
+        const rtUid = user?.id || sessionResult.jwtSub || (rtToken ? decodeJwtSub(rtToken) : null) || null;
+        if (!rtToken || !rtUid) return sendJson(res, 401, { error: "Sign in required." });
+        return sendJson(res, 200, {
+          access_token: rtToken,
+          user_id: rtUid,
+          // Access tokens are ~1h; client re-fetches before expiry.
+          expires_in: 3300,
+        });
+      }
+
       if (sub === "login" && method === "POST") {
         const body = await readBody(req);
         let { email, password, phone } = body || {};
