@@ -758,13 +758,15 @@ const THEME_VARS_STYLE = `
   --t-ink: #252321; --t-paper: #D8D0C4; --t-panel: #EAE4DB;
   --t-sub: #625D56; --t-line: #C4BAAC; --t-inkline: #252321;
   --t-header: #EAE4DB;
-  --t-nav: rgba(234,228,219,0.96);
+  /* Raised shell — clearer than flat greige wash */
+  --t-nav: rgba(234,228,219,0.94);
 }
 :root[data-theme="dark"] {
-  --t-ink: #F1ECE5; --t-paper: #2A2622; --t-panel: #3A3632;
-  --t-sub: #A39E96; --t-line: rgba(241,236,229,0.12); --t-inkline: #CFC5B7;
-  --t-header: #2A2622;
-  --t-nav: rgba(42,38,34,0.96);
+  /* Advanced dark aligned with Intro / brand ink */
+  --t-ink: #E8EEF2; --t-paper: #0B1218; --t-panel: #121C28;
+  --t-sub: #8BA3B5; --t-line: rgba(232,238,242,0.10); --t-inkline: #A8D5E5;
+  --t-header: #121C28;
+  --t-nav: rgba(18,28,40,0.96);
 }
 :root[data-theme="dark"] img { opacity: 0.96; }
 :root[data-theme="dark"] input,
@@ -1121,16 +1123,16 @@ const FONT_IMPORT = `
   box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
 }
 .m-shell-nav {
-  background: #FFFFFF;
-  border-top: 1px solid #E4E6EB;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 -1px 4px rgba(0,0,0,0.04);
+  background: var(--t-nav, rgba(234,228,219,0.94));
+  border-top: 1px solid rgba(37,35,33,0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 -8px 28px rgba(37,35,33,0.06);
 }
 :root[data-theme="dark"] .m-shell-nav {
-  background: linear-gradient(180deg, rgba(14,19,26,0.98) 0%, rgba(11,15,20,0.98) 100%);
-  border-top: 1px solid rgba(255,255,255,0.06);
-  box-shadow: 0 -8px 32px rgba(0,0,0,0.18);
+  background: linear-gradient(180deg, rgba(18,28,40,0.98) 0%, rgba(11,18,24,0.98) 100%);
+  border-top: 1px solid rgba(14,154,167,0.12);
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.28);
 }
 
 @keyframes merveilMiniMBreathe {
@@ -1148,8 +1150,8 @@ const FONT_IMPORT = `
   animation: merveilMiniMBreathe 2.2s ease-in-out infinite;
 }
 .m-nav-item-active {
-  background: rgba(14,154,167,0.14) !important;
-  box-shadow: 0 0 0 1px rgba(14,154,167,0.22), 0 4px 16px rgba(14,154,167,0.12);
+  background: rgba(14,154,167,0.16) !important;
+  box-shadow: 0 0 0 1px rgba(14,154,167,0.28), 0 4px 18px rgba(14,154,167,0.16);
 }
 .m-seg-track {
   background: rgba(18,22,28,0.04);
@@ -2865,7 +2867,7 @@ const PASSPORT_TIERS = {
   },
   company: {
     id: "company", name: "Company Passport", price: "Around $8", priceNote: "",
-    color: "#7C3AED",
+    color: "#0E9AA7",
     tagline: "Organizations — presence, team, and business tools.",
     audience: "Companies and authorized representatives",
     features: [
@@ -8312,7 +8314,7 @@ function IncomingCallBanner({ call, callerProfile, onAccept, onReject, accepting
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
-      <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ background: "#7C3AED" }}>
+      <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ background: "#0E9AA7" }}>
         {(callerProfile?.name || "?")[0]}
       </div>
       <div className="flex-1 min-w-0">
@@ -10151,7 +10153,7 @@ function IncomingConnectionRequests({ currentUser, onChanged }) {
           <div key={r.connectionId} className="flex items-center gap-2 rounded-xl p-2" style={{ background: T.panel }}>
             {r.person.avatar_url
               ? <img src={r.person.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-              : <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: "#7C3AED" }}>{(r.person.name || "?")[0]}</div>}
+              : <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: "#0E9AA7" }}>{(r.person.name || "?")[0]}</div>}
             <div className="flex-1 min-w-0">
               <div className="text-xs font-semibold truncate" style={{ color: T.ink }}>{r.person.name || "Merveil Citizen"}</div>
               {r.person.profession && <div className="text-[10px] truncate" style={{ color: T.sub }}>{r.person.profession}</div>}
@@ -10199,7 +10201,7 @@ function ConnectionSuggestions({ currentUser, onOpenChat }) {
   return (
     <div className="px-3 pb-2">
       <div className="text-[11px] font-bold px-1 mb-1.5 flex items-center gap-1" style={{ color: T.sub }}>
-        <Sparkles size={11} color="#7C3AED"/> People to connect with
+        <Sparkles size={11} color="#0E9AA7"/> People to connect with
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {people.map(p => {
@@ -10209,9 +10211,9 @@ function ConnectionSuggestions({ currentUser, onOpenChat }) {
               <button onClick={() => onOpenChat?.(p)} className="flex flex-col items-center gap-1">
                 {p.avatar_url
                   ? <img src={p.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover"
-                      style={{ border: p.account_type === "company" ? `2px solid ${T.brass}` : `2px solid #7C3AED` }}/>
+                      style={{ border: p.account_type === "company" ? `2px solid ${T.brass}` : `2px solid #0E9AA7` }}/>
                   : <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                      style={{ background: p.account_type === "company" ? T.brass : "#7C3AED", border: "2px solid #fff", boxShadow: "0 0 0 1px " + (p.account_type === "company" ? T.brass : "#7C3AED") }}>
+                      style={{ background: p.account_type === "company" ? T.brass : "#0E9AA7", border: "2px solid #fff", boxShadow: "0 0 0 1px " + (p.account_type === "company" ? T.brass : "#0E9AA7") }}>
                       {(p.name || "?")[0]}
                     </div>}
                 <span className="text-[10px] font-semibold truncate w-full" style={{ color: T.ink }}>{p.name || "Merveil Citizen"}</span>
@@ -10219,7 +10221,7 @@ function ConnectionSuggestions({ currentUser, onOpenChat }) {
               </button>
               <button onClick={() => sendRequest(p.id)} disabled={!!state}
                 className="text-[9px] font-semibold px-2 py-1 rounded-full mt-0.5"
-                style={{ background: state ? T.line : "#7C3AED", color: state ? T.sub : "#fff" }}>
+                style={{ background: state ? T.line : "#0E9AA7", color: state ? T.sub : "#fff" }}>
                 {state === "accepted" ? "Connected" : state === "pending" ? "Requested" : "Connect"}
               </button>
             </div>
@@ -11904,7 +11906,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#7C3AED22", color: "#7C3AED" }}>AI</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
                       </div>
                       <span className="text-xs truncate block" style={{ color: T.sub }}>Ask about listings, areas, anything</span>
                     </div>
@@ -12028,7 +12030,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#7C3AED22", color: "#7C3AED" }}>AI</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
                     </div>
                     <span className="text-xs truncate block" style={{ color: T.sub }}>Ask about listings, areas, anything</span>
                   </div>
@@ -12059,7 +12061,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           </button>
           {isAiThread ? (
             <>
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg,#0EA5E9,#7C3AED)", boxShadow: "0 0 16px rgba(14,165,233,0.35)" }} aria-hidden="true">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg,#0EA5E9,#0E9AA7)", boxShadow: "0 0 16px rgba(14,165,233,0.35)" }} aria-hidden="true">
                 <Sparkles size={16} color="#fff" />
               </div>
               <div className="flex-1 min-w-0">
@@ -16882,7 +16884,7 @@ function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpe
         <div className="relative">
           <img src={post.photo_url} alt="" className="w-full object-cover" style={{ height:150 }}/>
           <span className="absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-            style={{ background: post.content_origin === "ai" ? "#7C3AED" : "#1F2937", color: "#fff" }}
+            style={{ background: post.content_origin === "ai" ? "#0E9AA7" : "#1F2937", color: "#fff" }}
             title={post.content_origin === "ai" ? "AI-assisted content" : "Made by a real human"}>
             {post.content_origin === "ai" ? "AI®" : "RH"}
           </span>
@@ -16905,7 +16907,7 @@ function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpe
               <span className="text-[11px] font-semibold truncate" style={{ color: "#374151" }}>{post.owner_name || "Merveil Citizen"}</span>
               {!post.photo_url && !post.video_url && (
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1 shrink-0"
-                  style={{ background: post.content_origin === "ai" ? "#7C3AED18" : "#1F293718", color: post.content_origin === "ai" ? "#7C3AED" : "#1F2937" }}>
+                  style={{ background: post.content_origin === "ai" ? "#0E9AA718" : "#1F293718", color: post.content_origin === "ai" ? "#0E9AA7" : "#1F2937" }}>
                   {post.content_origin === "ai" ? "AI®" : "RH"}
                 </span>
               )}
@@ -17119,7 +17121,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ background: "#0B0E14" }}>
       {/* Never pure black: gradient base so network lag never looks "broken" */}
-      <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#1F2937 0%,#7C3AED55 50%,#0B0E14 100%)" }} />
+      <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#1F2937 0%,#0E9AA755 50%,#0B0E14 100%)" }} />
       {post.video_url && !videoError ? (
         <video
           ref={videoRef}
@@ -17704,7 +17706,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
         <div className="flex items-center justify-center gap-1.5 py-2 shrink-0">
           {STEPS.map((s, i) => (
             <div key={s} className="h-1 rounded-full transition-all"
-              style={{ width: i === stepIdx ? 24 : 8, background: i <= stepIdx ? "#7C3AED" : "rgba(255,255,255,0.15)" }} />
+              style={{ width: i === stepIdx ? 24 : 8, background: i <= stepIdx ? "#0E9AA7" : "rgba(255,255,255,0.15)" }} />
           ))}
         </div>
 
@@ -17721,7 +17723,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
             <button type="button" onClick={() => !uploading && videoInputRef.current?.click()}
               disabled={uploading}
               className="w-full rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 py-5"
-              style={{ borderColor: form.videoUrl ? "#7C3AED" : "rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.04)", opacity: uploading ? 0.7 : 1 }}>
+              style={{ borderColor: form.videoUrl ? "#0E9AA7" : "rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.04)", opacity: uploading ? 0.7 : 1 }}>
               {videoPreview ? (
                 <>
                   <video
@@ -17736,7 +17738,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
                       if (e.target.duration) setDurationSec(e.target.duration);
                     }}
                   />
-                  <div className="text-[11px] font-semibold" style={{ color: uploading ? "#A78BFA" : form.videoUrl ? "#4ade80" : "#9CA3AF" }}>
+                  <div className="text-[11px] font-semibold" style={{ color: uploading ? "#2EC4D0" : form.videoUrl ? "#4ade80" : "#9CA3AF" }}>
                     {uploading ? "Uploading…" : form.videoUrl ? "Ready · tap to replace" : "Preview only — upload failed"}
                   </div>
                   {durationSec != null && (
@@ -17778,7 +17780,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
                       <button type="button" disabled={trimming || uploading}
                         onClick={(e) => { e.stopPropagation(); trimVideoToLimit(); }}
                         className="w-full text-xs font-bold py-2.5 rounded-xl"
-                        style={{ background: "linear-gradient(135deg,#7C3AED,#06B6D4)", color: "#fff", opacity: trimming ? 0.7 : 1 }}>
+                        style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff", opacity: trimming ? 0.7 : 1 }}>
                         {trimming ? "Trimming…" : `Apply trim (${Math.round(Math.min(60, trimEnd - trimStart))}s)`}
                       </button>
                     </div>
@@ -17786,7 +17788,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
                 </>
               ) : (
                 <>
-                  <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#7C3AED" }}>
+                  <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "#0E9AA7" }}>
                     <Video size={24} color="#fff" />
                   </div>
                   <div className="text-sm font-bold">Choose video from gallery</div>
@@ -17806,7 +17808,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
                   {[0.5, 1, 1.5, 2].map((r) => (
                     <button key={r} type="button" onClick={() => setPlaybackRate(r)}
                       className="text-xs font-bold px-3 py-1.5 rounded-full"
-                      style={{ background: playbackRate === r ? "#7C3AED" : "rgba(255,255,255,0.08)", color: "#fff" }}>
+                      style={{ background: playbackRate === r ? "#0E9AA7" : "rgba(255,255,255,0.08)", color: "#fff" }}>
                       {r}×
                     </button>
                   ))}
@@ -17862,7 +17864,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
                   <button key={o.id} type="button" onClick={() => upd("contentOrigin", o.id)}
                     className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full"
                     style={{
-                      background: form.contentOrigin === o.id ? "#7C3AED" : "rgba(255,255,255,0.08)",
+                      background: form.contentOrigin === o.id ? "#0E9AA7" : "rgba(255,255,255,0.08)",
                       color: "#fff",
                     }}>{o.label}</button>
                 ))}
@@ -17871,7 +17873,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
           )}
 
           {step === "publish" && (
-            <div className="rounded-2xl p-3 text-xs flex flex-col gap-1.5" style={{ background: "rgba(124,58,237,0.15)", color: "#E9D5FF" }}>
+            <div className="rounded-2xl p-3 text-xs flex flex-col gap-1.5" style={{ background: "rgba(14,154,167,0.15)", color: "#A8D5E5" }}>
               <div className="font-bold text-sm text-white">Ready to publish</div>
               <div>{form.title || "Untitled"} · {form.topic} · {form.country || "Global"}</div>
               <div>{form.videoUrl ? "Video attached" : "No video"}{coverDataUrl ? " · Cover frame set" : ""}</div>
@@ -17899,13 +17901,13 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
                 setStep(STEPS[Math.min(stepIdx + 1, STEPS.length - 1)]);
               }}
               className="flex-1 text-sm font-bold py-3 rounded-xl"
-              style={{ background: "linear-gradient(135deg,#7C3AED,#06B6D4)", color: "#fff", opacity: (!canNext || uploading) ? 0.6 : 1 }}>
+              style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff", opacity: (!canNext || uploading) ? 0.6 : 1 }}>
               {step === "media" && !videoPreview ? "Pick video" : "Continue"}
             </button>
           ) : (
             <button type="button" onClick={submit} disabled={busy || uploading || coverUploading}
               className="flex-1 text-sm font-bold py-3 rounded-xl"
-              style={{ background: "linear-gradient(135deg,#7C3AED,#1F2937)", color: "#fff", opacity: (busy || uploading || coverUploading) ? 0.7 : 1 }}>
+              style={{ background: "linear-gradient(135deg,#0E9AA7,#1F2937)", color: "#fff", opacity: (busy || uploading || coverUploading) ? 0.7 : 1 }}>
               {coverUploading ? "Saving cover…" : uploading ? "Uploading…" : busy ? (isEdit ? "Saving…" : "Publishing…") : (isEdit ? "Save changes" : "Publish Reel")}
             </button>
           )}
@@ -19019,7 +19021,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           style={{ top: "calc(10px + var(--safe-top))" }}>
           <button type="button" onClick={openPostReel}
             className="pointer-events-auto flex items-center gap-1 text-xs font-bold px-3.5 py-2 rounded-full shadow-lg min-h-[40px]"
-            style={{ background: "linear-gradient(135deg,#7C3AED,#1F2937)", color: "#fff" }}
+            style={{ background: "linear-gradient(135deg,#0E9AA7,#1F2937)", color: "#fff" }}
             aria-label="Post a World reel">
             <Plus size={14} /> Post
           </button>
@@ -19052,7 +19054,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
             <div className="text-base font-semibold">No World reels yet</div>
             <div className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>Post any video from your gallery (max 60s) — people around the world will see it here.</div>
             <button type="button" onClick={openPostReel}
-              className="mt-2 text-xs font-bold px-4 py-2.5 rounded-full min-h-[44px]" style={{ background: "#7C3AED", color: "#fff" }}>
+              className="mt-2 text-xs font-bold px-4 py-2.5 rounded-full min-h-[44px]" style={{ background: "#0E9AA7", color: "#fff" }}>
               Post a World Reel
             </button>
           </div>
@@ -24180,7 +24182,7 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
                 <span className="text-[10px]" style={{ color: "#5C5346" }}>{totalViews.toLocaleString()} / {nextMilestone.views.toLocaleString()}</span>
               </div>
               <div className="h-2 rounded-full overflow-hidden mb-2" style={{ background: "rgba(37,35,33,0.12)" }}>
-                <div className="h-full rounded-full" style={{ width: `${progressPct}%`, background: "linear-gradient(90deg,#0E9AA7,#7C3AED)" }} />
+                <div className="h-full rounded-full" style={{ width: `${progressPct}%`, background: "linear-gradient(90deg,#0E9AA7,#0E9AA7)" }} />
               </div>
               <div className="text-xs" style={{ color: "#252321" }}>
                 Next: <span className="font-semibold">{nextMilestone.label}</span> at {nextMilestone.views.toLocaleString()} valid views
@@ -24645,9 +24647,9 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             )}
           </div>
 
-          {/* Identity — light ink on violet foncé */}
+          {/* Identity — brand ring on charcoal */}
           <div className="px-5 pb-3 flex flex-col items-center text-center -mt-12 relative z-10">
-            <div className="rounded-full p-1" style={{ background: CREATOR_BG, boxShadow: "0 0 0 3px #A78BFA" }}>
+            <div className="rounded-full p-1" style={{ background: CREATOR_BG, boxShadow: "0 0 0 3px #0E9AA7" }}>
               <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={92} />
             </div>
             <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: CREATOR_INK }}>{profile.name || "Merveil Citizen"}</div>
@@ -24670,8 +24672,8 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                           className="text-[10px] font-semibold px-2 py-1 rounded-full"
                           style={{
                             background: feeling === f ? "rgba(167,139,250,0.25)" : "rgba(255,255,255,0.06)",
-                            color: feeling === f ? "#E9D5FF" : CREATOR_INK,
-                            border: feeling === f ? "1px solid #A78BFA" : `1px solid ${CREATOR_LINE}`,
+                            color: feeling === f ? "#5EEAD4" : CREATOR_INK,
+                            border: feeling === f ? "1px solid #0E9AA7" : `1px solid ${CREATOR_LINE}`,
                           }}>{f}</button>
                       ))}
                     </div>
@@ -24693,7 +24695,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                         setSavingMood(false);
                       }}
                       className="mt-2 text-[10px] font-bold px-3 py-1.5 rounded-full"
-                      style={{ background: "linear-gradient(135deg,#0E9AA7,#A78BFA)", color: "#fff", opacity: savingMood ? 0.7 : 1 }}>
+                      style={{ background: "linear-gradient(135deg,#0E9AA7,#2EC4D0)", color: "#fff", opacity: savingMood ? 0.7 : 1 }}>
                       {savingMood ? "Saving…" : "Save expression"}
                     </button>
                   </>
@@ -24717,7 +24719,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               ].map(([label, val, onTap]) => (
                 <button key={label} type="button" onClick={onTap || undefined}
                   className="rounded-xl py-2.5"
-                  style={{ background: onTap && showVisitors ? "rgba(167,139,250,0.2)" : CREATOR_PANEL, border: `1px solid ${CREATOR_LINE}` }}>
+                  style={{ background: onTap && showVisitors ? "rgba(14,154,167,0.18)" : CREATOR_PANEL, border: `1px solid ${CREATOR_LINE}` }}>
                   <div className="text-base font-bold" style={{ color: CREATOR_INK }}>{Number(val).toLocaleString()}</div>
                   <div className="text-[10px] mt-0.5" style={{ color: CREATOR_SUB }}>{label}{onTap ? " ▾" : ""}</div>
                 </button>
@@ -25280,7 +25282,7 @@ function BusinessHealthCard({ profile, stats }) {
         {summary ? (
           <div className="text-[11px] whitespace-pre-line" style={{ color: "#B8C2D0" }}>{summary}</div>
         ) : (
-          <button onClick={generate} disabled={busy} className="text-[11px] font-semibold" style={{ color: "#A78BFA" }}>
+          <button onClick={generate} disabled={busy} className="text-[11px] font-semibold" style={{ color: "#2EC4D0" }}>
             {busy ? "Analyzing…" : "Get AI strengths & recommendation →"}
           </button>
         )}
@@ -25723,27 +25725,27 @@ function AuthModal({ onClose, onAuthed }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(37,35,33,0.32)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(11,18,24,0.72)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
       <div className="w-full max-w-sm rounded-[22px] p-6 relative overflow-hidden" style={{
-        background: "linear-gradient(165deg, #EAE4DB 0%, #D8D0C4 100%)",
-        border: "1px solid rgba(37,35,33,0.10)",
-        boxShadow: "0 24px 64px rgba(37,35,33,0.14), 0 1px 0 rgba(255,255,255,0.55) inset",
+        background: "linear-gradient(165deg, #121C28 0%, #0B1218 100%)",
+        border: "1px solid rgba(14,154,167,0.22)",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px rgba(94,234,212,0.06) inset",
       }}>
-        <div className="pointer-events-none absolute -top-16 -right-10 w-40 h-40 rounded-full" style={{ background: "radial-gradient(circle, rgba(14,154,167,0.08), transparent 70%)" }} />
+        <div className="pointer-events-none absolute -top-16 -right-10 w-40 h-40 rounded-full" style={{ background: "radial-gradient(circle, rgba(14,154,167,0.22), transparent 70%)" }} />
         <div className="flex items-center justify-between mb-5 relative">
           <div>
-            <div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: T.signal, fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div>
-            <h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: T.ink, letterSpacing: "-0.02em" }}>{t("auth.enterCitizen")}</h2>
+            <div className="text-[10px] font-bold tracking-[0.18em] uppercase mb-1" style={{ color: "#2EC4D0", fontFamily: "IBM Plex Mono,monospace" }}>MERVEIL AI</div>
+            <h2 className="text-lg font-bold" style={{ fontFamily: "Space Grotesk,sans-serif", color: "#E8EEF2", letterSpacing: "-0.02em" }}>{t("auth.enterCitizen")}</h2>
           </div>
           <button type="button" onClick={() => {
             try { sessionStorage.setItem("merveil_auth_dismissed", "1"); } catch {}
             onClose?.();
-          }} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.04)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Close">
-            <X size={16} color={T.sub} />
+          }} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)" }} aria-label="Close">
+            <X size={16} color="#8BA3B5" />
           </button>
         </div>
 
-        <p className="text-sm mb-5 leading-relaxed relative" style={{ color: T.sub }}>
+        <p className="text-sm mb-5 leading-relaxed relative" style={{ color: "#8BA3B5" }}>
           {t("auth.enterSub")}
         </p>
 
@@ -25767,7 +25769,7 @@ function AuthModal({ onClose, onAuthed }) {
             sessionStorage.setItem("merveil_auth_dismissed", "1");
           } catch {}
           onClose?.();
-        }} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: T.sub }}>
+        }} className="w-full text-center text-xs font-semibold mt-5 py-2" style={{ color: "#8BA3B5" }}>
           {t("auth.continueVisitor")}
         </button>
       </div>
@@ -26787,7 +26789,7 @@ function CitizenScorePanel({ currentUser }) {
         <div className="text-xs mt-1" style={{ color: T.sub }}>{data.totalScore.toLocaleString()} total Merveil Citizen Score points</div>
         {founding.isFounding && (
           <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
-            style={{ background: "linear-gradient(135deg,#0891B2,#7C3AED)", color: "#fff" }}>
+            style={{ background: "linear-gradient(135deg,#0891B2,#0E9AA7)", color: "#fff" }}>
             ✨ Founding Citizen #{founding.rank || "—"} / 100
           </div>
         )}
@@ -27082,7 +27084,7 @@ function OpportunityRadar({ currentUser, onOpenTab }) {
     >
       <div className="flex items-center gap-2 mb-3">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(129,140,248,0.2)" }}>
-          <Radio size={15} color="#A78BFA" />
+          <Radio size={15} color="#2EC4D0" />
         </div>
         <div>
           <div className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: "rgba(167,139,250,0.8)" }}>Opportunity Radar</div>
@@ -27515,7 +27517,7 @@ function CompanyPassportPanel({ currentUser, onUserUpdated }) {
 
   return (
     <div className="p-4 md:p-6 pb-10">
-      <div className="rounded-2xl p-4 mb-4" style={{ background: "linear-gradient(135deg,#4C1D95,#7C3AED)", color: "#fff" }}>
+      <div className="rounded-2xl p-4 mb-4" style={{ background: "linear-gradient(135deg,#4C1D95,#0E9AA7)", color: "#fff" }}>
         <div className="text-[10px] font-bold uppercase tracking-wider opacity-70">Company Passport</div>
         <div className="text-lg font-bold mt-0.5" style={{ fontFamily: "Space Grotesk,sans-serif" }}>Organization presence</div>
         <p className="text-xs mt-1 opacity-85">Create a company profile and authorize representatives — not a second personal account.</p>
@@ -27530,7 +27532,7 @@ function CompanyPassportPanel({ currentUser, onUserUpdated }) {
           <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City"
             className="w-full text-sm px-3 py-2 rounded-xl outline-none mb-3" style={{ border: `1px solid ${T.line}` }} />
           <button type="button" disabled={busy} onClick={createOrg}
-            className="w-full text-xs font-bold py-2.5 rounded-xl text-white" style={{ background: "#7C3AED" }}>
+            className="w-full text-xs font-bold py-2.5 rounded-xl text-white" style={{ background: "#0E9AA7" }}>
             {busy ? "Creating…" : "Create Company Passport"}
           </button>
         </div>
@@ -27570,7 +27572,7 @@ function CompanyPassportPanel({ currentUser, onUserUpdated }) {
           <div className="flex gap-2 mt-3">
             <input value={inviteUserId} onChange={(e) => setInviteUserId(e.target.value)} placeholder="Citizen user ID to invite"
               className="flex-1 text-xs px-2 py-2 rounded-lg outline-none" style={{ border: `1px solid ${T.line}` }} />
-            <button type="button" disabled={busy} onClick={invite} className="text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ background: "#7C3AED" }}>Add</button>
+            <button type="button" disabled={busy} onClick={invite} className="text-xs font-bold px-3 py-2 rounded-lg text-white" style={{ background: "#0E9AA7" }}>Add</button>
           </div>
         </div>
       )}
