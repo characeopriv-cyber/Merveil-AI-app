@@ -28749,32 +28749,32 @@ function IntroScreen({ onEnter, userName, settings }) {
     rec.start();
   };
 
-  // ── STAGE 1: TAP TO START — light presence ────────
+  // ── STAGE 1: TAP TO START — dark entry (value + contrast) ────────
   if (stage === "tap") {
     return (
       <div
         className="fixed inset-0 z-50 flex flex-col items-center justify-center"
         style={{
-          background: "linear-gradient(168deg, #D8D0C4 0%, #E1DAD0 42%, #EAE4DB 78%, #F0EBE3 100%)",
+          background: "linear-gradient(168deg, #0B1218 0%, #0A1620 42%, #0E1A24 78%, #0B1218 100%)",
           cursor: "pointer",
         }}
         onClick={startFace}
       >
         <style>{FONT_IMPORT}</style>
-        {/* soft greige wells — reduced floating contrast */}
+        {/* brand wells — dark entry so face + words read with value */}
         <div className="absolute inset-0 pointer-events-none" aria-hidden="true"
           style={{
             background:
-              "radial-gradient(ellipse 70% 50% at 50% 18%, rgba(14,154,167,0.06), transparent 58%)," +
-              "radial-gradient(ellipse 50% 40% at 12% 88%, rgba(196,165,116,0.08), transparent 55%)," +
-              "radial-gradient(ellipse 45% 35% at 90% 70%, rgba(14,154,167,0.05), transparent 50%)",
+              "radial-gradient(ellipse 70% 50% at 50% 18%, rgba(14,154,167,0.20), transparent 58%)," +
+              "radial-gradient(ellipse 50% 40% at 12% 88%, rgba(14,154,167,0.08), transparent 55%)," +
+              "radial-gradient(ellipse 45% 35% at 90% 70%, rgba(46,196,208,0.06), transparent 50%)",
           }}
         />
-        {/* flowing ecosystem words — quieter field */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" style={{ opacity: 0.16 }}>
+        {/* flowing ecosystem words — readable on dark */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" style={{ opacity: 0.42 }}>
           <div style={{ animation: "dataScroll 40s linear infinite",
             fontFamily: "IBM Plex Mono,monospace", fontSize: "11px", lineHeight: "3.2",
-            color: "#6B6358", letterSpacing: ".18em", whiteSpace: "nowrap", textAlign: "center" }}>
+            color: "#5EEAD4", letterSpacing: ".18em", whiteSpace: "nowrap", textAlign: "center" }}>
             {[...FLOWING_WORDS, ...FLOWING_WORDS, ...FLOWING_WORDS].map((word, i) => (
               <div key={i} style={{ opacity: i % 4 === 0 ? 0.9 : 0.4 }}>{word}</div>
             ))}
@@ -28801,7 +28801,7 @@ function IntroScreen({ onEnter, userName, settings }) {
             MERVEIL AI IS ALREADY AWAKE
           </div>
 
-          <p className="max-w-xs" style={{ color: "#5C564C", lineHeight: "1.7",
+          <p className="max-w-xs" style={{ color: "#8BA3B5", lineHeight: "1.7",
             fontFamily: "Inter, system-ui, sans-serif", fontSize: "13px" }}>
             It is waiting for you.
           </p>
@@ -28810,23 +28810,23 @@ function IntroScreen({ onEnter, userName, settings }) {
             <div className="relative w-20 h-20 flex items-center justify-center">
               {[0, 1, 1.3, 2.6].map((delay, i) => (
                 <div key={i} className="absolute inset-0 rounded-full pointer-events-none"
-                  style={{ border: "1.5px solid rgba(14,154,167,0.45)", animation: `waterRipple 3.9s ease-out ${delay}s infinite` }} />
+                  style={{ border: "1.5px solid rgba(14,154,167,0.55)", animation: `waterRipple 3.9s ease-out ${delay}s infinite` }} />
               ))}
               <button
                 className="w-20 h-20 rounded-full flex items-center justify-center relative z-10"
                 style={{
-                  border: "1.5px solid rgba(14,154,167,0.5)",
-                  background: "rgba(255,255,255,0.92)",
-                  boxShadow: "0 8px 28px rgba(14,154,167,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+                  border: "1.5px solid rgba(14,154,167,0.65)",
+                  background: "linear-gradient(160deg, rgba(14,154,167,0.28) 0%, rgba(10,22,32,0.92) 100%)",
+                  boxShadow: "0 8px 28px rgba(14,154,167,0.35), 0 0 0 1px rgba(94,234,212,0.12) inset",
                 }}
               >
-                <div style={{ fontFamily: "IBM Plex Mono,monospace", color: "#0E9AA7",
+                <div style={{ fontFamily: "IBM Plex Mono,monospace", color: "#E8EEF2",
                   fontSize: "10px", textAlign: "center", lineHeight: "1.4", letterSpacing: ".06em", fontWeight: 700 }}>
                   TAP TO<br/>CONNECT
                 </div>
               </button>
             </div>
-            <p style={{ color: "#5C6570", fontSize: "10px",
+            <p style={{ color: "#8BA3B5", fontSize: "10px",
               fontFamily: "IBM Plex Mono,monospace", letterSpacing: ".1em" }}>
               MERVEIL AI IS READY
             </p>
@@ -28836,25 +28836,25 @@ function IntroScreen({ onEnter, userName, settings }) {
     );
   }
 
-  // ── STAGE 2: PRESENCE FACE — light ────────────────
+  // ── STAGE 2: PRESENCE FACE — dark entry (matches face) ────────────────
   return (
     <div
       className="fixed inset-0 z-50 overflow-hidden flex flex-col items-center justify-center"
       style={{
-        background: "linear-gradient(168deg, #D8D0C4 0%, #E1DAD0 42%, #EAE4DB 100%)",
+        background: "linear-gradient(168deg, #0B1218 0%, #0A1620 42%, #0E1A24 100%)",
         animation: closing ? "aiFadeOut .3s ease forwards" : "none",
       }}
     >
       <div className="absolute inset-0 pointer-events-none" aria-hidden="true"
         style={{
           background:
-            "radial-gradient(ellipse 65% 48% at 50% 22%, rgba(14,154,167,0.07), transparent 60%)," +
-            "radial-gradient(ellipse 40% 30% at 85% 80%, rgba(196,165,116,0.08), transparent 55%)",
+            "radial-gradient(ellipse 65% 48% at 50% 22%, rgba(14,154,167,0.22), transparent 60%)," +
+            "radial-gradient(ellipse 40% 30% at 85% 80%, rgba(46,196,208,0.08), transparent 55%)",
         }}
       />
-      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" style={{ opacity: 0.2 }}>
+      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" style={{ opacity: 0.38 }}>
         <div style={{ animation: "dataScroll 28s linear infinite", fontFamily: "IBM Plex Mono,monospace",
-          fontSize: "11px", lineHeight: "3.2", color: "#0E9AA7", letterSpacing: ".16em", whiteSpace: "nowrap", textAlign: "center" }}>
+          fontSize: "11px", lineHeight: "3.2", color: "#5EEAD4", letterSpacing: ".16em", whiteSpace: "nowrap", textAlign: "center" }}>
           {[...FLOWING_WORDS, ...FLOWING_WORDS, ...FLOWING_WORDS].map((word, i) => (
             <div key={i} style={{ opacity: i % 4 === 0 ? 0.95 : 0.38 }}>{word}</div>
           ))}
@@ -29059,11 +29059,11 @@ function IntroScreen({ onEnter, userName, settings }) {
         {/* typewriter text */}
         <div className="mt-2 mb-3 min-h-8 max-w-xs text-center px-2"
           style={{ fontFamily: "IBM Plex Mono,monospace", fontSize: "11px",
-            color: "#4AAFCC", lineHeight: "1.6", letterSpacing: ".03em" }}>
+            color: "#A8D5E5", lineHeight: "1.6", letterSpacing: ".03em" }}>
           {welcomeText ? (
-            <>{welcomeText}{speaking && <span style={{ color: "#0E9AA7" }}>▌</span>}</>
+            <>{welcomeText}{speaking && <span style={{ color: "#5EEAD4" }}>▌</span>}</>
           ) : (
-            <span style={{ color: "#0E9AA7", animation: "neuralPulse 1.5s ease-in-out infinite", fontWeight: 600 }}>
+            <span style={{ color: "#2EC4D0", animation: "neuralPulse 1.5s ease-in-out infinite", fontWeight: 600 }}>
               MERVEIL AI ONLINE…
             </span>
           )}
@@ -29072,7 +29072,7 @@ function IntroScreen({ onEnter, userName, settings }) {
         {/* AI matching input */}
         <div className="w-full max-w-xs flex flex-col gap-2.5">
           <div className="text-center text-[10px] mb-1"
-            style={{ color:"#5C6570", fontFamily:"IBM Plex Mono,monospace", letterSpacing:".08em" }}>
+            style={{ color:"#8BA3B5", fontFamily:"IBM Plex Mono,monospace", letterSpacing:".08em" }}>
             {listening ? "MERVEIL AI IS LISTENING…" : thinking ? "MERVEIL AI IS THINKING…" : "TELL MERVEIL AI WHAT YOU NEED"}
           </div>
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
