@@ -12,8 +12,68 @@ import { createClient as createSupabaseBrowserClient } from "@supabase/supabase-
 // real source of truth for "who's signed in."
 const supabaseBrowser = createSupabaseBrowserClient(
   "https://dixfybqlepticyudikuz.supabase.co",
-  "sb_publishable_zOtxwZ1q_OCpiTunktzypw_14pQnQOh"
+  "sb_publishable_zOtxwZ1q_OCpiTunktzypw_14pQnQOh",
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+    realtime: {
+      params: { eventsPerSecond: 20 },
+    },
+  }
 );
+
+// Keep Realtime socket auth in sync when the browser Supabase session rotates
+// (OAuth handshake / residual client session). Cookie session is still the
+// source of truth for /api/*; this only protects call:/ and presence channels.
+if (typeof window !== "undefined") {
+  try {
+    supabaseBrowser.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.access_token) {
+        try { await supabaseBrowser.realtime.setAuth(session.access_token); } catch {}
+      }
+    });
+    supabaseBrowser.auth.getSession().then(({ data }) => {
+      if (data?.session?.access_token) {
+        try { supabaseBrowser.realtime.setAuth(data.session.access_token); } catch {}
+      }
+    }).catch(() => {});
+  } catch {}
+}
+
+/**
+ * Bridge HttpOnly cookie JWT → Supabase Realtime socket.
+ * Cookie is still the only source of truth for /api/* (oauth-bridge may signOut
+ * the browser client). Without setAuth, postgres_changes events are filtered by
+ * RLS because auth.uid() is null on the Realtime connection.
+ * Safe to call often; failures are soft (poll fallbacks remain).
+ */
+let _realtimeAuthInflight = null;
+let _realtimeAuthAt = 0;
+async function ensureRealtimeAuth() {
+  // Throttle: access token lasts ~1h; refresh at most every 60s unless forced by caller spacing
+  const now = Date.now();
+  if (_realtimeAuthInflight) return _realtimeAuthInflight;
+  if (now - _realtimeAuthAt < 55_000) return true;
+  _realtimeAuthInflight = (async () => {
+    try {
+      const r = await fetch("/api/auth/realtime-token", { credentials: "include", cache: "no-store" });
+      if (!r.ok) return false;
+      const d = await r.json().catch(() => null);
+      if (!d?.access_token) return false;
+      try { await supabaseBrowser.realtime.setAuth(d.access_token); } catch {}
+      _realtimeAuthAt = Date.now();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      _realtimeAuthInflight = null;
+    }
+  })();
+  return _realtimeAuthInflight;
+}
 
 function signInWithProvider(provider) {
   return supabaseBrowser.auth.signInWithOAuth({
@@ -1342,279 +1402,9 @@ video { max-width: 100%; object-fit: cover; }
 `;
 
 // ---------------------------------------------------------------
-// Mock data
+// Listings come from /api/properties only — no client mock inventory.
 // ---------------------------------------------------------------
-
-const PROPERTIES = [
-  {
-    id: "p1",
-    ghostRisk: 0.05,
-    propertyAura: "cyan",
-    sustainabilityScore: 88,
-    listingChain: [
-      { date: "Jan 2021", listedBy: "Faisal Al Rashid", type: "OWNER_LISTING", price: 1850000 },
-      { date: "Mar 2023", listedBy: "BlueSky Realty RERA#4421", type: "LICENSED_BROKER", price: 2100000 },
-      { date: "Nov 2024", listedBy: "BlueSky Realty RERA#4421", type: "LICENSED_BROKER", price: 2450000 },
-    ],
-    urbanCenter: "marina",
-    sustainabilityFactors: { greenBuilding: true, smartHome: true, solarReady: true, districtCooling: true, wasteRecycling: false },
-    title: "Sky-line 2BR in Marina Gate",
-    type: "Sale",
-    category: "Apartment",
-    price: 2450000,
-    area: "Dubai Marina",
-    emirate: "Dubai",
-    beds: 2,
-    baths: 2,
-    sqft: 1180,
-    views: 4820,
-    trending: true,
-    promoted: true,
-    visibility: "public",
-    listedAs: "LICENSED_BROKER",
-    status: "active",
-    distressed: false,
-    isNew: false,
-    viewsByRole: { agent: 1180, investor: 840, buyer: 2800 },
-    grad: ["#3A6FA0", "#1F2937"],
-  },
-  {
-    id: "p2",
-    ghostRisk: 0.74,
-    propertyAura: "amber",
-    sustainabilityScore: 45,
-    urbanCenter: "expo",
-    sustainabilityFactors: { greenBuilding: false, smartHome: false, solarReady: false, districtCooling: false, wasteRecycling: false },
-    title: "Garden Townhouse, Phase 3",
-    type: "Sale",
-    category: "Townhouse",
-    price: 3100000,
-    area: "Arabian Ranches",
-    emirate: "Dubai",
-    beds: 4,
-    baths: 4,
-    sqft: 2860,
-    views: 1290,
-    trending: false,
-    promoted: false,
-    visibility: "public",
-    listedAs: "OWNER_LISTING",
-    status: "rented",
-    rentedUntil: "Dec 2026",
-    distressed: false,
-    isNew: false,
-    viewsByRole: { agent: 310, investor: 180, buyer: 800 },
-    listingChain: [{ order: 1, name: "Marc Dubois — Coastline Estates", date: "5 months ago" }],
-    grad: ["#7C8B6F", "#3F4A37"],
-  },
-  {
-    id: "p3",
-    ghostRisk: 0.12,
-    propertyAura: "cyan",
-    sustainabilityScore: 72,
-    urbanCenter: "downtown",
-    sustainabilityFactors: { greenBuilding: true, smartHome: true, solarReady: false, districtCooling: true, wasteRecycling: false },
-    title: "Studio w/ Canal View",
-    type: "Rent",
-    category: "Apartment",
-    price: 78000,
-    priceFreq: "yr",
-    area: "Business Bay",
-    emirate: "Dubai",
-    beds: 0,
-    baths: 1,
-    sqft: 480,
-    views: 3110,
-    trending: true,
-    promoted: false,
-    visibility: "public",
-    listedAs: "REFERRAL_PARTNER",
-    status: "active",
-    distressed: false,
-    isNew: false,
-    viewsByRole: { agent: 540, investor: 270, buyer: 2300 },
-    listingChain: [{ order: 1, name: "Priya Nair — Bay Realty Group", date: "1 week ago" }],
-    grad: ["#0891B2", "#8A6E1B"],
-  },
-  {
-    id: "p4",
-    ghostRisk: 0.03,
-    propertyAura: "gold",
-    sustainabilityScore: 91,
-    listingChain: [
-      { date: "Jun 2019", listedBy: "Gulf Developers Ltd", type: "DEVELOPER", price: 3200000 },
-      { date: "Feb 2022", listedBy: "Sarah M.", type: "REFERRAL_PARTNER", price: 3900000 },
-      { date: "Sep 2024", listedBy: "Prime Properties RERA#2209", type: "LICENSED_BROKER", price: 4750000 },
-    ],
-    urbanCenter: "creek",
-    sustainabilityFactors: { greenBuilding: true, smartHome: true, solarReady: true, districtCooling: true, wasteRecycling: true },
-    title: "Off-plan Tower — Reem Island",
-    type: "Sale",
-    category: "Apartment",
-    price: 1850000,
-    area: "Al Reem Island",
-    emirate: "Abu Dhabi",
-    beds: 1,
-    baths: 1,
-    sqft: 760,
-    views: 612,
-    trending: false,
-    promoted: true,
-    visibility: "investor",
-    listedAs: "DEVELOPER",
-    status: "active",
-    distressed: false,
-    isNew: false,
-    viewsByRole: { agent: 90, investor: 480, buyer: 42 },
-    grad: ["#2C5278", "#14191F"],
-  },
-  {
-    id: "p5",
-    ghostRisk: 0.09,
-    propertyAura: "green",
-    sustainabilityScore: 30,
-    urbanCenter: "dxb-center",
-    sustainabilityFactors: { greenBuilding: false, smartHome: false, solarReady: false, districtCooling: false, wasteRecycling: false },
-    title: "Bulk Deal — 12 Units, Yas Bay",
-    type: "Sale",
-    category: "Building",
-    price: 42000000,
-    area: "Yas Island",
-    emirate: "Abu Dhabi",
-    beds: null,
-    baths: null,
-    sqft: 18400,
-    views: 240,
-    trending: false,
-    promoted: false,
-    visibility: "investor",
-    listedAs: "LICENSED_BROKER",
-    status: "active",
-    distressed: true,
-    distressReason: "Seller needs liquidity within 30 days — priced 18% below market",
-    isNew: false,
-    viewsByRole: { agent: 60, investor: 170, buyer: 10 },
-    listingChain: [{ order: 1, name: "Marco Rossi — Coastline Estates", date: "4 days ago" }],
-    grad: ["#06B6D4", "#155E75"],
-  },
-  {
-    id: "p6",
-    ghostRisk: 0.48,
-    propertyAura: "amber",
-    sustainabilityScore: 55,
-    urbanCenter: "expo",
-    sustainabilityFactors: { greenBuilding: false, smartHome: true, solarReady: true, districtCooling: false, wasteRecycling: false },
-    title: "Hillside Villa, Tilal City",
-    type: "Sale",
-    category: "Villa",
-    price: 4600000,
-    area: "Tilal City",
-    emirate: "Sharjah",
-    beds: 5,
-    baths: 6,
-    sqft: 5200,
-    views: 990,
-    trending: false,
-    promoted: false,
-    visibility: "public",
-    listedAs: "OWNER_LISTING",
-    status: "sold",
-    soldPrice: 4450000,
-    distressed: false,
-    isNew: false,
-    viewsByRole: { agent: 210, investor: 140, buyer: 640 },
-    listingChain: [{ order: 1, name: "Yousef K. — Skyline Properties", date: "6 months ago" }],
-    grad: ["#6F8C8B", "#2E3D3C"],
-  },
-  {
-    id: "p7",
-    ghostRisk: 0.02,
-    propertyAura: "coral",
-    sustainabilityScore: 40,
-    urbanCenter: "expo",
-    sustainabilityFactors: { greenBuilding: false, smartHome: false, solarReady: false, districtCooling: false, wasteRecycling: false },
-    title: "Residential Plot G+2, Al Furjan",
-    type: "Sale",
-    category: "Land",
-    price: 5200000,
-    area: "Al Furjan",
-    emirate: "Dubai",
-    beds: null,
-    baths: null,
-    sqft: 9000,
-    views: 410,
-    trending: false,
-    promoted: false,
-    visibility: "public",
-    listedAs: "OWNER_LISTING",
-    status: "active",
-    distressed: false,
-    isNew: false,
-    viewsByRole: { agent: 120, investor: 210, buyer: 80 },
-    listingChain: [{ order: 1, name: "Khalid Al Mansoori", date: "2 weeks ago" }],
-    grad: ["#8A8268", "#3F3A2C"],
-  },
-  {
-    id: "p8",
-    ghostRisk: 0.91,
-    propertyAura: "amber",
-    sustainabilityScore: 25,
-    urbanCenter: "dxb-center",
-    sustainabilityFactors: { greenBuilding: false, smartHome: false, solarReady: false, districtCooling: false, wasteRecycling: false },
-    title: "Distressed Retail Unit, Deira",
-    type: "Sale",
-    category: "Retail",
-    price: 1450000,
-    area: "Deira",
-    emirate: "Dubai",
-    beds: null,
-    baths: 1,
-    sqft: 1100,
-    views: 305,
-    trending: false,
-    promoted: false,
-    visibility: "public",
-    listedAs: "LICENSED_BROKER",
-    status: "active",
-    distressed: true,
-    distressReason: "Vacant since lease ended — owner relocating abroad, motivated to close quickly",
-    isNew: false,
-    viewsByRole: { agent: 80, investor: 195, buyer: 30 },
-    listingChain: [{ order: 1, name: "Sarah Mitchell — Bay Realty Group", date: "3 days ago" }],
-    grad: ["#5A6B7A", "#23303B"],
-  },
-  {
-    id: "p9",
-    ghostRisk: 0.04,
-    propertyAura: "gold",
-    sustainabilityScore: 95,
-    listingChain: [
-      { date: "Dec 2022", listedBy: "Emaar Properties", type: "DEVELOPER", price: 7200000 },
-      { date: "Aug 2025", listedBy: "Harbor Homes RERA#5512", type: "LICENSED_BROKER", price: 8900000 },
-    ],
-    urbanCenter: "creek",
-    sustainabilityFactors: { greenBuilding: true, smartHome: true, solarReady: true, districtCooling: true, wasteRecycling: true },
-    title: "Boutique Beachfront Resort, RAK",
-    type: "Sale",
-    category: "Hotel",
-    price: 86000000,
-    area: "Al Marjan Island",
-    emirate: "Ras Al Khaimah",
-    beds: null,
-    baths: null,
-    sqft: 64000,
-    views: 145,
-    trending: false,
-    promoted: true,
-    visibility: "investor",
-    listedAs: "DEVELOPER",
-    status: "active",
-    distressed: false,
-    isNew: false,
-    viewsByRole: { agent: 20, investor: 120, buyer: 5 },
-    grad: ["#1F2937", "#0E1A26"],
-  },
-];
+const PROPERTIES = [];
 
 // ---------------------------------------------------------------
 // DUBAI 2040 URBAN MASTER PLAN — five urban centers framework
@@ -2078,7 +1868,6 @@ function stableMergeById(prev, next, idKey = "id") {
   if (!Array.isArray(next)) return Array.isArray(prev) ? prev : [];
   if (!Array.isArray(prev) || prev.length === 0) return next;
   const prevMap = new Map(prev.map((x) => [String(x?.[idKey]), x]));
-  const nextMap = new Map(next.map((x) => [String(x?.[idKey]), x]));
   let changed = prev.length !== next.length;
   const out = next.map((n) => {
     const id = String(n?.[idKey]);
@@ -2096,17 +1885,6 @@ function stableMergeById(prev, next, idKey = "id") {
     if (!same) changed = true;
     return same ? p : { ...p, ...n };
   });
-  // UNION, don't replace: a partial/slow/empty fetch response must not make
-  // items already on screen vanish. Any id present in `prev` but missing
-  // from this `next` response is appended (not dropped) so a short response
-  // only ever grows/updates the list, never shrinks it.
-  for (const p of prev) {
-    const id = String(p?.[idKey]);
-    if (!nextMap.has(id)) {
-      out.push(p);
-      changed = true;
-    }
-  }
   if (!changed) {
     for (let i = 0; i < out.length; i++) {
       if (String(prev[i]?.[idKey]) !== String(out[i]?.[idKey])) { changed = true; break; }
@@ -3736,25 +3514,12 @@ function Avatar({ name, size = 32, src }) {
 }
 
 
-// ---------------------------------------------------------------
-// Live pulse hook — simulates real-time view increments
-// ---------------------------------------------------------------
-
+// Live views map — real counts only (no simulated increments).
 function useLiveViews(initial) {
-  const [views, setViews] = useState(initial);
+  const [views, setViews] = useState(initial || {});
   useEffect(() => {
-    const id = setInterval(() => {
-      setViews((prev) => {
-        const next = {};
-        Object.entries(prev).forEach(([k, v]) => {
-          const bump = Math.random() < 0.5 ? 0 : Math.floor(Math.random() * 4);
-          next[k] = v + bump;
-        });
-        return next;
-      });
-    }, 2200);
-    return () => clearInterval(id);
-  }, []);
+    setViews(initial || {});
+  }, [initial]);
   return views;
 }
 
@@ -5277,7 +5042,6 @@ function AdBanner({ placement = "feed" }) {
 function FeedView({ liveViews, properties, currentUser, onPropertyUpdated, onPropertyDeleted, onRequireSignIn, onChat }) {
   const [editingProperty, setEditingProperty] = useState(null);
   const [activeOrb, setActiveOrb] = useState("forYou");
-  const [feedVisible, setFeedVisible] = useState(18);
   useEffect(() => { setFeedVisible(18); }, [activeOrb]);
   const [paused, setPaused] = useState(false);
   const [inventories, setInventories] = useState([]);
@@ -5286,6 +5050,7 @@ function FeedView({ liveViews, properties, currentUser, onPropertyUpdated, onPro
   const [detailProperty, setDetailProperty] = useState(null);
   const [likedIds, setLikedIds] = useState([]);
   const [ownerProfiles, setOwnerProfiles] = useState({});
+  const [feedVisible, setFeedVisible] = useState(18);
 
   useEffect(() => {
     const ids = [...new Set(properties.map((p) => p.ownerId).filter(Boolean))];
@@ -7028,6 +6793,21 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
     channel.on("broadcast", { event: "call_rejected" }, () => endCall("rejected", false));
     channel.on("broadcast", { event: "call_ended" }, () => endCall("remote-ended", false));
+    channel.on("broadcast", { event: "media-state" }, ({ payload }) => {
+      if (cancelled || !payload) return;
+      // Remote peer muted / camera-off — UI can reflect this later; keep alive for now
+      try {
+        if (payload.type === "mute") {
+          /* remote muted flag available if UI needs it */
+        }
+        if (payload.type === "video" && remoteVideoRef.current && payload.isVideoOff) {
+          // Hide remote video surface when they turn camera off
+          remoteVideoRef.current.style.opacity = "0.15";
+        } else if (payload.type === "video" && remoteVideoRef.current) {
+          remoteVideoRef.current.style.opacity = "1";
+        }
+      } catch {}
+    });
 
     // ---------- Call E2EE key-init (ECDH P-256 + HKDF confirmation) ----------
     let myEph = null;
@@ -7272,6 +7052,58 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     const i = setInterval(() => setDuration((d) => d + 1), 1000);
     return () => clearInterval(i);
   }, [status]);
+
+  // Keep mobile tab alive during call: silent loop + wake lock + session refresh.
+  // Without this, background tabs throttle JS and the peer stops receiving audio.
+  useEffect(() => {
+    if (status !== "connected" && status !== "calling" && status !== "connecting") return;
+    let silentEl = null;
+    let wakeLock = null;
+    let sessionTimer = null;
+    try {
+      // Tiny silent WAV (base64) looped at near-zero volume — keeps media pipeline warm
+      const silentWav =
+        "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+      silentEl = new Audio(silentWav);
+      silentEl.loop = true;
+      silentEl.volume = 0.01;
+      silentEl.play().catch(() => {});
+    } catch {}
+    try {
+      if (navigator.wakeLock?.request) {
+        navigator.wakeLock.request("screen").then((lock) => { wakeLock = lock; }).catch(() => {});
+      }
+    } catch {}
+    // Force cookie session rotation every 45s so mid-call APIs never 401
+    const refresh = () => {
+      fetch("/api/auth/session", { credentials: "include", cache: "no-store" }).catch(() => {});
+    };
+    refresh();
+    sessionTimer = setInterval(refresh, 45000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+        // Re-enable tracks if browser suspended them in background
+        try {
+          localStreamRef.current?.getAudioTracks().forEach((t) => {
+            if (!muted) t.enabled = true;
+          });
+          localStreamRef.current?.getVideoTracks().forEach((t) => {
+            if (mode === "video" && videoOn) t.enabled = true;
+          });
+        } catch {}
+        try { silentEl?.play?.().catch(() => {}); } catch {}
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      if (sessionTimer) clearInterval(sessionTimer);
+      try { silentEl?.pause?.(); silentEl.src = ""; } catch {}
+      try { wakeLock?.release?.(); } catch {}
+    };
+  }, [status, muted, videoOn, mode]);
+
   // Unanswered ring → auto-end as missed after 45s (WhatsApp-style)
   useEffect(() => {
     if (status !== "calling" && status !== "connecting") return;
@@ -7280,8 +7112,41 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     }, 45000);
     return () => clearTimeout(t);
   }, [status, endCall]);
-  useEffect(() => { localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !muted; }); }, [muted]);
-  useEffect(() => { if (mode === "video") localStreamRef.current?.getVideoTracks().forEach((t) => { t.enabled = videoOn; }); }, [videoOn, mode]);
+  // Mute / camera: disable MediaStreamTrack AND RTCRtpSender tracks so the
+  // remote peer actually stops receiving audio/video (UI-only was the bug).
+  useEffect(() => {
+    const stream = localStreamRef.current;
+    stream?.getAudioTracks().forEach((t) => { t.enabled = !muted; });
+    try {
+      pcRef.current?.getSenders?.().forEach((s) => {
+        if (s.track && s.track.kind === "audio") s.track.enabled = !muted;
+      });
+    } catch {}
+    try {
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "media-state",
+        payload: { type: "mute", isMuted: muted, ts: Date.now() },
+      });
+    } catch {}
+  }, [muted]);
+  useEffect(() => {
+    if (mode !== "video") return;
+    const stream = localStreamRef.current;
+    stream?.getVideoTracks().forEach((t) => { t.enabled = !!videoOn; });
+    try {
+      pcRef.current?.getSenders?.().forEach((s) => {
+        if (s.track && s.track.kind === "video") s.track.enabled = !!videoOn;
+      });
+    } catch {}
+    try {
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "media-state",
+        payload: { type: "video", isVideoOff: !videoOn, ts: Date.now() },
+      });
+    } catch {}
+  }, [videoOn, mode]);
   useEffect(() => () => { if (!endedRef.current) endCall("left", true); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [showTools, setShowTools] = useState(false);
@@ -7348,7 +7213,14 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         window.open(pathOrHash, "_blank", "noopener");
         return;
       }
-      if (pathOrHash.startsWith("/developer") || pathOrHash.startsWith("/interface") || pathOrHash.startsWith("/admin")) {
+      // Never open Admin from the citizen call surface — governance is
+      // secret-route only (/merveil-admin-x9k2), not shareable mid-call.
+      if (pathOrHash.startsWith("/admin") || pathOrHash.includes("merveil-admin")) {
+        setInviteFlash("Admin is not shareable from a call");
+        setTimeout(() => setInviteFlash(null), 2800);
+        return;
+      }
+      if (pathOrHash.startsWith("/developer") || pathOrHash.startsWith("/interface")) {
         window.open(pathOrHash, "_blank", "noopener");
         return;
       }
@@ -7889,7 +7761,6 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                           {[
                             { label: "Developer", path: "/developer", hint: "Command center" },
                             { label: "Interface", path: "/interface", hint: "UX & journeys" },
-                            { label: "Admin", path: "/admin", hint: "Governance" },
                           ].map((x) => (
                             <button key={x.label} type="button" className="text-left px-2.5 py-2 rounded-lg"
                               style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(129,140,248,0.35)" }}
@@ -7906,6 +7777,9 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                             </button>
                           ))}
                         </div>
+                        <p className="text-[10px] mt-1.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+                          Admin console is never exposed in the citizen app or during a call.
+                        </p>
                       </div>
                       <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>
                         Tip: OS screen-share needs browser Share / getDisplayMedia — use Present + link for client/investor calls today.
@@ -7996,20 +7870,8 @@ function useIncomingCallListener(currentUser) {
   useEffect(() => {
     if (!currentUser?.id) return;
     const uid = currentUser.id;
-
-    // Reap any leftover channels from a prior mount (StrictMode safety)
-    try {
-      (supabaseBrowser.getChannels?.() || []).forEach((c) => {
-        const t = String(c.topic || "");
-        if (t.includes(`incoming-calls-${uid}`)) {
-          try { supabaseBrowser.removeChannel(c); } catch {}
-        }
-      });
-    } catch {}
-
-    const topic = `incoming-calls-${uid}-${Math.random().toString(36).slice(2, 9)}`;
     const channel = supabaseBrowser
-      .channel(topic)
+      .channel(`incoming-calls-${uid}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "calls", filter: `receiver_id=eq.${uid}` }, (payload) => {
         if (payload.new?.status === "ringing") setIncoming(payload.new);
       })
@@ -8049,12 +7911,9 @@ function useIncomingCallListener(currentUser) {
       if (callId) poll();
     };
     window.addEventListener("merveil:notification-click", onPushClick);
-
-    // Named handler so it can be removed on cleanup
-    const swHandler = (ev) => {
+    navigator.serviceWorker?.addEventListener?.("message", (ev) => {
       if (ev?.data?.type === "merveil:notification-click") onPushClick({ detail: ev.data.data || {} });
-    };
-    navigator.serviceWorker?.addEventListener?.("message", swHandler);
+    });
 
     return () => {
       cancelled = true;
@@ -8062,8 +7921,7 @@ function useIncomingCallListener(currentUser) {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onVis);
       window.removeEventListener("merveil:notification-click", onPushClick);
-      try { navigator.serviceWorker?.removeEventListener?.("message", swHandler); } catch {}
-      try { supabaseBrowser.removeChannel(channel); } catch {}
+      channel.unsubscribe();
     };
   }, [currentUser?.id]);
   return [incoming, setIncoming];
@@ -8244,7 +8102,6 @@ const Permissions = {
     if (this.isNative()) {
       try {
         // Only use runtime plugin bridge — no import("@capacitor/...") so Vite builds on Vercel.
-        const Cap = window.Capacitor;
         const Push = window.Capacitor?.Plugins?.PushNotifications || null;
         if (!Push) {
           return { ok: false, permission: "unsupported", push: false, error: "PushNotifications plugin not available on this shell." };
@@ -8740,11 +8597,6 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
   const p = current?.data;
   const insight = useMemo(() => (p ? computePropertyMarketInsight(p, items) : null), [p?.id, items.length]);
 
-  // compute these BEFORE the guard so the presence effect below is always reachable
-  const posterName = (p?.owner_name || p?.lister_name || p?.listerName || "").trim() || null;
-  const ownerId = p?.ownerId || p?.owner_id || p?.user_id || null;
-  const isOwn = !!(currentUserId && ownerId && String(ownerId) === String(currentUserId));
-
   // Pulse reels autoplay — sound when possible.
   useEffect(() => {
     const el = videoRef.current;
@@ -8777,6 +8629,21 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
     };
   }, [p?.id, p?.video_url, muted]);
 
+  if (!current || !p) return null;
+
+  const posterName = (p.owner_name || p.lister_name || p.listerName || "").trim() || null;
+  const listerRole = LISTER_TYPE_STYLE[p.listedAs]?.label || null;
+  const ownerId = p.ownerId || p.owner_id || p.user_id;
+  const isOwn = currentUserId && ownerId && String(ownerId) === String(currentUserId);
+  const ownerAvatar = p.owner_avatar || p.owner_avatar_url || p.avatar_url || null;
+  const displayName = isOwn ? "You" : (posterName || "Merveil Citizen");
+  const photo = p.photo_url || p.photo || (Array.isArray(p.photos) ? p.photos[0] : null);
+  const bedsLine = [p.beds != null && `${p.beds} Bed${p.beds === 1 ? "" : "s"}`, p.baths != null && `${p.baths} Bath${p.baths === 1 ? "" : "s"}`, p.sqft != null && `${Number(p.sqft).toLocaleString()} sqft`]
+    .filter(Boolean).join(" · ");
+  const openPoster = () => {
+    if (ownerId && onOpenProfile) onOpenProfile(ownerId);
+  };
+
   // Creator online indicator — fetch only for the active poster (no list churn)
   useEffect(() => {
     if (!ownerId || isOwn) { setOwnerPresence("offline"); return; }
@@ -8791,18 +8658,6 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
       .catch(() => {});
     return () => { cancelled = true; };
   }, [ownerId, isOwn, p?.id]);
-
-  if (!current || !p) return null;
-
-  const listerRole = LISTER_TYPE_STYLE[p.listedAs]?.label || null;
-  const ownerAvatar = p.owner_avatar || p.owner_avatar_url || p.avatar_url || null;
-  const displayName = isOwn ? "You" : (posterName || "Merveil Citizen");
-  const photo = p.photo_url || p.photo || (Array.isArray(p.photos) ? p.photos[0] : null);
-  const bedsLine = [p.beds != null && `${p.beds} Bed${p.beds === 1 ? "" : "s"}`, p.baths != null && `${p.baths} Bath${p.baths === 1 ? "" : "s"}`, p.sqft != null && `${Number(p.sqft).toLocaleString()} sqft`]
-    .filter(Boolean).join(" · ");
-  const openPoster = () => {
-    if (ownerId && onOpenProfile) onOpenProfile(ownerId);
-  };
 
   return (
     <div className="relative h-full w-full overflow-hidden select-none" style={{ background: "#000" }}
@@ -10469,6 +10324,7 @@ const CT = {
   offline: "#9AA3AE",
 };
 
+
 function connectPresenceDot(status) {
   return PRESENCE_COLORS[status] || PRESENCE_COLORS.offline;
 }
@@ -10494,18 +10350,14 @@ function useUnfilteredPresence(currentUser) {
       const st = String(row.status || "online").toLowerCase();
       // Trust row if it has a recent updated_at; otherwise still accept explicit status
       // from live postgres_changes (always fresh on the wire).
-      // "away" (backgrounded tab) still counts as connected/online — a
-      // minimized app hasn't disconnected. Only an explicit "offline" write
-      // (real disconnect) or a genuinely stale row counts as offline.
       let status = "offline";
       if (st === "busy") status = "busy";
-      else if (st !== "offline") status = "online";
-      // If updated_at is ancient (client crashed without sending the
-      // disconnect beacon), force offline. This is a safety net, not the
-      // primary offline signal — matches the server's 24h window.
+      else if (st !== "offline" && st !== "away") status = "online";
+      // If updated_at is ancient (client closed long ago), force offline
       if (row.updated_at) {
         const age = Date.now() - new Date(row.updated_at).getTime();
-        if (age > 24 * 60 * 60 * 1000) status = "offline";
+        // Server heartbeat window is the only expiry — mirrors "they're connected or not"
+        if (age > 5 * 60 * 1000) status = "offline";
       }
       return { userId: String(row.user_id), status };
     };
@@ -10547,14 +10399,13 @@ function useUnfilteredPresence(currentUser) {
       console.warn("[presence realtime]", e?.message || e);
     }
 
-    // Polling safety-net: every 45s (Realtime is primary). Heals dropped
-    // sockets without hammering /api on large citizen lists.
+    // Polling safety-net: every 20s (Realtime is primary). Seeded by directory.
     const poll = () => {
       if (cancelled) return;
       const ids = [...knownIdsRef.current];
       if (!ids.includes(String(currentUser.id))) ids.push(String(currentUser.id));
       if (!ids.length) return;
-      const chunk = ids.slice(0, 80);
+      const chunk = ids.slice(0, 120);
       fetch(`/api/conversations?action=presence&userIds=${chunk.join(",")}`, { credentials: "include" })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
@@ -10572,14 +10423,26 @@ function useUnfilteredPresence(currentUser) {
         })
         .catch(() => {});
     };
-    const pollId = setInterval(poll, 45000);
+    const onSeed = (ev) => {
+      const ids = ev?.detail?.ids || [];
+      ids.forEach((id) => knownIdsRef.current.add(String(id)));
+      poll();
+    };
+    window.addEventListener("merveil:presence-seed", onSeed);
+    const onVis = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const pollId = setInterval(poll, 20000);
     // Initial seed after a short delay so first realtime events land first
-    const seed = setTimeout(poll, 2500);
+    const seed = setTimeout(poll, 800);
 
     return () => {
       cancelled = true;
       clearInterval(pollId);
       clearTimeout(seed);
+      window.removeEventListener("merveil:presence-seed", onSeed);
+      document.removeEventListener("visibilitychange", onVis);
       try { channel?.unsubscribe(); } catch {}
     };
   }, [currentUser?.id]);
@@ -10735,6 +10598,12 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
           });
           setCitizens((prev) => stableMergeById(prev, users));
           knownIdsRef.current = new Set(users.map((u) => String(u.id)));
+          // Seed global presence poll so dots work without waiting for realtime events
+          try {
+            window.dispatchEvent(new CustomEvent("merveil:presence-seed", {
+              detail: { ids: users.map((u) => String(u.id)) },
+            }));
+          } catch {}
         })
         .catch(() => {})
         .finally(() => { if (!cancelled && first) { first = false; setLoading(false); } });
@@ -11061,6 +10930,12 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const [connectTab, setConnectTab] = useState("messages"); // "citizens" | "circle" | "messages"
   const presence = useUnfilteredPresence(currentUser); // unfiltered — feeds Citizens, My Circle, and Messages alike
   const [profiles, setProfiles] = useState({});
+  const [myStatus, setMyStatus] = useState(() => {
+    try {
+      const s = localStorage.getItem("merveil_presence_status");
+      return s === "busy" ? "busy" : "online";
+    } catch { return "online"; }
+  }); // "online" | "busy"
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   const [outbox, setOutbox] = useOutbox();
   const [showEmoji, setShowEmoji] = useState(false);
@@ -11347,40 +11222,45 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     };
     load();
     let channel = null;
-    try {
-      channel = supabaseBrowser
-        .channel(`msgs-${activeId}-${Date.now()}`)
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${activeId}` },
-          (payload) => {
-            if (cancelled || !payload?.new) return;
-            (async () => {
-              const row = payload.new.is_e2ee ? await mvDecryptRow(payload.new, activeId) : payload.new;
-              if (cancelled) return;
-              setThreadMessages((prev) => {
-                if (prev.some((m) => m.id === row.id)) return prev;
-                const withoutLocal = prev.filter((m) => !(String(m.id).startsWith("local-") && m.body === row.body));
-                return [...withoutLocal, row];
-              });
-            })();
-            // Refresh thread list so last_body updates for the other side
-            fetch(`/api/conversations?userId=${currentUser?.id}`, { credentials: "include" })
-              .then((r) => (r.ok ? r.json() : null))
-              .then((data) => {
-                if (cancelled || !data?.conversations) return;
-                const sorted = [...data.conversations].sort((a, b) => {
-                  const ta = new Date(a.last_message_at || a.updated_at || a.created_at || 0).getTime();
-                  const tb = new Date(b.last_message_at || b.updated_at || b.created_at || 0).getTime();
-                  return tb - ta;
+    // Wait for Realtime JWT before subscribe so RLS auth.uid() is set (no race with setAuth).
+    (async () => {
+      try { await ensureRealtimeAuth(); } catch {}
+      if (cancelled) return;
+      try {
+        channel = supabaseBrowser
+          .channel(`msgs-${activeId}-${Date.now()}`)
+          .on(
+            "postgres_changes",
+            { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${activeId}` },
+            (payload) => {
+              if (cancelled || !payload?.new) return;
+              (async () => {
+                const row = payload.new.is_e2ee ? await mvDecryptRow(payload.new, activeId) : payload.new;
+                if (cancelled) return;
+                setThreadMessages((prev) => {
+                  if (prev.some((m) => m.id === row.id)) return prev;
+                  const withoutLocal = prev.filter((m) => !(String(m.id).startsWith("local-") && m.body === row.body));
+                  return [...withoutLocal, row];
                 });
-                setThreads((prev) => stableMergeById(prev, sorted));
-              })
-              .catch(() => {});
-          }
-        )
-        .subscribe();
-    } catch {}
+              })();
+              // Refresh thread list so last_body updates for the other side
+              fetch(`/api/conversations?userId=${currentUser?.id}`, { credentials: "include" })
+                .then((r) => (r.ok ? r.json() : null))
+                .then((data) => {
+                  if (cancelled || !data?.conversations) return;
+                  const sorted = [...data.conversations].sort((a, b) => {
+                    const ta = new Date(a.last_message_at || a.updated_at || a.created_at || 0).getTime();
+                    const tb = new Date(b.last_message_at || b.updated_at || b.created_at || 0).getTime();
+                    return tb - ta;
+                  });
+                  setThreads((prev) => stableMergeById(prev, sorted));
+                })
+                .catch(() => {});
+            }
+          )
+          .subscribe();
+      } catch {}
+    })();
     // Realtime INSERT is primary; 4s poll heals missed events without bubble flicker.
     const interval = setInterval(load, 4000);
     return () => {
@@ -11390,8 +11270,17 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     };
   }, [activeId, isAiThread, currentUser?.id]);
 
-  // Status toggle removed — the global presence heartbeat (App shell) is the
-  // single source of truth for this citizen's own status now.
+  // Connect only writes preferred status — global heartbeat does the interval.
+  // Avoids double POST every 8–12s from Connect + App shell.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const status = isOnline ? myStatus : "offline";
+    try { localStorage.setItem("merveil_presence_status", status === "busy" ? "busy" : "online"); } catch {}
+    fetch("/api/conversations?action=presence", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }).catch(() => {});
+  }, [currentUser?.id, myStatus, isOnline]);
 
   // Presence itself now comes from the unfiltered useUnfilteredPresence()
   // hook (declared above) so Citizens/My Circle/Messages all share one
@@ -11736,7 +11625,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         role="navigation"
         aria-label="Connect lists"
       >
-        {/* Connect compact bar */}
+{/* Connect compact bar */}
         <div
           className="px-3 pt-1.5 pb-1.5 border-b"
           style={{
@@ -11770,6 +11659,49 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             </button>
           </div>
 
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <button
+              onClick={() => {
+                setMyStatus((s) => {
+                  const next = s === "online" ? "busy" : "online";
+                  try { localStorage.setItem("merveil_presence_status", next); } catch {}
+                  fetch("/api/conversations?action=presence", {
+                    method: "POST", credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: next }),
+                  }).catch(() => {});
+                  return next;
+                });
+              }}
+              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full"
+              style={{
+                background: isOnline
+                  ? (myStatus === "busy" ? "rgba(245,158,11,0.15)" : "rgba(34,197,94,0.15)")
+                  : "rgba(255,255,255,0.06)",
+                color: isOnline
+                  ? (myStatus === "busy" ? CT.busy : CT.online)
+                  : CT.sub,
+                border: `1px solid ${isOnline ? (myStatus === "busy" ? "rgba(245,158,11,0.35)" : "rgba(34,197,94,0.35)") : CT.line}`,
+              }}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ background: presenceDot(isOnline ? myStatus : "offline"), boxShadow: isOnline ? `0 0 8px ${presenceDot(myStatus)}` : "none" }} />
+              {isOnline ? (myStatus === "busy" ? "Busy" : "Online") : "Offline"}
+            </button>
+            {(() => {
+              const onlineEst = Math.max(
+                Object.values(presence).filter((s) => s === "online" || s === "busy").length,
+                directory.filter((u) => u.status === "online" || u.status === "busy").length
+              );
+              const offlineEst = Math.max(0, (directory.length || connectionPeople.length) - onlineEst);
+              return (
+                <span className="text-[11px] font-medium" style={{ color: CT.sub }}>
+                  <span style={{ color: CT.online }}>●</span> {onlineEst} live
+                  <span className="mx-1.5 opacity-30">·</span>
+                  <span style={{ color: CT.offline }}>●</span> {offlineEst > 0 ? offlineEst : "—"} away
+                </span>
+              );
+            })()}
+          </div>
         </div>
 
         {/* CONNECT V1 — Citizens | My Circle | Messages */}
@@ -20480,7 +20412,7 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
             <div className="text-sm font-semibold" style={{ color: T.ink }}>Verify your Emirates ID first</div>
             <p className="text-xs max-w-xs" style={{ color: T.sub }}>
               Posting requires a basic identity check. Head to "Get verified" and complete the
-              Emirates ID step — it only takes a minute in the demo.
+              Emirates ID step in Passport.
             </p>
             <button onClick={onClose} className="text-xs font-semibold px-4 py-2 rounded-lg" style={{ background: T.ink, color: T.paper }}>
               Got it
@@ -23276,7 +23208,6 @@ function CommunityView({ onOpenPost, onOpenChat, currentUserId, onRequireSignIn 
   const [quickPostOpen, setQuickPostOpen] = useState(false);
   const [quickPostTitle, setQuickPostTitle] = useState("");
   const [quickPostType, setQuickPostType] = useState("announcement");
-  const [circleCountries, setCircleCountries] = useState([]);
 
   // Load real posts for whichever circle is open — falls back to just the
   // seeded mock posts if the backend isn't connected yet.
@@ -23314,15 +23245,6 @@ function CommunityView({ onOpenPost, onOpenChat, currentUserId, onRequireSignIn 
   };
 
   const circle = circles.find((c) => c.code === selected);
-
-  useEffect(() => {
-    if (!circle) { setCircleCountries([]); return; }
-    fetch(`/api/circles/${circle.code}/countries`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => data && setCircleCountries(data.countries || []))
-      .catch(() => {});
-  }, [circle?.code]);
-
 
   // Pull real circles from the database once loaded — unions with the
   // seeded list so any custom circle you created earlier (in a previous
@@ -23512,6 +23434,15 @@ function CommunityView({ onOpenPost, onOpenChat, currentUserId, onRequireSignIn 
       </div>
     );
   }
+
+  const [circleCountries, setCircleCountries] = useState([]);
+  useEffect(() => {
+    if (!circle) { setCircleCountries([]); return; }
+    fetch(`/api/circles/${circle.code}/countries`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setCircleCountries(data.countries || []))
+      .catch(() => {});
+  }, [circle?.code]);
 
   if (circle) {
     const posts = [...realCirclePosts, ...CIRCLE_POSTS.filter((p) => p.circle === circle.code)];
@@ -29983,32 +29914,6 @@ function AppInner() {
     const pid = params.get("passport");
     if (pid) setSharedPassportId(pid);
   }, []);
-  // Developer Studio return-trip: one citizen identity across the whole
-  // ecosystem. A visitor who followed a /developer link straight in gets
-  // bounced here (sign in / finish Passport) with ?next= remembering
-  // where to send them back. ?goto=passport also opens the Passport tab
-  // directly so they land on the right screen, not just the homepage.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const next = params.get("next");
-    const goto = params.get("goto");
-    if (next) {
-      try { sessionStorage.setItem("merveil_return_to", next); } catch {}
-    }
-    if (goto === "passport") {
-      window.dispatchEvent(new CustomEvent("merveil:goto-passport"));
-    }
-  }, []);
-  useEffect(() => {
-    if (!currentUser) return;
-    let returnTo = null;
-    try { returnTo = sessionStorage.getItem("merveil_return_to"); } catch {}
-    if (!returnTo) return;
-    if (passportCompletionOf(currentUser) >= 40) {
-      try { sessionStorage.removeItem("merveil_return_to"); } catch {}
-      window.location.href = returnTo;
-    }
-  }, [currentUser]);
   const [aiWelcome, setAiWelcome] = useState("");
 
   // Global incoming-call handling — reachable from any tab, not only
@@ -30142,13 +30047,30 @@ function AppInner() {
     setMissedCalls([]);
   };
 
+  // Keep Realtime socket authorized for the whole session (Facebook-style live layer).
+  // Re-fetch JWT before access-token expiry so postgres_changes never go anonymous mid-session.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let cancelled = false;
+    const beat = () => { if (!cancelled) ensureRealtimeAuth().catch(() => {}); };
+    beat();
+    const id = setInterval(beat, 45 * 60 * 1000); // ~45 min (token ~60 min)
+    const onVis = () => {
+      if (document.visibilityState === "visible") beat();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+    };
+  }, [currentUser?.id]);
+
   // GLOBAL presence heartbeat — single source of truth for all tabs.
-  // Facebook-style: a citizen stays "online" for as long as the app is
-  // open, including while backgrounded/minimized — connected is connected.
-  // We only report "offline" on a real disconnect (network loss, or the
-  // explicit tab-close beacon below), never just because the tab isn't
-  // in the foreground. Beats slow down in the background to save battery
-  // (90s vs 30s) but keep reporting the citizen's real status.
+  // Optimized vs 8s spam: only POST when status changes or interval elapses;
+  // 30s when visible (server cutoff 180s), 90s when backgrounded as "away".
   // Connect no longer runs a second interval — it only writes preferred status.
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -30162,21 +30084,9 @@ function AppInner() {
       } catch { return "online"; }
     };
     const desired = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return "away";
       if (typeof navigator !== "undefined" && navigator.onLine === false) return "offline";
       return preferred();
-    };
-    const beaconStatus = (status) => {
-      // sendBeacon survives a tab being backgrounded/suspended far more
-      // reliably than a normal fetch — mobile browsers can freeze JS
-      // execution moments after visibilitychange fires, killing an
-      // in-flight fetch before it lands. Beacon is fire-and-forget at the
-      // browser level, not tied to the page staying alive.
-      try {
-        return navigator.sendBeacon?.(
-          "/api/conversations?action=presence",
-          new Blob([JSON.stringify({ status })], { type: "application/json" })
-        );
-      } catch { return false; }
     };
     const postStatus = (status, force = false) => {
       const now = Date.now();
@@ -30184,26 +30094,17 @@ function AppInner() {
       if (!force && status === lastStatus && now - lastSentAt < 25000) return;
       lastStatus = status;
       lastSentAt = now;
-      // Going hidden: prefer sendBeacon since the page may be suspended
-      // right after this call returns. Otherwise use a normal fetch.
-      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-      if (hidden && beaconStatus(status)) return;
       fetch("/api/conversations?action=presence", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
-        keepalive: hidden,
       }).catch(() => {});
     };
     const schedule = () => {
       if (timer) clearInterval(timer);
       const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-      // Visible: 30s. Background: 90s — note mobile browsers/WebViews can
-      // suspend this timer entirely while backgrounded; the last status
-      // written before suspension is what sticks until the app resumes
-      // (handled by the 24h server-side safety net + explicit disconnect
-      // beacon below, not by this interval alone).
+      // Visible: 30s. Background: 90s (still refreshes before 300s server cutoff). Session-long.
       timer = setInterval(() => postStatus(desired()), hidden ? 90000 : 30000);
     };
     const beat = (force = false) => {
@@ -30220,7 +30121,12 @@ function AppInner() {
     const goOffline = () => {
       lastStatus = "offline";
       lastSentAt = Date.now();
-      if (beaconStatus("offline")) return;
+      try {
+        navigator.sendBeacon?.(
+          "/api/conversations?action=presence",
+          new Blob([JSON.stringify({ status: "offline" })], { type: "application/json" })
+        );
+      } catch {}
       try {
         fetch("/api/conversations?action=presence", {
           method: "POST",
@@ -30455,18 +30361,10 @@ function AppInner() {
         const body = await res.json().catch(() => null);
         if (res.ok && body?.user) handleAuthed(body.user);
       } catch {}
-      // CRITICAL: scope "local" only. Default signOut() scope is "global",
-      // which calls Supabase Auth's /logout endpoint and REVOKES the refresh
-      // token server-side — the exact refresh token oauth-bridge just wrote
-      // into the httpOnly cookie above for the backend to rotate with. That
-      // made every session a ticking bomb: calls, presence, and every /api
-      // request worked fine on the still-valid access token, then died the
-      // moment it expired and the backend tried to refresh with a token
-      // Supabase had already revoked — surfacing as "session expired" mid-
-      // call, and only fixable by signing out/in for a fresh, unrevoked pair.
-      // scope: "local" clears the client SDK's own copy without touching
-      // the server-side token the backend now owns.
-      supabaseBrowser.auth.signOut({ scope: "local" }).catch(() => {});
+      supabaseBrowser.auth.signOut().catch(() => {});
+      // After cookie is set and browser client is cleared, re-auth Realtime from cookie JWT
+      // so messages/connections/presence postgres_changes still pass RLS.
+      ensureRealtimeAuth().catch(() => {});
     }).catch(() => {});
   }, [currentUser]);
 
@@ -30532,11 +30430,14 @@ function AppInner() {
     };
   }, [currentUser?.id, pollIncomingRequests]);
 
-  // Real listings only — do not seed liveViews from mock PROPERTIES (Doc 1 §16).
-  const initialViews = useMemo(
-    () => ({}),
-    []
-  );
+  // Real listing view counts from the API only — no simulated bumps.
+  const initialViews = useMemo(() => {
+    const map = {};
+    for (const p of properties || []) {
+      if (p?.id != null) map[p.id] = Number(p.views || p.view_count || 0);
+    }
+    return map;
+  }, [properties]);
   const liveViews = useLiveViews(initialViews);
 
   // Shared by the manual "Post a property" form AND the AI draft-posting flow.
@@ -30681,7 +30582,7 @@ function AppInner() {
         </div>
       )}
 
-      {/* Top bar — Quiet Signal shell. */}
+      {/* Top bar — Quiet Signal shell */}
       <div
         className="relative shrink-0 z-20 m-shell-header"
         style={{
@@ -30737,6 +30638,8 @@ function AppInner() {
               {t("common.signIn", settings?.language)}
             </button>
           )}
+          {/* Plus + Notifications */}
+          
           <button
             type="button"
             onClick={() => { setShowPlusMenu((s) => !s); setShowNotifications(false); }}
@@ -30752,6 +30655,8 @@ function AppInner() {
             <Plus size={14} style={{ color: "rgba(18,22,28,0.75)" }} />
             <span className="text-[11px] font-bold hidden xs:inline" style={{ color: "rgba(18,22,28,0.78)" }}>Plus</span>
           </button>
+          
+          
           <button
             onClick={() => { setShowNotifications((s) => !s); setShowPlusMenu(false); }}
             title="Notifications"
@@ -30766,6 +30671,7 @@ function AppInner() {
               </span>
             )}
           </button>
+          
           {tab === "pulse" && (
             <button
               onClick={() => setShowPostModal(true)}
@@ -32636,13 +32542,11 @@ function isMerveilAdminRoute() {
   if (typeof window === "undefined") return false;
   try {
     const path = window.location.pathname || "";
+    // Secret slug only — never ?admin=1 (that leaked admin into the citizen app).
     if (path.startsWith(ADMIN_ROUTE_SLUG)) return true;
-    // Fallbacks if host SPA rewrite is missing:
-    //   /#/merveil-admin-x9k2   or   /?merveil-admin=1
+    // Hash fallback only when rewrite is missing: /#/merveil-admin-x9k2
     const hash = window.location.hash || "";
-    if (hash.includes("merveil-admin")) return true;
-    const q = new URLSearchParams(window.location.search);
-    if (q.get("merveil-admin") === "1" || q.get("admin") === "1") return true;
+    if (hash.includes("merveil-admin-x9k2") || hash.includes(ADMIN_ROUTE_SLUG.replace(/^\//, ""))) return true;
   } catch {}
   return false;
 }
