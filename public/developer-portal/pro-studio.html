@@ -3,16 +3,56 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#f7f4ef" />
-  <title>Merveil Pro Studio</title>
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="description" content="Merveil Developer — build it deeper." />
+  <title>Merveil — Build it deeper.</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/developer-portal/pro-studio.css" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/developer-portal/studio-v5.css" />
+  <style>
+    :root{
+      --bg:#fff;--bg-1:#fff;--bg-2:#f7f7f7;--bg-3:#f1f1f1;
+      --line:#e5e5e5;--line-2:#d2d2d2;--txt:#171717;--txt-2:#666;--txt-3:#999;
+      --cyan:#168f98;--purple:#7251c7;--orange:#d96b4f;--green:#248a4b;--red:#c83b35;--yellow:#9b7414;
+      --grad:linear-gradient(120deg,#168f98,#7251c7,#d96b4f);
+    }
+    html,body{background:#fff!important;color:#171717!important}
+    body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+    .top,.rail,.panel,.guide,.tabs,.card,.step,.health .item,.hero{background:#fff!important}
+    .main{background:#fff!important}
+    .editor{background:#fff!important;color:#171717!important}
+    .top{border-bottom:1px solid #e5e5e5!important}
+    .panel{border-right:1px solid #e5e5e5!important}
+    .guide{border-left:1px solid #e5e5e5!important}
+    .tabs{border-bottom:1px solid #e5e5e5!important}
+    .hero{border:1px solid #e5e5e5!important}
+    .pill{background:#f7f7f7!important}
+    .btn:not(.primary):not(.ship){background:#fff!important;color:#171717!important}
+    .btn:hover,.rail button:hover,.tree-item:hover,.tab:hover{background:#f5f5f5!important}
+    .card:hover{box-shadow:0 8px 24px rgba(0,0,0,.08)!important}
+  </style>
 </head>
 <body>
   <div id="app"></div>
-  <script type="module" src="/developer-portal/pro-studio.js"></script>
-  <script src="/developer-portal/merveil-shortcuts.js"></script>
+  <script>
+    // Remove legacy seeded/template projects from this browser before the new Studio loads.
+    try {
+      const key='merveil_dev_projects_v5';
+      const raw=localStorage.getItem(key);
+      if(raw){
+        const projects=JSON.parse(raw);
+        const real=Array.isArray(projects)?projects.filter(p=>!p?.fromSeed && !String(p?.id||'').startsWith('seed-')):[];
+        localStorage.setItem(key,JSON.stringify(real));
+      }
+      localStorage.removeItem('merveil_dev_seeded_v5');
+      const active=localStorage.getItem('merveil_dev_active_v5');
+      if(active && String(active).startsWith('seed-')) localStorage.removeItem('merveil_dev_active_v5');
+    } catch {}
+  </script>
+  <script type="module" src="/developer-portal/studio-v5.js"></script>
+  <script type="module" src="/developer-portal/studio-agent.js"></script>
+  <script type="module" src="/developer-portal/studio-verify.js"></script>
+  <script type="module" src="/developer-portal/studio-final-hardening.js"></script>
 </body>
 </html>
