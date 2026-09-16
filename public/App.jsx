@@ -10338,20 +10338,21 @@ function MyConnectionsPresence({ currentUser, onOpenChat }) {
 // in the same pass as the realtime + structural changes.
 // ---------------------------------------------------------------
 const CT = {
-  // Calm network surface — soft greige, less white glare (WhatsApp-peace, not sterile)
-  bg: "#EDE8E1",
-  panel: "#F5F1EB",
-  panelHover: "#E8E2D9",
-  line: "rgba(37,35,33,0.10)",
-  ink: "#1A1816",
-  sub: "#6B645C",
+  // Stronger contrast — still warm, not sterile white
+  bg: "#E2DCD3",
+  panel: "#EFEAE3",
+  panelHover: "#E5DFD6",
+  line: "rgba(26,24,22,0.14)",
+  ink: "#141210",
+  sub: "#5A534C",
   accent: "#0E9AA7",
-  online: "#12A35A",
+  online: "#0F9A4A",
   busy: "#C4841D",
-  offline: "#8A837A",
-  chatBg: "linear-gradient(180deg, #E4DFD6 0%, #DDD7CD 50%, #D6D0C6 100%)",
+  offline: "#6E6760",
+  chatBg: "linear-gradient(180deg, #D8D2C8 0%, #D0CABF 50%, #C8C2B7 100%)",
   bubbleMine: "linear-gradient(135deg, #0E9AA7 0%, #0A7A85 100%)",
-  bubbleOther: "#F7F4EF",
+  bubbleOther: "#F3EEE7",
+  headerBg: "#D6D0C6",
 };
 
 
@@ -10482,6 +10483,11 @@ function useUnfilteredPresence(currentUser) {
 
 async function initiateCitizenCall(user, mode) {
   if (!user?.id) { alert("Can't call — missing user."); return; }
+  try {
+    window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
+      detail: { userId: String(user.id), at: Date.now() },
+    }));
+  } catch {}
   const tryCreate = async () => {
     const res = await merveilFetch("/api/calls?action=create", {
       method: "POST",
@@ -10523,6 +10529,12 @@ async function initiateCitizenCall(user, mode) {
       alert("Call created but no call id returned.");
       return;
     }
+    // WhatsApp-style: called person rises to top immediately (Citizens / Circle / Messages)
+    try {
+      window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
+        detail: { userId: String(user.id), at: Date.now() },
+      }));
+    } catch {}
     window.dispatchEvent(new CustomEvent("merveil:start-call", {
       detail: {
         callId: data.call.id,
@@ -10628,37 +10640,53 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
     if (!currentUser?.id) return;
     let cancelled = false;
     let first = true;
-    const load = () => {
-      merveilFetch(`/api/conversations?action=directory`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (cancelled || !data?.users) return;
-          // Strip server status — presenceMap alone drives dots/sections (verified cause of 30s reshuffle)
-          const users = data.users.map((u) => {
-            const { status, ...rest } = u;
-            return rest;
-          });
-          setCitizens((prev) => stableMergeById(prev, users));
-          knownIdsRef.current = new Set(users.map((u) => String(u.id)));
-          // Seed global presence poll so dots work without waiting for realtime events
-          try {
-            window.dispatchEvent(new CustomEvent("merveil:presence-seed", {
-              detail: { ids: users.map((u) => String(u.id)) },
-            }));
-          } catch {}
-        })
-        .catch(() => {})
-        .finally(() => { if (!cancelled && first) { first = false; setLoading(false); } });
+    const load = async () => {
+      try {
+        // Soft session keep so directory is not empty after cookie lag
+        try { await fetch("/api/auth/session", { credentials: "include", cache: "no-store" }); } catch {}
+        const r = await merveilFetch(`/api/conversations?action=directory`);
+        const data = r.ok ? await r.json().catch(() => null) : null;
+        if (cancelled) return;
+        if (!data?.users) {
+          if (first) setLoading(false);
+          return;
+        }
+        const users = data.users.map((u) => {
+          const { status, ...rest } = u;
+          return rest;
+        });
+        setCitizens((prev) => stableMergeById(prev, users));
+        knownIdsRef.current = new Set(users.map((u) => String(u.id)));
+        try {
+          window.dispatchEvent(new CustomEvent("merveil:presence-seed", {
+            detail: { ids: users.map((u) => String(u.id)) },
+          }));
+        } catch {}
+      } catch {}
+      finally {
+        if (!cancelled && first) { first = false; setLoading(false); }
+      }
     };
     load();
     const onConn = () => load();
+    const onBump = (e) => {
+      const uid = String(e?.detail?.userId || "");
+      const at = Number(e?.detail?.at) || Date.now();
+      if (!uid) return;
+      setCitizens((prev) => prev.map((u) =>
+        String(u.id) === uid
+          ? { ...u, contactRank: 1, lastContactAt: at }
+          : u
+      ));
+    };
     window.addEventListener("merveil:connection-changed", onConn);
-    // Directory soft refresh — presence dots are realtime; list membership every 15s
+    window.addEventListener("merveil:contact-bump", onBump);
     const id = setInterval(load, 15000);
     return () => {
       cancelled = true;
       clearInterval(id);
       window.removeEventListener("merveil:connection-changed", onConn);
+      window.removeEventListener("merveil:contact-bump", onBump);
     };
   }, [currentUser?.id]);
 
@@ -11027,6 +11055,28 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
   // Accepted connections = My Circle
   const [connectionPeople, setConnectionPeople] = useState([]);
+  useEffect(() => {
+    const onBump = (e) => {
+      const uid = String(e?.detail?.userId || "");
+      const at = Number(e?.detail?.at) || Date.now();
+      if (!uid) return;
+      setConnectionPeople((prev) => prev.map((p) =>
+        String(p.id) === uid
+          ? { ...p, lastContactAt: at, last_message_at: new Date(at).toISOString() }
+          : p
+      ));
+      setThreads((prev) => {
+        const uidMe = String(currentUser?.id || "");
+        return [...prev].map((th) => {
+          const ids = (th.participant_ids || []).map(String);
+          if (!ids.includes(uid) || !ids.includes(uidMe)) return th;
+          return { ...th, last_message_at: new Date(at).toISOString(), updated_at: new Date(at).toISOString() };
+        }).sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+      });
+    };
+    window.addEventListener("merveil:contact-bump", onBump);
+    return () => window.removeEventListener("merveil:contact-bump", onBump);
+  }, [currentUser?.id]);
   const reloadConnections = useCallback(() => {
     if (!currentUser?.id) return;
     merveilFetch("/api/connections?action=list&kind=accepted")
@@ -11764,10 +11814,15 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               );
               const offlineEst = Math.max(0, (directory.length || connectionPeople.length) - onlineEst);
               return (
-                <span className="text-[11px] font-medium" style={{ color: CT.sub }}>
-                  <span style={{ color: CT.online }}>●</span> {onlineEst} live
-                  <span className="mx-1.5 opacity-30">·</span>
-                  <span style={{ color: CT.offline }}>●</span> {offlineEst > 0 ? offlineEst : "—"} away
+                <span className="text-[12px] font-bold inline-flex items-center gap-2" style={{ color: CT.ink }}>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(15,154,74,0.14)", color: CT.online }}>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.online, boxShadow: `0 0 8px ${CT.online}` }} />
+                    {onlineEst} live
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(110,103,96,0.12)", color: CT.offline }}>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.offline }} />
+                    {offlineEst > 0 ? offlineEst : "—"} away
+                  </span>
                 </span>
               );
             })()}
@@ -11782,36 +11837,45 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           aria-label="Connect sections"
         >
           {[
-            { id: "citizens", label: t("connect.citizens") },
-            { id: "circle", label: t("connect.circle") },
-            { id: "messages", label: t("connect.messages") },
-            { id: "ai-call", label: "AI Call", isNew: true },
-          ].map((tabItem) => (
+            { id: "citizens", label: t("connect.citizens"), activeBg: "#0F9A4A", activeFg: "#FFFFFF", idle: "#0F9A4A" },
+            { id: "circle", label: t("connect.circle"), activeBg: "#1A1816", activeFg: "#F5F1EB", idle: "#1A1816" },
+            { id: "messages", label: t("connect.messages"), activeBg: "#FFFFFF", activeFg: "#141210", idle: "#5A534C", border: true },
+            { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C6570", activeFg: "#FFFFFF", idle: "#5C6570" },
+          ].map((tabItem) => {
+            const on = connectTab === tabItem.id;
+            return (
             <button
               key={tabItem.id}
               role="tab"
               type="button"
-              aria-selected={connectTab === tabItem.id}
+              aria-selected={on}
               id={`connect-tab-${tabItem.id}`}
               onClick={() => setConnectTab(tabItem.id)}
-              className="flex-1 text-[12px] font-bold py-2 rounded-xl transition-all min-h-[40px]"
+              className="flex-1 text-[11px] font-bold py-2.5 rounded-xl transition-all min-h-[44px]"
               style={{
-                background: connectTab === tabItem.id ? CT.accent : "transparent",
-                color: connectTab === tabItem.id ? "#FFFFFF" : CT.sub,
-                boxShadow: connectTab === tabItem.id ? "0 4px 14px rgba(6,182,212,0.28)" : "none",
+                background: on ? tabItem.activeBg : "transparent",
+                color: on ? tabItem.activeFg : tabItem.idle,
+                boxShadow: on
+                  ? (tabItem.border
+                      ? "0 4px 14px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9)"
+                      : `0 4px 16px ${tabItem.activeBg}55`)
+                  : "none",
+                border: on && tabItem.border ? "1px solid rgba(26,24,22,0.12)" : "1px solid transparent",
+                textShadow: on ? "0 1px 2px rgba(0,0,0,0.12)" : "none",
               }}
             >
               <span className="inline-flex items-center justify-center gap-1">
                 {tabItem.label}
                 {tabItem.isNew && (
-                  <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{
-                    background: connectTab === tabItem.id ? "rgba(255,255,255,0.25)" : "rgba(14,154,167,0.15)",
-                    color: connectTab === tabItem.id ? "#fff" : "#0E9AA7",
+                  <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{
+                    background: on ? "rgba(255,255,255,0.22)" : "rgba(92,101,112,0.15)",
+                    color: on ? "#fff" : "#5C6570",
                   }}>NEW</span>
                 )}
               </span>
             </button>
-          ))}
+            );
+          })}
         </div>
 
         {/* Incoming requests visible on every Connect tab so Accept is never missed */}
@@ -31267,28 +31331,30 @@ function AppInner() {
         }}>
         <div className="flex items-center justify-between px-1.5 pt-1.5 pb-1.5 gap-0.5" style={{ background: "var(--t-nav)" }}>
           {[
-            {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse", newId: "pulse_reels_brand"},
-            {id:"messages", icon:MessageCircle, labelKey:"nav.connect", newId: "connect_realtime"},
-            {id:"world",    icon:Globe,         labelKey:"nav.world", newId: "world_mini_mark"},
-            {id:"passport", icon:UserCheck,     labelKey:"nav.passport", newId: "settings_control_center"},
+            {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse", newId: "pulse_reels_brand", color: "#0E9AA7"},
+            {id:"messages", icon:MessageCircle, labelKey:"nav.connect", newId: "connect_realtime", color: "#0F9A4A"},
+            {id:"world",    icon:Globe,         labelKey:"nav.world", newId: "world_mini_mark", color: "#7C5CFF"},
+            {id:"passport", icon:UserCheck,     labelKey:"nav.passport", newId: "settings_control_center", color: "#C4841D"},
           ].map((n) => {
             const Icon = n.icon;
             const isActive = tab === n.id;
             const lang = settings?.language || "en";
             const label = t(n.labelKey, lang);
+            const c = n.color || "#0E9AA7";
             return (
               <button key={n.id} type="button" onClick={() => { if (n.newId) featureDismiss(n.newId); setTab(n.id); }}
                 className="flex flex-col items-center gap-0.5 min-w-0 flex-1"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 52 }}
                 aria-label={n.newId && featureIsNew(n.newId) ? `${label}, new` : label}
                 aria-current={isActive ? "page" : undefined}>
                 <div className={`flex items-center justify-center rounded-2xl relative ${isActive ? "m-nav-item-active" : ""}`}
                   style={{
-                    width:40, height:34,
-                    background: isActive ? "var(--mv-brand-soft)" : "transparent",
+                    width:44, height:36,
+                    background: isActive ? `${c}22` : "transparent",
+                    boxShadow: isActive ? `0 4px 14px ${c}33, inset 0 1px 0 rgba(255,255,255,0.35)` : "none",
                     transition: "all .2s ease",
                   }}>
-                  <Icon size={17} strokeWidth={isActive ? 2.25 : 1.7} color={isActive ? "var(--mv-brand)" : "var(--mv-text-muted)"} aria-hidden="true" />
+                  <Icon size={20} strokeWidth={isActive ? 2.35 : 1.85} color={isActive ? c : "#6B645C"} aria-hidden="true" style={{ filter: isActive ? `drop-shadow(0 2px 3px ${c}55)` : "none" }} />
                   {n.newId && featureIsNew(n.newId) && tab !== n.id && (
                     <span className="absolute -top-1 -left-1 text-[9px] leading-none" aria-hidden="true">🆕</span>
                   )}
@@ -31313,8 +31379,8 @@ function AppInner() {
                     </span>
                   )}
                 </div>
-                <span className="text-[8px] font-medium truncate max-w-full"
-                  style={{ color: isActive ? "var(--mv-brand)" : "var(--mv-text-muted)", letterSpacing: "0.01em", fontWeight: isActive ? 600 : 500 }}>{label}</span>
+                <span className="text-[10px] font-semibold truncate max-w-full"
+                  style={{ color: isActive ? c : "#5A534C", letterSpacing: "0.01em", fontWeight: isActive ? 700 : 600, textShadow: isActive ? "0 1px 0 rgba(255,255,255,0.4)" : "none" }}>{label}</span>
               </button>
             );
           })}
