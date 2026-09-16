@@ -1,28 +1,14 @@
 /* Merveil Developer Platform — Command Center (LaunchPad-style) */
 :root {
-  color-scheme: light;
-  --bg: #f4f1ea;
-  --bg2: #ebe6dc;
-  --panel: #ffffff;
-  --panel-dark: #1a2332;
-  --panel-darker: #121a26;
-  --line: #e4ddd0;
-  --line-dark: #2a3548;
-  --text: #0f172a;
-  --text-inv: #f7f9fc;
-  --muted: #6b7280;
-  --muted-inv: #94a3b8;
-  --accent: #f97316;
-  --accent-soft: #fb923c;
-  --green: #22c55e;
-  --green-soft: #86efac;
-  --cyan: #06b6d4;
-  --purple: #8b5cf6;
-  --radius: 16px;
-  --radius-sm: 10px;
-  --shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
-  --font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --bg: #0B1218;
+  --bg-card: #121C28;
+  --ink: #E8EEF2;
+  --ink-2: #8BA3B5;
+  --line: rgba(232,238,242,0.10);
+  --brand: #0E9AA7;
+  --brand-soft: #2EC4D0;
+  --sans: "IBM Plex Sans", Manrope, system-ui, sans-serif;
+  --display: "Space Grotesk", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
