@@ -965,6 +965,15 @@ a:focus:not(:focus-visible) {
 }
 
 
+/* Connect + orbital nav visual floor (2026-09-16) */
+.m-shell-nav button span.text-\[10px\],
+.m-shell-nav button span {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+}
+.m-shell-nav .m-nav-item-active {
+  /* color comes from per-tab inline styles */
+}
 /* —— Desktop app shell (laptop+) — not mobile stretch —— */
 /* True desktop only — avoids phone "Request desktop site" half-blank layout */
 @media (min-width: 1024px) {
@@ -1997,24 +2006,25 @@ const PRESENCE_COLORS = {
   away: "#94A3B8",
 };
 
-function PresenceDot({ status, size = 10, className = "", title }) {
+function PresenceDot({ status, size = 14, className = "", title }) {
   const st = String(status || "offline").toLowerCase();
   const color = PRESENCE_COLORS[st] || PRESENCE_COLORS.offline;
   const live = st === "online" || st === "busy";
-  const label = st === "online" ? "Online" : st === "busy" ? "Busy" : "Offline";
   return (
     <span
       className={className}
-      role="img"
-      aria-label={title || label}
-      title={title || label}
+      title={title || st}
+      aria-hidden="true"
       style={{
+        display: "inline-block",
         width: size,
         height: size,
         borderRadius: "50%",
         background: color,
-        display: "inline-block",
-        boxShadow: live ? `0 0 0 2px rgba(255,255,255,0.95), 0 0 8px ${color}` : "0 0 0 2px rgba(255,255,255,0.9)",
+        border: "2px solid #F5F1EB",
+        boxShadow: live
+          ? `0 0 0 2px ${color}33, 0 0 10px ${color}88`
+          : "0 0 0 1px rgba(0,0,0,0.12)",
         flexShrink: 0,
       }}
     />
@@ -10337,17 +10347,21 @@ function MyConnectionsPresence({ currentUser, onOpenChat }) {
 // in the same pass as the realtime + structural changes.
 // ---------------------------------------------------------------
 const CT = {
-  // Quiet network surface — airy, readable, refined
-  bg: "#F7F5F1",
-  panel: "#FFFFFF",
-  panelHover: "#F0EEE9",
-  line: "rgba(18,22,28,0.08)",
-  ink: "#12161C",
-  sub: "#5C6570",
+  // Stronger contrast — still warm, not sterile white
+  bg: "#E2DCD3",
+  panel: "#EFEAE3",
+  panelHover: "#E5DFD6",
+  line: "rgba(26,24,22,0.14)",
+  ink: "#141210",
+  sub: "#5A534C",
   accent: "#0E9AA7",
-  online: "#159F5C",
+  online: "#0F9A4A",
   busy: "#C4841D",
-  offline: "#9AA3AE",
+  offline: "#6E6760",
+  chatBg: "linear-gradient(180deg, #D8D2C8 0%, #D0CABF 50%, #C8C2B7 100%)",
+  bubbleMine: "linear-gradient(135deg, #0E9AA7 0%, #0A7A85 100%)",
+  bubbleOther: "#F3EEE7",
+  headerBg: "#D6D0C6",
 };
 
 
@@ -10478,6 +10492,11 @@ function useUnfilteredPresence(currentUser) {
 
 async function initiateCitizenCall(user, mode) {
   if (!user?.id) { alert("Can't call — missing user."); return; }
+  try {
+    window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
+      detail: { userId: String(user.id), at: Date.now() },
+    }));
+  } catch {}
   const tryCreate = async () => {
     const res = await merveilFetch("/api/calls?action=create", {
       method: "POST",
@@ -10519,6 +10538,12 @@ async function initiateCitizenCall(user, mode) {
       alert("Call created but no call id returned.");
       return;
     }
+    // WhatsApp-style: called person rises to top immediately (Citizens / Circle / Messages)
+    try {
+      window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
+        detail: { userId: String(user.id), at: Date.now() },
+      }));
+    } catch {}
     window.dispatchEvent(new CustomEvent("merveil:start-call", {
       detail: {
         callId: data.call.id,
@@ -10541,38 +10566,50 @@ function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
   const statusLabel = status === "online" ? "Online now" : status === "busy" ? "Busy" : (user.role_label || "Away");
   return (
     <div
-      className="flex items-center gap-3 mx-2 px-2.5 py-2.5 rounded-2xl transition-colors"
-      style={{ background: live ? "rgba(6,182,212,0.08)" : "transparent", minHeight: 44 }}
+      className="flex items-center gap-3 mx-2 px-2.5 py-3 rounded-2xl transition-colors"
+      style={{
+        background: live ? "rgba(14,154,167,0.10)" : CT.panel,
+        minHeight: 52,
+        border: `1px solid ${live ? "rgba(14,154,167,0.18)" : CT.line}`,
+        marginBottom: 4,
+      }}
       role="listitem"
     >
       <button type="button" onClick={() => onProfile(user.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left" aria-label={`${user.name || "Citizen"}, ${statusLabel}`}>
         <div className="relative shrink-0">
           {user.avatar_url
-            ? <img src={user.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: `1.5px solid ${live ? "rgba(6,182,212,0.45)" : CT.line}` }} />
+            ? <img src={user.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: `2px solid ${live ? "rgba(18,163,90,0.55)" : CT.line}` }} />
             : <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold"
-                style={{ background: "linear-gradient(145deg,#0E9AA7,#06B6D4)", color: "#fff", border: `1.5px solid ${live ? "rgba(6,182,212,0.45)" : CT.line}` }}>
+                style={{ background: "linear-gradient(145deg,#0E9AA7,#0A7A85)", color: "#fff", border: `2px solid ${live ? "rgba(18,163,90,0.55)" : CT.line}` }}>
                 {(user.name || "?").slice(0, 1).toUpperCase()}
               </div>}
-          <span className="absolute bottom-0 right-0" style={{ lineHeight: 0 }}>
-            <PresenceDot status={status} size={12} />
+          <span className="absolute -bottom-0.5 -right-0.5" style={{ lineHeight: 0 }}>
+            <PresenceDot status={status} size={14} />
           </span>
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="text-[15px] font-semibold truncate" style={{ color: CT.ink, fontFamily: "'Space Grotesk',sans-serif" }}>
+            <span className="text-[15px] font-bold truncate" style={{
+              color: CT.ink,
+              fontFamily: "'Space Grotesk',sans-serif",
+              letterSpacing: "-0.02em",
+              textShadow: "0 1px 0 rgba(255,255,255,0.55), 0 1px 2px rgba(26,24,22,0.06)",
+            }}>
               {user.name || "Merveil Citizen"}
             </span>
             <NewEmojiBadge show={isNewCitizen(user)} />
             {trusted && <BadgeCheck size={14} style={{ color: CT.accent }} aria-label="Verified" />}
           </div>
-          <div className="text-[12px] truncate flex items-center gap-1.5" style={{ color: CT.sub }}>
-            {live && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: connectPresenceDot(status) }} />}
-            {statusLabel}
+          <div className="text-[12px] truncate flex items-center gap-1.5 mt-0.5" style={{ color: CT.sub }}>
+            <span className="inline-flex items-center gap-1 font-semibold" style={{ color: live ? CT.online : CT.offline }}>
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: connectPresenceDot(status), boxShadow: live ? `0 0 6px ${connectPresenceDot(status)}` : "none" }} />
+              {statusLabel}
+            </span>
             {user.role_label && status === "online" ? ` · ${user.role_label}` : ""}
           </div>
         </div>
         {contactLabel && (
-          <span className="text-[11px] tabular-nums shrink-0 ml-1" style={{ color: live ? "#0E9AA7" : CT.sub }}>{contactLabel}</span>
+          <span className="text-[11px] tabular-nums shrink-0 ml-1 font-medium" style={{ color: live ? CT.accent : CT.sub }}>{contactLabel}</span>
         )}
       </button>
       <div className="flex items-center gap-1.5 shrink-0">
@@ -10612,37 +10649,53 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
     if (!currentUser?.id) return;
     let cancelled = false;
     let first = true;
-    const load = () => {
-      merveilFetch(`/api/conversations?action=directory`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (cancelled || !data?.users) return;
-          // Strip server status — presenceMap alone drives dots/sections (verified cause of 30s reshuffle)
-          const users = data.users.map((u) => {
-            const { status, ...rest } = u;
-            return rest;
-          });
-          setCitizens((prev) => stableMergeById(prev, users));
-          knownIdsRef.current = new Set(users.map((u) => String(u.id)));
-          // Seed global presence poll so dots work without waiting for realtime events
-          try {
-            window.dispatchEvent(new CustomEvent("merveil:presence-seed", {
-              detail: { ids: users.map((u) => String(u.id)) },
-            }));
-          } catch {}
-        })
-        .catch(() => {})
-        .finally(() => { if (!cancelled && first) { first = false; setLoading(false); } });
+    const load = async () => {
+      try {
+        // Soft session keep so directory is not empty after cookie lag
+        try { await fetch("/api/auth/session", { credentials: "include", cache: "no-store" }); } catch {}
+        const r = await merveilFetch(`/api/conversations?action=directory`);
+        const data = r.ok ? await r.json().catch(() => null) : null;
+        if (cancelled) return;
+        if (!data?.users) {
+          if (first) setLoading(false);
+          return;
+        }
+        const users = data.users.map((u) => {
+          const { status, ...rest } = u;
+          return rest;
+        });
+        setCitizens((prev) => stableMergeById(prev, users));
+        knownIdsRef.current = new Set(users.map((u) => String(u.id)));
+        try {
+          window.dispatchEvent(new CustomEvent("merveil:presence-seed", {
+            detail: { ids: users.map((u) => String(u.id)) },
+          }));
+        } catch {}
+      } catch {}
+      finally {
+        if (!cancelled && first) { first = false; setLoading(false); }
+      }
     };
     load();
     const onConn = () => load();
+    const onBump = (e) => {
+      const uid = String(e?.detail?.userId || "");
+      const at = Number(e?.detail?.at) || Date.now();
+      if (!uid) return;
+      setCitizens((prev) => prev.map((u) =>
+        String(u.id) === uid
+          ? { ...u, contactRank: 1, lastContactAt: at }
+          : u
+      ));
+    };
     window.addEventListener("merveil:connection-changed", onConn);
-    // Directory soft refresh — presence dots are realtime; list membership every 15s
+    window.addEventListener("merveil:contact-bump", onBump);
     const id = setInterval(load, 15000);
     return () => {
       cancelled = true;
       clearInterval(id);
       window.removeEventListener("merveil:connection-changed", onConn);
+      window.removeEventListener("merveil:contact-bump", onBump);
     };
   }, [currentUser?.id]);
 
@@ -11011,6 +11064,28 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
   // Accepted connections = My Circle
   const [connectionPeople, setConnectionPeople] = useState([]);
+  useEffect(() => {
+    const onBump = (e) => {
+      const uid = String(e?.detail?.userId || "");
+      const at = Number(e?.detail?.at) || Date.now();
+      if (!uid) return;
+      setConnectionPeople((prev) => prev.map((p) =>
+        String(p.id) === uid
+          ? { ...p, lastContactAt: at, last_message_at: new Date(at).toISOString() }
+          : p
+      ));
+      setThreads((prev) => {
+        const uidMe = String(currentUser?.id || "");
+        return [...prev].map((th) => {
+          const ids = (th.participant_ids || []).map(String);
+          if (!ids.includes(uid) || !ids.includes(uidMe)) return th;
+          return { ...th, last_message_at: new Date(at).toISOString(), updated_at: new Date(at).toISOString() };
+        }).sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+      });
+    };
+    window.addEventListener("merveil:contact-bump", onBump);
+    return () => window.removeEventListener("merveil:contact-bump", onBump);
+  }, [currentUser?.id]);
   const reloadConnections = useCallback(() => {
     if (!currentUser?.id) return;
     merveilFetch("/api/connections?action=list&kind=accepted")
@@ -11738,7 +11813,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                 border: `1px solid ${isOnline ? (myStatus === "busy" ? "rgba(245,158,11,0.35)" : "rgba(34,197,94,0.35)") : CT.line}`,
               }}
             >
-              <span className="w-2 h-2 rounded-full" style={{ background: presenceDot(isOnline ? myStatus : "offline"), boxShadow: isOnline ? `0 0 8px ${presenceDot(myStatus)}` : "none" }} />
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: presenceDot(isOnline ? myStatus : "offline"), boxShadow: isOnline ? `0 0 10px ${presenceDot(myStatus)}` : "none" }} />
               {isOnline ? (myStatus === "busy" ? "Busy" : "Online") : "Offline"}
             </button>
             {(() => {
@@ -11748,10 +11823,15 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               );
               const offlineEst = Math.max(0, (directory.length || connectionPeople.length) - onlineEst);
               return (
-                <span className="text-[11px] font-medium" style={{ color: CT.sub }}>
-                  <span style={{ color: CT.online }}>●</span> {onlineEst} live
-                  <span className="mx-1.5 opacity-30">·</span>
-                  <span style={{ color: CT.offline }}>●</span> {offlineEst > 0 ? offlineEst : "—"} away
+                <span className="text-[12px] font-bold inline-flex items-center gap-2" style={{ color: CT.ink }}>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(15,154,74,0.14)", color: CT.online }}>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.online, boxShadow: `0 0 8px ${CT.online}` }} />
+                    {onlineEst} live
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(110,103,96,0.12)", color: CT.offline }}>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.offline }} />
+                    {offlineEst > 0 ? offlineEst : "—"} away
+                  </span>
                 </span>
               );
             })()}
@@ -11760,42 +11840,51 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
         {/* CONNECT V1 — Citizens | My Circle | Messages */}
         <div
-          className="flex items-center gap-1 px-3 py-2.5 border-b"
-          style={{ borderColor: CT.line, background: "#FFFFFF" }}
+          className="flex items-center gap-1 px-2 py-3 border-b"
+          style={{ borderColor: CT.line, background: CT.headerBg || "#D6D0C6" }}
           role="tablist"
           aria-label="Connect sections"
         >
           {[
-            { id: "citizens", label: t("connect.citizens") },
-            { id: "circle", label: t("connect.circle") },
-            { id: "messages", label: t("connect.messages") },
-            { id: "ai-call", label: "AI Call", isNew: true },
-          ].map((tabItem) => (
+            { id: "citizens", label: t("connect.citizens"), activeBg: "#0F9A4A", activeFg: "#FFFFFF", idle: "#0F9A4A" },
+            { id: "circle", label: t("connect.circle"), activeBg: "#1A1816", activeFg: "#F5F1EB", idle: "#1A1816" },
+            { id: "messages", label: t("connect.messages"), activeBg: "#FFFFFF", activeFg: "#141210", idle: "#5A534C", border: true },
+            { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C6570", activeFg: "#FFFFFF", idle: "#5C6570" },
+          ].map((tabItem) => {
+            const on = connectTab === tabItem.id;
+            return (
             <button
               key={tabItem.id}
               role="tab"
               type="button"
-              aria-selected={connectTab === tabItem.id}
+              aria-selected={on}
               id={`connect-tab-${tabItem.id}`}
               onClick={() => setConnectTab(tabItem.id)}
-              className="flex-1 text-[12px] font-bold py-2 rounded-xl transition-all min-h-[40px]"
+              className="flex-1 text-[11px] font-bold py-2.5 rounded-xl transition-all min-h-[44px]"
               style={{
-                background: connectTab === tabItem.id ? CT.accent : "transparent",
-                color: connectTab === tabItem.id ? "#FFFFFF" : CT.sub,
-                boxShadow: connectTab === tabItem.id ? "0 4px 14px rgba(6,182,212,0.28)" : "none",
+                background: on ? tabItem.activeBg : "transparent",
+                color: on ? tabItem.activeFg : tabItem.idle,
+                boxShadow: on
+                  ? (tabItem.border
+                      ? "0 4px 14px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9)"
+                      : `0 4px 16px ${tabItem.activeBg}55`)
+                  : "none",
+                border: on && tabItem.border ? "1px solid rgba(26,24,22,0.12)" : "1px solid transparent",
+                textShadow: on ? "0 1px 2px rgba(0,0,0,0.12)" : "none",
               }}
             >
               <span className="inline-flex items-center justify-center gap-1">
                 {tabItem.label}
                 {tabItem.isNew && (
-                  <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{
-                    background: connectTab === tabItem.id ? "rgba(255,255,255,0.25)" : "rgba(14,154,167,0.15)",
-                    color: connectTab === tabItem.id ? "#fff" : "#0E9AA7",
+                  <span className="text-[8px] font-bold px-1 py-0.5 rounded" style={{
+                    background: on ? "rgba(255,255,255,0.22)" : "rgba(92,101,112,0.15)",
+                    color: on ? "#fff" : "#5C6570",
                   }}>NEW</span>
                 )}
               </span>
             </button>
-          ))}
+            );
+          })}
         </div>
 
         {/* Incoming requests visible on every Connect tab so Accept is never missed */}
@@ -11942,22 +12031,15 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               rows = rows.filter((r) => !r.archived);
             }
 
-            // Sort: unread threads → recent threads → online → offline
+            // WhatsApp ranking: unread first, then last message/call time only (presence = dot, not order)
             rows.sort((a, b) => {
               const aUnread = a.thread?.unread_count || 0;
               const bUnread = b.thread?.unread_count || 0;
+              if (!!aUnread !== !!bUnread) return bUnread ? 1 : -1;
               if (aUnread !== bUnread) return bUnread - aUnread;
-              const aHas = !!a.thread?.last_body || !!a.thread?.last_message_at;
-              const bHas = !!b.thread?.last_body || !!b.thread?.last_message_at;
-              if (aHas !== bHas) return aHas ? -1 : 1;
-              if (aHas && bHas) {
-                const ta = new Date(a.lastAt || 0).getTime();
-                const tb = new Date(b.lastAt || 0).getTime();
-                if (tb !== ta) return tb - ta;
-              }
-              const aOn = a.status === "online" || a.status === "busy" ? 1 : 0;
-              const bOn = b.status === "online" || b.status === "busy" ? 1 : 0;
-              if (aOn !== bOn) return bOn - aOn;
+              const ta = new Date(a.lastAt || a.thread?.last_message_at || 0).getTime() || 0;
+              const tb = new Date(b.lastAt || b.thread?.last_message_at || 0).getTime() || 0;
+              if (tb !== ta) return tb - ta;
               return (a.name || "").localeCompare(b.name || "");
             });
 
@@ -12028,27 +12110,35 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               const when = lastIso ? timeAgo(lastIso) : "";
               const isMissed = /missed call|no answer|call ended/i.test(String(subtitle || ""));
               return (
-                <div key={r.userId} className="w-full border-b flex items-center gap-1" style={{ borderColor: T.line, background: r.thread?.id === activeId ? "rgba(14,154,167,0.06)" : (unreadN > 0 ? "rgba(14,154,167,0.03)" : "transparent") }}>
-                  <button type="button" onClick={open} className="flex-1 min-w-0 text-left px-3 py-3 flex items-center gap-3">
+                <div key={r.userId} className="w-full border-b flex items-center gap-1" style={{ borderColor: CT.line, background: r.thread?.id === activeId ? "rgba(14,154,167,0.10)" : (unreadN > 0 ? "rgba(14,154,167,0.06)" : CT.panel) }}>
+                  <button type="button" onClick={open} className="flex-1 min-w-0 text-left px-3 py-3.5 flex items-center gap-3">
                     <div className="relative shrink-0" onClick={(e) => { e.stopPropagation(); setViewingProfileId(r.userId); }}>
-                      <Avatar name={displayName} src={r.avatar || profiles[r.userId]?.avatar_url} size={44} />
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2" style={{ background: presenceDot(status), borderColor: "#fff" }} />
+                      <Avatar name={displayName} src={r.avatar || profiles[r.userId]?.avatar_url} size={48} />
+                      <span className="absolute -bottom-0.5 -right-0.5" style={{ lineHeight: 0 }}>
+                        <PresenceDot status={status} size={14} />
+                      </span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[15px] font-semibold truncate" style={{ color: T.ink, fontWeight: unreadN > 0 ? 700 : 600 }}>{displayName}</span>
+                        <span className="text-[15px] truncate" style={{
+                          color: CT.ink,
+                          fontWeight: unreadN > 0 ? 700 : 600,
+                          fontFamily: "'Space Grotesk',sans-serif",
+                          letterSpacing: "-0.02em",
+                          textShadow: "0 1px 0 rgba(255,255,255,0.5)",
+                        }}>{displayName}</span>
                         {r.verified && (
-                          <span className="text-[9px] font-bold px-1 py-0.5 rounded-full shrink-0" style={{ background: "#0EA5E918", color: "#0369A1" }}>Verified</span>
+                          <span className="text-[9px] font-bold px-1 py-0.5 rounded-full shrink-0" style={{ background: "rgba(14,154,167,0.12)", color: CT.accent }}>Verified</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
                         {isMissed && <Phone size={12} style={{ color: "#E0554C", flexShrink: 0 }} />}
-                        <span className="text-[13px] truncate block" style={{ color: unreadN > 0 ? T.ink : T.sub, fontWeight: unreadN > 0 ? 600 : 400 }}>{subtitle}</span>
+                        <span className="text-[13px] truncate block" style={{ color: unreadN > 0 ? CT.ink : CT.sub, fontWeight: unreadN > 0 ? 600 : 400 }}>{subtitle}</span>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0 pl-1" style={{ minWidth: 44 }}>
                       {when && (
-                        <span className="text-[11px] tabular-nums font-medium whitespace-nowrap" style={{ color: unreadN > 0 ? "#0E9AA7" : T.sub }}>{when}</span>
+                        <span className="text-[11px] tabular-nums font-medium whitespace-nowrap" style={{ color: unreadN > 0 ? CT.accent : CT.sub }}>{when}</span>
                       )}
                       {unreadN > 0 && (
                         <span className="text-[10px] font-bold min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center" style={{ background: "#0E9AA7", color: "#FFFFFF" }}>{unreadN > 99 ? "99+" : unreadN}</span>
@@ -12186,7 +12276,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           )}
         </div>
 
-        <div ref={scrollRef} className="flex-1 min-h-0 px-3 py-4 flex flex-col gap-1 overflow-y-auto overscroll-contain" style={{ background: "linear-gradient(180deg, #E8EEF0 0%, #E2E8EB 40%, #DCE6E9 100%)", WebkitOverflowScrolling: "touch", touchAction: "pan-y", minHeight: 120 }}>
+        <div ref={scrollRef} className="flex-1 min-h-0 px-3 py-4 flex flex-col gap-1 overflow-y-auto overscroll-contain" style={{ background: CT.chatBg || "linear-gradient(180deg, #E4DFD6 0%, #DDD7CD 50%, #D6D0C6 100%)", WebkitOverflowScrolling: "touch", touchAction: "pan-y", minHeight: 120 }}>
           {activeMessages.length === 0 && !isAiThread && activeId && (
             <div className="text-center py-10 px-4">
               <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: "rgba(6,182,212,0.12)" }}>
@@ -31248,30 +31338,37 @@ function AppInner() {
           paddingRight: "var(--safe-right)",
           maxWidth: "100%",
         }}>
-        <div className="flex items-center justify-between px-1.5 pt-1.5 pb-1.5 gap-0.5" style={{ background: "var(--t-nav)" }}>
+        <div className="flex items-center justify-between px-1 pt-2 pb-2 gap-0.5" style={{
+          background: "linear-gradient(180deg, #F3EEE7 0%, #E8E2D9 100%)",
+          borderTop: "1px solid rgba(26,24,22,0.12)",
+          boxShadow: "0 -8px 24px rgba(26,24,22,0.06)",
+          minHeight: 64,
+        }}>
           {[
-            {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse", newId: "pulse_reels_brand"},
-            {id:"messages", icon:MessageCircle, labelKey:"nav.connect", newId: "connect_realtime"},
-            {id:"world",    icon:Globe,         labelKey:"nav.world", newId: "world_mini_mark"},
-            {id:"passport", icon:UserCheck,     labelKey:"nav.passport", newId: "settings_control_center"},
+            {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse", newId: "pulse_reels_brand", color: "#0E9AA7"},
+            {id:"messages", icon:MessageCircle, labelKey:"nav.connect", newId: "connect_realtime", color: "#0F9A4A"},
+            {id:"world",    icon:Globe,         labelKey:"nav.world", newId: "world_mini_mark", color: "#7C5CFF"},
+            {id:"passport", icon:UserCheck,     labelKey:"nav.passport", newId: "settings_control_center", color: "#C4841D"},
           ].map((n) => {
             const Icon = n.icon;
             const isActive = tab === n.id;
             const lang = settings?.language || "en";
             const label = t(n.labelKey, lang);
+            const c = n.color || "#0E9AA7";
             return (
               <button key={n.id} type="button" onClick={() => { if (n.newId) featureDismiss(n.newId); setTab(n.id); }}
                 className="flex flex-col items-center gap-0.5 min-w-0 flex-1"
-                style={{ minHeight: 44 }}
+                style={{ minHeight: 52 }}
                 aria-label={n.newId && featureIsNew(n.newId) ? `${label}, new` : label}
                 aria-current={isActive ? "page" : undefined}>
                 <div className={`flex items-center justify-center rounded-2xl relative ${isActive ? "m-nav-item-active" : ""}`}
                   style={{
-                    width:40, height:34,
-                    background: isActive ? "var(--mv-brand-soft)" : "transparent",
+                    width:44, height:36,
+                    background: isActive ? `${c}22` : "transparent",
+                    boxShadow: isActive ? `0 4px 14px ${c}33, inset 0 1px 0 rgba(255,255,255,0.35)` : "none",
                     transition: "all .2s ease",
                   }}>
-                  <Icon size={17} strokeWidth={isActive ? 2.25 : 1.7} color={isActive ? "var(--mv-brand)" : "var(--mv-text-muted)"} aria-hidden="true" />
+                  <Icon size={22} strokeWidth={isActive ? 2.4 : 1.9} color={isActive ? c : "#4A453F"} aria-hidden="true" style={{ filter: isActive ? `drop-shadow(0 2px 3px ${c}55)` : "none" }} />
                   {n.newId && featureIsNew(n.newId) && tab !== n.id && (
                     <span className="absolute -top-1 -left-1 text-[9px] leading-none" aria-hidden="true">🆕</span>
                   )}
@@ -31296,8 +31393,8 @@ function AppInner() {
                     </span>
                   )}
                 </div>
-                <span className="text-[8px] font-medium truncate max-w-full"
-                  style={{ color: isActive ? "var(--mv-brand)" : "var(--mv-text-muted)", letterSpacing: "0.01em", fontWeight: isActive ? 600 : 500 }}>{label}</span>
+                <span className="text-[10px] font-semibold truncate max-w-full"
+                  style={{ color: isActive ? c : "#5A534C", letterSpacing: "0.01em", fontWeight: isActive ? 700 : 600, textShadow: isActive ? "0 1px 0 rgba(255,255,255,0.4)" : "none" }}>{label}</span>
               </button>
             );
           })}
