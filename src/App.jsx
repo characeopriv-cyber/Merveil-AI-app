@@ -2000,10 +2000,10 @@ function isNewCitizen(user, maxDays = 5) {
 
 /** High-contrast presence colors (a11y) */
 const PRESENCE_COLORS = {
-  online: "#3DDC84",
-  busy: "#E0A84A",
-  offline: "#8A7B6C",
-  away: "#8A7B6C",
+  online: "#1D6FBF",
+  busy: "#C4841D",
+  offline: "#9A9086",
+  away: "#9A9086",
 };
 
 function PresenceDot({ status, size = 14, className = "", title }) {
@@ -2021,7 +2021,7 @@ function PresenceDot({ status, size = 14, className = "", title }) {
         height: size,
         borderRadius: "50%",
         background: color,
-        border: "2px solid #352C24",
+        border: "2px solid #FFFBF6",
         boxShadow: live
           ? `0 0 0 2px ${color}33, 0 0 10px ${color}88`
           : "0 0 0 1px rgba(0,0,0,0.12)",
@@ -7266,7 +7266,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   // Living Orbit end state
   if (ending) {
     return (
-      <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #3D2E22 0%, #1A1410 55%, #0A0806 100%)" }}>
+      <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #FFFBF6 0%, #F0E9DF 55%, #E5DCCE 100%)" }}>
         <div className="text-[11px] font-bold tracking-widest" style={{ color: "rgba(196,165,116,0.85)" }}>CONNECTION COMPLETE</div>
         <div className="text-white text-lg font-semibold">{otherName}</div>
         <div className="text-white/60 text-sm">{mm}:{ss} · {mode === "video" ? "Video" : "Voice"} · {participants.length} participant{participants.length !== 1 ? "s" : ""}</div>
@@ -7331,7 +7331,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   }
 
   return (
-    <div className="fixed inset-0 z-[150] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 20%, #3D2E22 0%, #1E1814 42%, #120E0B 78%, #0A0806 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
+    <div className="fixed inset-0 z-[150] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 18%, #FFFBF6 0%, #F3EDE4 40%, #E8E0D4 75%, #DDD4C6 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
       {/* Remote video full-bleed when connected (video mode) */}
       {mode === "video" && (
         <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" style={{ display: status === "connected" && videoOn ? "block" : "none", opacity: focusMode ? 1 : 0.92 }} />
@@ -7347,14 +7347,14 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
       {/* Top bar — secure + quality + minimize (background call) */}
       <div className="relative z-30 flex items-center justify-between px-4 pt-5">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{
-          background: "rgba(30,24,20,0.55)",
-          backdropFilter: "blur(16px) saturate(150%)",
-          WebkitBackdropFilter: "blur(16px) saturate(150%)",
-          border: "1px solid rgba(245,237,227,0.16)",
-          boxShadow: "0 8px 28px rgba(0,0,0,0.35), inset 0 1px 0 rgba(245,237,227,0.1)",
+          background: "rgba(255,251,246,0.82)",
+          backdropFilter: "blur(16px) saturate(140%)",
+          WebkitBackdropFilter: "blur(16px) saturate(140%)",
+          border: "1px solid rgba(45,38,32,0.12)",
+          boxShadow: "0 8px 28px rgba(45,38,32,0.12), inset 0 1px 0 rgba(255,255,255,0.8)",
         }}>
-          <Shield size={12} color={callE2ee.status === "verified" ? "#34D399" : callE2ee.status === "key_only" ? "#C4A574" : callE2ee.status === "failed" ? "#F87171" : "#B8A99A"} />
-          <span className="text-[10px] font-semibold text-[#F5EDE3]" title={callE2ee.detail || ""}>
+          <Shield size={12} color={callE2ee.status === "verified" ? "#16A34A" : callE2ee.status === "key_only" ? "#C4A574" : callE2ee.status === "failed" ? "#DC2626" : "#6B6158"} />
+          <span className="text-[10px] font-semibold text-[#1A1612]" title={callE2ee.detail || ""}>
             {callE2ee.status === "verified" ? "E2EE verified"
               : callE2ee.status === "key_only" ? "Keys verified"
               : callE2ee.status === "failed" ? "E2EE failed"
@@ -7365,22 +7365,22 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => status === "connected" && setShowStats((s) => !s)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full" style={{
-              background: "rgba(30,24,20,0.55)",
-              backdropFilter: "blur(16px) saturate(150%)",
-              WebkitBackdropFilter: "blur(16px) saturate(150%)",
-              border: "1px solid rgba(245,237,227,0.14)",
-              boxShadow: "0 6px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(245,237,227,0.08)",
+              background: "rgba(255,251,246,0.82)",
+              backdropFilter: "blur(16px) saturate(140%)",
+              WebkitBackdropFilter: "blur(16px) saturate(140%)",
+              border: "1px solid rgba(45,38,32,0.12)",
+              boxShadow: "0 6px 20px rgba(45,38,32,0.10), inset 0 1px 0 rgba(255,255,255,0.8)",
             }}>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: qualityColor, boxShadow: `0 0 6px ${qualityColor}` }} />
-            <span className="text-[10px] font-medium text-white/80">
+            <span className="text-[10px] font-medium text-[#1A1612]">
               {mediaError ? "Media error"
                 : status === "connected"
                   ? `${mm}:${ss} · ${qualityLabel}${rtcStats?.rtt != null ? ` · ${rtcStats.rtt}ms` : ""}`
                   : status === "calling" ? "Calling…" : "Connecting…"}
             </span>
           </button>
-          <button type="button" onClick={() => setMinimized(true)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold text-white"
-            style={{ background: "rgba(14,154,167,0.35)", border: "1px solid rgba(46,196,208,0.4)" }}
+          <button type="button" onClick={() => setMinimized(true)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold"
+            style={{ background: "#1D6FBF", color: "#fff", border: "1px solid rgba(29,111,191,0.4)", boxShadow: "0 4px 14px rgba(29,111,191,0.25)" }}
             aria-label="Minimize call — keep talking while you use the app">
             Minimize
           </button>
@@ -7456,7 +7456,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                         <span className="text-white font-bold" style={{ fontSize: participants.length > 2 ? 22 : isSelf ? 26 : 36 }}>{isSelf ? "You" : initials}</span>
                       )}
                     </div>
-                    <span className="text-[13px] font-semibold text-[#F5EDE3] max-w-[100px] truncate" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>{isSelf ? "You" : (p.name || "Citizen")}</span>
+                    <span className="text-[13px] font-semibold text-[#1A1612] max-w-[100px] truncate" style={{ textShadow: "0 1px 0 rgba(255,255,255,0.6)" }}>{isSelf ? "You" : (p.name || "Citizen")}</span>
                   </button>
                 );
               })}
@@ -7481,10 +7481,10 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
         {!focusMode && (
           <div className="mt-2 text-center px-6">
-            <div className="text-white text-lg font-semibold" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
+            <div className="text-[#1A1612] text-lg font-semibold" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
               {participants.length > 2 ? "Conference call" : otherName}
             </div>
-            <div className="text-white/55 text-xs mt-1">
+            <div className="text-[#6B6158] text-xs mt-1">
               {mediaError || (status === "connected" ? `${mode === "video" ? "Video" : "Voice"} · Connected` : status === "calling" ? "Calling…" : "Connecting…")}
             </div>
             {inviteFlash && <div className="text-[11px] mt-2 font-semibold" style={{ color: "#2EC4D0" }}>{inviteFlash}</div>}
@@ -7515,16 +7515,16 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
           bottom: 0,
           paddingBottom: "max(20px, env(safe-area-inset-bottom, 0px))",
           paddingTop: 12,
-          background: "linear-gradient(to top, rgba(10,9,8,0.96) 40%, rgba(10,9,8,0))",
+          background: "linear-gradient(to top, rgba(243,237,228,0.96) 45%, rgba(243,237,228,0))",
         }}
       >
         <div className="flex items-center justify-center gap-3 sm:gap-4 pointer-events-auto">
           {!focusMode && (
             <>
               <button type="button" onClick={() => setMuted((m) => !m)} className="w-14 h-14 rounded-full flex items-center justify-center"
-                style={{ background: muted ? "#fff" : "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)" }}
+                style={{ background: muted ? "#1A1612" : "#FFFBF6", border: "1px solid rgba(45,38,32,0.12)", boxShadow: "0 4px 16px rgba(45,38,32,0.12)" }}
                 aria-label={muted ? "Unmute" : "Mute"}>
-                {muted ? <MicOff size={22} color="#0F172A" /> : <Mic size={22} color="#fff" />}
+                {muted ? <MicOff size={22} color="#fff" /> : <Mic size={22} color="#1A1612" />}
               </button>
               {mode === "video" && (
                 <button type="button" onClick={() => setVideoOn((v) => !v)} className="w-14 h-14 rounded-full flex items-center justify-center"
@@ -7535,9 +7535,9 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
               )}
               {mode === "voice" && (
                 <button type="button" onClick={() => setSpeaker((s) => !s)} className="w-14 h-14 rounded-full flex items-center justify-center"
-                  style={{ background: speaker ? "#fff" : "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)" }}
+                  style={{ background: speaker ? "#1D6FBF" : "#FFFBF6", border: "1px solid rgba(45,38,32,0.12)", boxShadow: "0 4px 16px rgba(45,38,32,0.12)" }}
                   aria-label={speaker ? "Earpiece" : "Speaker"}>
-                  <Volume2 size={22} color={speaker ? "#0F172A" : "#fff"} />
+                  <Volume2 size={22} color={speaker ? "#fff" : "#1A1612"} />
                 </button>
               )}
             </>
@@ -7553,9 +7553,9 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
           </button>
           {!focusMode && (
             <button type="button" onClick={() => setShowTools(true)} className="w-14 h-14 rounded-full flex items-center justify-center"
-              style={{ background: "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)" }}
+              style={{ background: "#FFFBF6", border: "1px solid rgba(45,38,32,0.12)", boxShadow: "0 4px 16px rgba(45,38,32,0.12)" }}
               aria-label="Call tools">
-              <MoreVertical size={22} color="#fff" />
+              <MoreVertical size={22} color="#1A1612" />
             </button>
           )}
         </div>
@@ -10364,28 +10364,28 @@ function MyConnectionsPresence({ currentUser, onOpenChat }) {
 // in the same pass as the realtime + structural changes.
 // ---------------------------------------------------------------
 const CT = {
-  // LOCKED — luxury wood + liquid-glass system (Connect + Call)
-  bg: "#2A221C",
-  panel: "#352C24",
-  panelHover: "#3F342B",
-  line: "rgba(245,237,227,0.12)",
-  ink: "#F5EDE3",
-  sub: "#B8A99A",
+  // LOCKED — cream luxury + blue online + soft glass (Connect + Call)
+  bg: "#F3EDE4",
+  panel: "#FFFBF6",
+  panelHover: "#EDE6DB",
+  line: "rgba(45, 38, 32, 0.10)",
+  ink: "#1A1612",
+  sub: "#6B6158",
   accent: "#C4A574",
-  online: "#3DDC84",
-  busy: "#E0A84A",
-  offline: "#8A7B6C",
-  chatBg: "linear-gradient(180deg, #241C16 0%, #2A221C 45%, #1E1814 100%)",
-  bubbleMine: "linear-gradient(135deg, #C4A574 0%, #A8894F 100%)",
-  bubbleOther: "#3F342B",
-  headerBg: "#1E1814",
+  online: "#1D6FBF",
+  busy: "#C4841D",
+  offline: "#9A9086",
+  chatBg: "linear-gradient(180deg, #F7F1E8 0%, #F0E9DF 50%, #E8E0D4 100%)",
+  bubbleMine: "linear-gradient(135deg, #1D6FBF 0%, #155A9C 100%)",
+  bubbleOther: "#FFFBF6",
+  headerBg: "#EDE6DB",
   brand: "#0E9AA7",
-  // Liquid glass (wood-tinted — not pure white frost)
-  glass: "rgba(30, 24, 20, 0.52)",
-  glassBorder: "rgba(245, 237, 227, 0.16)",
-  glassHighlight: "rgba(196, 165, 116, 0.22)",
-  glassBlur: "blur(16px) saturate(150%)",
-  glassShadow: "0 8px 32px rgba(0,0,0,0.38), inset 0 1px 0 rgba(245,237,227,0.12)",
+  // Light liquid glass on cream
+  glass: "rgba(255, 251, 246, 0.72)",
+  glassBorder: "rgba(45, 38, 32, 0.10)",
+  glassHighlight: "rgba(255, 255, 255, 0.65)",
+  glassBlur: "blur(14px) saturate(140%)",
+  glassShadow: "0 6px 24px rgba(45,38,32,0.08), inset 0 1px 0 rgba(255,255,255,0.7)",
 };
 /** Soft haptic — vibration when supported; no-op otherwise */
 function merveilHaptic(kind = "light") {
@@ -10615,13 +10615,13 @@ function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
       className="flex items-center gap-3 mx-2 px-2.5 py-3 rounded-2xl transition-colors"
       style={{
         background: live
-          ? "linear-gradient(135deg, #3F342B 0%, #352C24 100%)"
-          : "linear-gradient(180deg, #3A3028 0%, #352C24 100%)",
+          ? "linear-gradient(135deg, #FFFFFF 0%, #F7F1E8 100%)"
+          : "linear-gradient(180deg, #FFFBF6 0%, #F5EFE6 100%)",
         minHeight: 56,
-        border: `1px solid ${live ? "rgba(196,165,116,0.28)" : CT.line}`,
+        border: `1px solid ${live ? "rgba(29,111,191,0.28)" : CT.line}`,
         boxShadow: live
-          ? "0 4px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(245,237,227,0.06)"
-          : "0 2px 10px rgba(0,0,0,0.18), inset 0 1px 0 rgba(245,237,227,0.04)",
+          ? "0 4px 16px rgba(29,111,191,0.10), inset 0 1px 0 rgba(255,255,255,0.9)"
+          : "0 2px 10px rgba(45,38,32,0.06), inset 0 1px 0 rgba(255,255,255,0.8)",
         marginBottom: 6,
       }}
       role="listitem"
@@ -10629,9 +10629,9 @@ function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
       <button type="button" onClick={() => onProfile(user.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left" aria-label={`${user.name || "Citizen"}, ${statusLabel}`}>
         <div className="relative shrink-0">
           {user.avatar_url
-            ? <img src={user.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: `2px solid ${live ? "rgba(18,163,90,0.55)" : CT.line}` }} />
+            ? <img src={user.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: `2px solid ${live ? "rgba(29,111,191,0.55)" : CT.line}` }} />
             : <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold"
-                style={{ background: "linear-gradient(145deg,#0E9AA7,#0A7A85)", color: "#fff", border: `2px solid ${live ? "rgba(18,163,90,0.55)" : CT.line}` }}>
+                style={{ background: "linear-gradient(145deg,#0E9AA7,#0A7A85)", color: "#fff", border: `2px solid ${live ? "rgba(29,111,191,0.55)" : CT.line}` }}>
                 {(user.name || "?").slice(0, 1).toUpperCase()}
               </div>}
           <span className="absolute -bottom-0.5 -right-0.5" style={{ lineHeight: 0 }}>
@@ -10824,12 +10824,12 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
           placeholder="Search the network…"
           className="w-full text-sm px-3.5 py-2.5 rounded-xl outline-none"
           style={{
-            background: "rgba(30,24,20,0.65)",
+            background: "rgba(255,251,246,0.9)",
             backdropFilter: CT.glassBlur,
             WebkitBackdropFilter: CT.glassBlur,
             color: CT.ink,
-            border: `1px solid ${CT.glassBorder}`,
-            boxShadow: "inset 0 1px 0 rgba(245,237,227,0.06)",
+            border: `1px solid ${CT.line}`,
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 8px rgba(45,38,32,0.04)",
           }}
         />
       </div>
