@@ -3199,31 +3199,38 @@ const CallRingtone = (() => {
       o.start(t0); o.stop(t0 + dur + 0.05);
     } catch {}
   }
+  let loud = false;
   function pulse() {
     const c = ensure();
     if (!c || !playing) return;
     if (c.state === "suspended") { try { c.resume(); } catch {} }
     const t = c.currentTime;
-    // Louder dual-tone ring
-    beep(c, t, 440, 0.22, 0.35);
-    beep(c, t + 0.22, 520, 0.22, 0.32);
-    beep(c, t + 0.5, 440, 0.22, 0.35);
-    beep(c, t + 0.72, 520, 0.22, 0.32);
+    // Normal by default; user can boost via 📢 (setLoud)
+    const g1 = loud ? 0.32 : 0.10;
+    const g2 = loud ? 0.28 : 0.08;
+    beep(c, t, 440, 0.20, g1);
+    beep(c, t + 0.22, 520, 0.20, g2);
+    beep(c, t + 0.5, 440, 0.20, g1);
+    beep(c, t + 0.72, 520, 0.20, g2);
   }
   return {
     unlock,
+    setLoud(v) { loud = !!v; },
+    isLoud() { return loud; },
     start() {
       unlock();
       if (playing) return;
       playing = true;
+      loud = false; // always start normal — user taps speaker to boost
       const c = ensure();
       if (c && c.state === "suspended") { try { c.resume(); } catch {} }
       pulse();
       timer = setInterval(pulse, 2000);
-      try { if (navigator.vibrate) navigator.vibrate([250, 120, 250, 120, 250]); } catch {}
+      try { if (navigator.vibrate) navigator.vibrate([180, 100, 180]); } catch {}
     },
     stop() {
       playing = false;
+      loud = false;
       if (timer) { clearInterval(timer); timer = null; }
       try { if (navigator.vibrate) navigator.vibrate(0); } catch {}
     },
@@ -8323,6 +8330,23 @@ function IncomingCallBanner({ call, callerProfile, onAccept, onReject, accepting
           {accepting ? "Connecting…" : `Incoming ${call.type || "voice"} call…`}
         </div>
       </div>
+      {!accepting && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            const next = !CallRingtone.isLoud?.();
+            CallRingtone.setLoud?.(next);
+            try { CallRingtone.unlock(); } catch {}
+          }}
+          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)" }}
+          aria-label="Louder ringtone"
+          title="Tap for louder ring"
+        >
+          <span style={{ fontSize: 16 }} aria-hidden>📢</span>
+        </button>
+      )}
       <button
         type="button"
         onClick={reject}
@@ -10764,7 +10788,10 @@ function MyCircleTab({ currentUser, connectionPeople, presenceMap, onMessage, on
       return { ...p, status };
     });
     list.sort((a, b) => {
-      // Stable: name order; presence is indicator only
+      // Same as Citizens: last contact / message / call first, then name
+      const ta = new Date(a.lastContactAt || a.last_contact_at || a.last_message_at || a.last_seen_at || 0).getTime() || 0;
+      const tb = new Date(b.lastContactAt || b.last_contact_at || b.last_message_at || b.last_seen_at || 0).getTime() || 0;
+      if (tb !== ta) return tb - ta;
       return (a.name || "").localeCompare(b.name || "");
     });
     return list;
@@ -10929,7 +10956,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     }
   };
   // CONNECT V1: which of the three sections is showing.
-  const [connectTab, setConnectTab] = useState("messages"); // "citizens" | "circle" | "messages"
+  const [connectTab, setConnectTab] = useState("messages"); // "citizens" | "circle" | "messages" | "ai-call"
   const presence = useUnfilteredPresence(currentUser); // unfiltered — feeds Citizens, My Circle, and Messages alike
   const [profiles, setProfiles] = useState({});
   const [myStatus, setMyStatus] = useState(() => {
@@ -10994,6 +11021,31 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       })
       .catch(() => {});
   }, [currentUser?.id]);
+
+  // Keep Circle ranking aligned with Messages: last_message_at / last contact from threads
+  useEffect(() => {
+    if (!threads?.length || !connectionPeople?.length) return;
+    const uid = String(currentUser?.id || "");
+    setConnectionPeople((prev) => {
+      let changed = false;
+      const next = prev.map((p) => {
+        const pid = String(p.id);
+        let best = 0;
+        for (const th of threads) {
+          const ids = (th.participant_ids || []).map(String);
+          if (!ids.includes(pid) || !ids.includes(uid)) continue;
+          const ts = new Date(th.last_message_at || th.updated_at || th.created_at || 0).getTime() || 0;
+          if (ts > best) best = ts;
+        }
+        if (!best) return p;
+        const prevTs = new Date(p.lastContactAt || p.last_message_at || 0).getTime() || 0;
+        if (best <= prevTs) return p;
+        changed = true;
+        return { ...p, lastContactAt: best, last_message_at: new Date(best).toISOString() };
+      });
+      return changed ? next : prev;
+    });
+  }, [threads, currentUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     reloadConnections();
     const onEvt = () => reloadConnections();
@@ -11717,6 +11769,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             { id: "citizens", label: t("connect.citizens") },
             { id: "circle", label: t("connect.circle") },
             { id: "messages", label: t("connect.messages") },
+            { id: "ai-call", label: "AI Call", isNew: true },
           ].map((tabItem) => (
             <button
               key={tabItem.id}
@@ -11732,7 +11785,15 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                 boxShadow: connectTab === tabItem.id ? "0 4px 14px rgba(6,182,212,0.28)" : "none",
               }}
             >
-              {tabItem.label}
+              <span className="inline-flex items-center justify-center gap-1">
+                {tabItem.label}
+                {tabItem.isNew && (
+                  <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{
+                    background: connectTab === tabItem.id ? "rgba(255,255,255,0.25)" : "rgba(14,154,167,0.15)",
+                    color: connectTab === tabItem.id ? "#fff" : "#0E9AA7",
+                  }}>NEW</span>
+                )}
+              </span>
             </button>
           ))}
         </div>
@@ -11761,6 +11822,20 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             onCall={(u, mode) => initiateCitizenCall(u, mode)}
             onMessage={(u) => { setConnectTab("messages"); startChatWith(u); }}
           />
+        )}
+
+        {connectTab === "ai-call" && (
+          <div className="flex-1 min-h-0 overflow-y-auto" style={{ background: CT.bg }}>
+            <AICallView
+              currentUser={currentUser}
+              onSignIn={onSignIn}
+              onGoTo={(dest) => {
+                if (dest === "messages" || dest === "connect") setConnectTab("messages");
+                else if (dest === "passport") window.dispatchEvent(new CustomEvent("merveil:goto-passport"));
+                else window.dispatchEvent(new CustomEvent("merveil:set-tab", { detail: { tab: dest } }));
+              }}
+            />
+          </div>
         )}
 
         {connectTab === "messages" && (
@@ -25935,12 +26010,11 @@ function ProfileView({ currentUser, properties, services, onSignOut, onSignIn, o
 // Transactions live exclusively inside Plus (see plusHub.jsx).
 const NAV = [
   { id: "pulse", labelKey: "nav.pulse", icon: LayoutGrid },
-  { id: "investor", labelKey: "nav.invest", icon: TrendingUp },
   { id: "messages", labelKey: "nav.connect", icon: MessageCircle },
   { id: "world", labelKey: "nav.world", icon: Globe },
-  { id: "market", labelKey: "nav.market", icon: Store },
   { id: "passport", labelKey: "nav.passport", icon: UserCheck },
 ];
+// Invest / Market / Community are Pulse sub-tabs (Discover family), not root nav.
 
 // ---------------------------------------------------------------
 // SEGMENTED TABS — shared sub-navigation strip used inside the
@@ -29480,20 +29554,39 @@ function AppInner() {
     },
   });
   // Declared before goToTab / effects that close over the setters (avoids TDZ)
-  const [pulseSubTab, setPulseSubTab] = useState("feed"); // "feed" | "reels" | "stats"
+  const [pulseSubTab, setPulseSubTab] = useState("feed"); // feed=Discover | invest | market | community | stats | 2040
   const [marketSubTab, setMarketSubTab] = useState("souk"); // "souk" | "work" — merged Marketplace tab
 
   // Souk and Work now live inside one merged "market" tab (see Marketplace
   // rebrand). This keeps every existing onGoTo("jobs")/onGoTo("souk") call
   // site working correctly instead of silently landing on a blank screen.
   const goToTab = (t) => {
-    // Leaving full-screen Pulse Reels so Plus destinations are not covered
+    // Opportunity surfaces live under Pulse (Discover / Invest / Market / Community)
+    if (t === "investor" || t === "invest") {
+      setTab("pulse");
+      setPulseSubTab("invest");
+      return;
+    }
+    if (t === "community") {
+      setTab("pulse");
+      setPulseSubTab("community");
+      return;
+    }
+    if (t === "jobs" || t === "work") {
+      setTab("pulse");
+      setPulseSubTab("market");
+      setMarketSubTab("work");
+      return;
+    }
+    if (t === "souk" || t === "market" || t === "marketplace") {
+      setTab("pulse");
+      setPulseSubTab("market");
+      setMarketSubTab(t === "work" ? "work" : "souk");
+      return;
+    }
     try { setPulseSubTab("feed"); } catch {}
-    if (t === "jobs" || t === "work") { setTab("market"); setMarketSubTab("work"); }
-    else if (t === "souk") { setTab("market"); setMarketSubTab("souk"); }
-    else if (t === "sound") {
+    if (t === "sound") {
       setTab("sound");
-      // Do not auto-open the second full-screen player layer
       try { setShowFullSoundPlayer(false); } catch {}
     } else {
       setTab(t);
@@ -29544,17 +29637,22 @@ function AppInner() {
       const t = e?.detail?.tab;
       if (!t || !VALID_TABS.includes(t)) return;
       // Exit Pulse Reels overlay so the target tab is visible
-      setPulseSubTab("feed");
-      if (t === "jobs" || t === "work") {
-        setTab("market");
-        setMarketSubTab("work");
-      } else if (t === "souk") {
-        setTab("market");
-        setMarketSubTab("souk");
+      if (t === "investor" || t === "invest") {
+        setTab("pulse");
+        setPulseSubTab("invest");
+      } else if (t === "community") {
+        setTab("pulse");
+        setPulseSubTab("community");
+      } else if (t === "jobs" || t === "work" || t === "souk" || t === "market" || t === "marketplace") {
+        setTab("pulse");
+        setPulseSubTab("market");
+        setMarketSubTab(t === "jobs" || t === "work" ? "work" : "souk");
       } else if (t === "sound") {
+        setPulseSubTab("feed");
         setTab("sound");
         setShowFullSoundPlayer(false);
       } else {
+        setPulseSubTab("feed");
         setTab(t);
       }
     };
@@ -30502,8 +30600,8 @@ function AppInner() {
   const handlePublish = async (newProperty) => {
     setShowPostModal(false);
     setTab("pulse");
-    // Creator visibility: open Pulse Reels on the listing just published
-    setPulseSubTab("reels");
+    // After publish, land on Discover (listing feed) — not a separate Pulse Reels home
+    setPulseSubTab("feed");
     const result = await publishPropertyDraft(newProperty);
     if (!result.success) {
       alert(`Heads up — this listing didn't save to the database: ${result.error}`);
@@ -30805,13 +30903,8 @@ function AppInner() {
             </div>
             <div className="p-2.5">
               {[
-                { label: "Invest", tab: "investor", sub: "Capital · deals · signals" },
-                { label: "Community", tab: "community", sub: "Circles & people" },
                 { label: "New to UAE", tab: "newcomer", sub: "Settle-in guides" },
-                { label: "Sound", tab: "sound", sub: "Music & environments" },
                 { label: "Arena", tab: "arena", sub: "Games & credits" },
-                { label: "AI Call", tab: "ai-call", sub: "Agents & numbers" },
-                { label: "Wallet", tab: "transactions", sub: "Top-up & activity" },
               ].map((item) => (
                 <button
                   key={item.tab}
@@ -30913,9 +31006,11 @@ function AppInner() {
                 onChange={setPulseSubTab}
                 options={[
                   { id: "feed", label: "Discover", icon: LayoutGrid },
-                  { id: "reels", label: "Pulse Reels", icon: PlayCircle },
-                  { id: "stats", label: "Market Stats", icon: BarChart3 },
-                  { id: "2040", label: "Vision 2040", icon: Leaf },
+                  { id: "invest", label: "Invest", icon: TrendingUp },
+                  { id: "market", label: "Market", icon: Store },
+                  { id: "community", label: "Community", icon: Users },
+                  { id: "stats", label: "Stats", icon: BarChart3 },
+                  { id: "2040", label: "2040", icon: Leaf },
                 ]}
               />
               {pulseSubTab === "feed" && (
@@ -30929,10 +31024,46 @@ function AppInner() {
                   onChat={() => setTab("messages")}
                 />
               )}
+              {pulseSubTab === "invest" && (
+                <div className="max-w-3xl lg:max-w-4xl mx-auto w-full px-3 md:px-4">
+                  <InvestorZone
+                    liveViews={liveViews}
+                    properties={properties}
+                    currentUser={currentUser}
+                    onUpgrade={() => setTab("passport")}
+                    onPropertyCreated={(p) => setProperties((prev) => [{ ...p, id: `db-${p.id}` }, ...prev])}
+                    onSignIn={requireSignIn}
+                    onChat={() => setTab("messages")}
+                    onUserUpdated={handleUserUpdated}
+                  />
+                </div>
+              )}
+              {pulseSubTab === "market" && (
+                <MarketplaceFeedView
+                  services={services}
+                  currentUser={currentUser}
+                  onSignIn={requireSignIn}
+                  onChat={() => setTab("messages")}
+                  verifyStatuses={verifyStatuses}
+                  onUserUpdated={handleUserUpdated}
+                  onPublishService={(s) => {
+                    setServices((prev) => [{ ...s, isLive: true, ownerId: currentUser?.id || null }, ...prev]);
+                  }}
+                />
+              )}
+              {pulseSubTab === "community" && (
+                <CommunityView
+                  onOpenPost={() => (currentUser ? setShowPostModal(true) : requireSignIn())}
+                  onOpenChat={() => setTab("messages")}
+                  currentUserId={currentUser?.id}
+                  onRequireSignIn={requireSignIn}
+                />
+              )}
               {pulseSubTab === "stats" && <DashboardView currentUser={currentUser} properties={properties} liveViews={liveViews} />}
               {pulseSubTab === "2040" && <Vision2040View properties={properties} liveViews={liveViews} />}
             </>
           )}
+          {/* Legacy top-level market/investor/community → kept for deep links; prefer Pulse sub-tabs */}
           {tab === "market" && (
             <MarketplaceFeedView
               services={services}
@@ -31108,21 +31239,20 @@ function AppInner() {
           + ((tabCounts.pulseFeed + tabCounts.pulseReels) > 0 ? `${tabCounts.pulseFeed + tabCounts.pulseReels} new on Pulse. ` : "")
           + (tabCounts.world > 0 ? `${tabCounts.world} new on World. ` : "")}
       </div>
-      <div className={`md:hidden fixed bottom-0 left-0 right-0 z-50 m-shell-nav ${rootLiveCall ? "hidden" : ""}`}
+      <div className={`fixed bottom-0 left-0 right-0 z-50 m-shell-nav ${rootLiveCall ? "hidden" : ""}`}
         role="navigation"
         aria-label="Main"
         style={{
           paddingBottom: "var(--safe-bottom)",
           paddingLeft: "var(--safe-left)",
           paddingRight: "var(--safe-right)",
+          maxWidth: "100%",
         }}>
         <div className="flex items-center justify-between px-1.5 pt-1.5 pb-1.5 gap-0.5" style={{ background: "var(--t-nav)" }}>
           {[
             {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse", newId: "pulse_reels_brand"},
-            {id:"investor", icon:TrendingUp,    labelKey:"nav.invest"},
             {id:"messages", icon:MessageCircle, labelKey:"nav.connect", newId: "connect_realtime"},
             {id:"world",    icon:Globe,         labelKey:"nav.world", newId: "world_mini_mark"},
-            {id:"market",   icon:Store,         labelKey:"nav.market"},
             {id:"passport", icon:UserCheck,     labelKey:"nav.passport", newId: "settings_control_center"},
           ].map((n) => {
             const Icon = n.icon;
