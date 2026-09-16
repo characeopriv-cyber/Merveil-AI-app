@@ -965,6 +965,15 @@ a:focus:not(:focus-visible) {
 }
 
 
+/* Connect + orbital nav visual floor (2026-09-16) */
+.m-shell-nav button span.text-\[10px\],
+.m-shell-nav button span {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+}
+.m-shell-nav .m-nav-item-active {
+  /* color comes from per-tab inline styles */
+}
 /* —— Desktop app shell (laptop+) — not mobile stretch —— */
 /* True desktop only — avoids phone "Request desktop site" half-blank layout */
 @media (min-width: 1024px) {
@@ -1113,9 +1122,9 @@ const FONT_IMPORT = `
   color: var(--t-ink);
 }
 .m-shell-header {
-  background: #FFFFFF;
-  border-bottom: 1px solid #E4E6EB;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  background: linear-gradient(180deg, #0E131A 0%, #0B1218 100%);
+  border-bottom: 1px solid rgba(14,154,167,0.18);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.25);
 }
 :root[data-theme="dark"] .m-shell-header {
   background: linear-gradient(180deg, #0E131A 0%, #0B0F14 100%);
@@ -1868,6 +1877,10 @@ function t(key, lang) {
  *  does not tear down rows every poll. Returns `prev` if ids+order+fields match. */
 function stableMergeById(prev, next, idKey = "id") {
   if (!Array.isArray(next)) return Array.isArray(prev) ? prev : [];
+  // CRITICAL: empty poll (session race) must NEVER wipe a list that already
+  // has people. That is why Connect filled after sign-in then went empty a
+  // few seconds later on the next directory / messages / circle poll.
+  if (next.length === 0) return Array.isArray(prev) ? prev : [];
   if (!Array.isArray(prev) || prev.length === 0) return next;
   const prevMap = new Map(prev.map((x) => [String(x?.[idKey]), x]));
   let changed = prev.length !== next.length;
@@ -1991,10 +2004,10 @@ function isNewCitizen(user, maxDays = 5) {
 
 /** High-contrast presence colors (a11y) */
 const PRESENCE_COLORS = {
-  online: "#16A34A",  // green-600 — WCAG on dark & light chips
-  busy: "#D97706",    // amber-600
-  offline: "#94A3B8", // slate-400
-  away: "#94A3B8",
+  online: "#1D6FBF",
+  busy: "#C4841D",
+  offline: "#9A9086",
+  away: "#9A9086",
 };
 
 function PresenceDot({ status, size = 14, className = "", title }) {
@@ -2012,7 +2025,7 @@ function PresenceDot({ status, size = 14, className = "", title }) {
         height: size,
         borderRadius: "50%",
         background: color,
-        border: "2px solid #F5F1EB",
+        border: "2px solid #FFFBF6",
         boxShadow: live
           ? `0 0 0 2px ${color}33, 0 0 10px ${color}88`
           : "0 0 0 1px rgba(0,0,0,0.12)",
@@ -7257,7 +7270,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   // Living Orbit end state
   if (ending) {
     return (
-      <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #1A1612 0%, #0A0908 55%, #050504 100%)" }}>
+      <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #FFFBF6 0%, #F0E9DF 55%, #E5DCCE 100%)" }}>
         <div className="text-[11px] font-bold tracking-widest" style={{ color: "rgba(196,165,116,0.85)" }}>CONNECTION COMPLETE</div>
         <div className="text-white text-lg font-semibold">{otherName}</div>
         <div className="text-white/60 text-sm">{mm}:{ss} · {mode === "video" ? "Video" : "Voice"} · {participants.length} participant{participants.length !== 1 ? "s" : ""}</div>
@@ -7322,7 +7335,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   }
 
   return (
-    <div className="fixed inset-0 z-[150] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 28%, #1A1612 0%, #0C0B0A 55%, #050504 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
+    <div className="fixed inset-0 z-[150] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 18%, #FFFBF6 0%, #F3EDE4 40%, #E8E0D4 75%, #DDD4C6 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
       {/* Remote video full-bleed when connected (video mode) */}
       {mode === "video" && (
         <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" style={{ display: status === "connected" && videoOn ? "block" : "none", opacity: focusMode ? 1 : 0.92 }} />
@@ -7337,9 +7350,15 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
       {/* Top bar — secure + quality + minimize (background call) */}
       <div className="relative z-30 flex items-center justify-between px-4 pt-5">
-        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)" }}>
-          <Shield size={12} color={callE2ee.status === "verified" ? "#34D399" : callE2ee.status === "key_only" ? "#2EC4D0" : callE2ee.status === "failed" ? "#F87171" : "#94A3B8"} />
-          <span className="text-[10px] font-semibold text-white/90" title={callE2ee.detail || ""}>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{
+          background: "rgba(255,251,246,0.82)",
+          backdropFilter: "blur(16px) saturate(140%)",
+          WebkitBackdropFilter: "blur(16px) saturate(140%)",
+          border: "1px solid rgba(45,38,32,0.12)",
+          boxShadow: "0 8px 28px rgba(45,38,32,0.12), inset 0 1px 0 rgba(255,255,255,0.8)",
+        }}>
+          <Shield size={12} color={callE2ee.status === "verified" ? "#16A34A" : callE2ee.status === "key_only" ? "#C4A574" : callE2ee.status === "failed" ? "#DC2626" : "#6B6158"} />
+          <span className="text-[10px] font-semibold text-[#1A1612]" title={callE2ee.detail || ""}>
             {callE2ee.status === "verified" ? "E2EE verified"
               : callE2ee.status === "key_only" ? "Keys verified"
               : callE2ee.status === "failed" ? "E2EE failed"
@@ -7349,17 +7368,23 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => status === "connected" && setShowStats((s) => !s)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)" }}>
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full" style={{
+              background: "rgba(255,251,246,0.82)",
+              backdropFilter: "blur(16px) saturate(140%)",
+              WebkitBackdropFilter: "blur(16px) saturate(140%)",
+              border: "1px solid rgba(45,38,32,0.12)",
+              boxShadow: "0 6px 20px rgba(45,38,32,0.10), inset 0 1px 0 rgba(255,255,255,0.8)",
+            }}>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: qualityColor, boxShadow: `0 0 6px ${qualityColor}` }} />
-            <span className="text-[10px] font-medium text-white/80">
+            <span className="text-[10px] font-medium text-[#1A1612]">
               {mediaError ? "Media error"
                 : status === "connected"
                   ? `${mm}:${ss} · ${qualityLabel}${rtcStats?.rtt != null ? ` · ${rtcStats.rtt}ms` : ""}`
                   : status === "calling" ? "Calling…" : "Connecting…"}
             </span>
           </button>
-          <button type="button" onClick={() => setMinimized(true)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold text-white"
-            style={{ background: "rgba(14,154,167,0.35)", border: "1px solid rgba(46,196,208,0.4)" }}
+          <button type="button" onClick={() => setMinimized(true)} className="px-2.5 py-1.5 rounded-full text-[10px] font-semibold"
+            style={{ background: "#1D6FBF", color: "#fff", border: "1px solid rgba(29,111,191,0.4)", boxShadow: "0 4px 14px rgba(29,111,191,0.25)" }}
             aria-label="Minimize call — keep talking while you use the app">
             Minimize
           </button>
@@ -7417,20 +7442,25 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                     <div
                       className="rounded-full overflow-hidden flex items-center justify-center"
                       style={{
-                        width: participants.length > 2 ? 64 : isSelf ? 72 : 96,
-                        height: participants.length > 2 ? 64 : isSelf ? 72 : 96,
-                        background: isSelf ? "linear-gradient(145deg,#C4A574,#2A241C)" : "linear-gradient(145deg,#0E9AA7,#0A7A85)",
-                        border: `2.5px solid ${p.role === "pending" ? "rgba(251,191,36,0.6)" : "rgba(255,255,255,0.35)"}`,
-                        boxShadow: status === "connected" && p.role !== "pending" ? "0 0 24px rgba(14,165,233,0.35)" : "none",
+                        width: participants.length > 2 ? 96 : isSelf ? 124 : 140,
+                        height: participants.length > 2 ? 96 : isSelf ? 124 : 140,
+                        background: isSelf ? "linear-gradient(145deg,#C4A574,#3D2E1F)" : "linear-gradient(145deg,#0E9AA7,#0A5A62)",
+                        border: `3px solid ${p.role === "pending" ? "rgba(251,191,36,0.75)" : "rgba(196,165,116,0.65)"}`,
+                        boxShadow: p.role !== "pending"
+                          ? "0 0 0 1px rgba(196,165,116,0.35), 0 0 0 6px rgba(196,165,116,0.08), 0 16px 48px rgba(0,0,0,0.5), 0 0 40px rgba(196,165,116,0.22)"
+                          : "0 10px 28px rgba(0,0,0,0.4)",
+                        animation: status === "calling" || status === "connecting" || status === "connected"
+                          ? (isSelf ? "merveilCallWave 3s ease-in-out infinite" : "merveilCallWave 3s ease-in-out infinite 0.35s")
+                          : "none",
                       }}
                     >
                       {p.avatar ? (
                         <img src={p.avatar} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-white font-bold" style={{ fontSize: participants.length > 2 ? 16 : isSelf ? 18 : 28 }}>{isSelf ? "You" : initials}</span>
+                        <span className="text-white font-bold" style={{ fontSize: participants.length > 2 ? 22 : isSelf ? 26 : 36 }}>{isSelf ? "You" : initials}</span>
                       )}
                     </div>
-                    <span className="text-[11px] font-medium text-white/80 max-w-[72px] truncate">{isSelf ? "You" : (p.name || "Citizen")}</span>
+                    <span className="text-[13px] font-semibold text-[#1A1612] max-w-[100px] truncate" style={{ textShadow: "0 1px 0 rgba(255,255,255,0.6)" }}>{isSelf ? "You" : (p.name || "Citizen")}</span>
                   </button>
                 );
               })}
@@ -7455,10 +7485,10 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
         {!focusMode && (
           <div className="mt-2 text-center px-6">
-            <div className="text-white text-lg font-semibold" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
+            <div className="text-[#1A1612] text-lg font-semibold" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
               {participants.length > 2 ? "Conference call" : otherName}
             </div>
-            <div className="text-white/55 text-xs mt-1">
+            <div className="text-[#6B6158] text-xs mt-1">
               {mediaError || (status === "connected" ? `${mode === "video" ? "Video" : "Voice"} · Connected` : status === "calling" ? "Calling…" : "Connecting…")}
             </div>
             {inviteFlash && <div className="text-[11px] mt-2 font-semibold" style={{ color: "#2EC4D0" }}>{inviteFlash}</div>}
@@ -7489,16 +7519,16 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
           bottom: 0,
           paddingBottom: "max(20px, env(safe-area-inset-bottom, 0px))",
           paddingTop: 12,
-          background: "linear-gradient(to top, rgba(10,9,8,0.96) 40%, rgba(10,9,8,0))",
+          background: "linear-gradient(to top, rgba(243,237,228,0.96) 45%, rgba(243,237,228,0))",
         }}
       >
         <div className="flex items-center justify-center gap-3 sm:gap-4 pointer-events-auto">
           {!focusMode && (
             <>
               <button type="button" onClick={() => setMuted((m) => !m)} className="w-14 h-14 rounded-full flex items-center justify-center"
-                style={{ background: muted ? "#fff" : "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)" }}
+                style={{ background: muted ? "#1A1612" : "#FFFBF6", border: "1px solid rgba(45,38,32,0.12)", boxShadow: "0 4px 16px rgba(45,38,32,0.12)" }}
                 aria-label={muted ? "Unmute" : "Mute"}>
-                {muted ? <MicOff size={22} color="#0F172A" /> : <Mic size={22} color="#fff" />}
+                {muted ? <MicOff size={22} color="#fff" /> : <Mic size={22} color="#1A1612" />}
               </button>
               {mode === "video" && (
                 <button type="button" onClick={() => setVideoOn((v) => !v)} className="w-14 h-14 rounded-full flex items-center justify-center"
@@ -7509,9 +7539,9 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
               )}
               {mode === "voice" && (
                 <button type="button" onClick={() => setSpeaker((s) => !s)} className="w-14 h-14 rounded-full flex items-center justify-center"
-                  style={{ background: speaker ? "#fff" : "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)" }}
+                  style={{ background: speaker ? "#1D6FBF" : "#FFFBF6", border: "1px solid rgba(45,38,32,0.12)", boxShadow: "0 4px 16px rgba(45,38,32,0.12)" }}
                   aria-label={speaker ? "Earpiece" : "Speaker"}>
-                  <Volume2 size={22} color={speaker ? "#0F172A" : "#fff"} />
+                  <Volume2 size={22} color={speaker ? "#fff" : "#1A1612"} />
                 </button>
               )}
             </>
@@ -7527,9 +7557,9 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
           </button>
           {!focusMode && (
             <button type="button" onClick={() => setShowTools(true)} className="w-14 h-14 rounded-full flex items-center justify-center"
-              style={{ background: "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)" }}
+              style={{ background: "#FFFBF6", border: "1px solid rgba(45,38,32,0.12)", boxShadow: "0 4px 16px rgba(45,38,32,0.12)" }}
               aria-label="Call tools">
-              <MoreVertical size={22} color="#fff" />
+              <MoreVertical size={22} color="#1A1612" />
             </button>
           )}
         </div>
@@ -10338,22 +10368,50 @@ function MyConnectionsPresence({ currentUser, onOpenChat }) {
 // in the same pass as the realtime + structural changes.
 // ---------------------------------------------------------------
 const CT = {
-  // Stronger contrast — still warm, not sterile white
-  bg: "#E2DCD3",
-  panel: "#EFEAE3",
-  panelHover: "#E5DFD6",
-  line: "rgba(26,24,22,0.14)",
-  ink: "#141210",
-  sub: "#5A534C",
-  accent: "#0E9AA7",
-  online: "#0F9A4A",
+  // LOCKED — cream luxury + blue online + soft glass (Connect + Call)
+  bg: "#F3EDE4",
+  panel: "#FFFBF6",
+  panelHover: "#EDE6DB",
+  line: "rgba(45, 38, 32, 0.10)",
+  ink: "#1A1612",
+  sub: "#6B6158",
+  accent: "#C4A574",
+  online: "#1D6FBF",
   busy: "#C4841D",
-  offline: "#6E6760",
-  chatBg: "linear-gradient(180deg, #D8D2C8 0%, #D0CABF 50%, #C8C2B7 100%)",
-  bubbleMine: "linear-gradient(135deg, #0E9AA7 0%, #0A7A85 100%)",
-  bubbleOther: "#F3EEE7",
-  headerBg: "#D6D0C6",
+  offline: "#9A9086",
+  chatBg: "linear-gradient(180deg, #F7F1E8 0%, #F0E9DF 50%, #E8E0D4 100%)",
+  bubbleMine: "linear-gradient(135deg, #1D6FBF 0%, #155A9C 100%)",
+  bubbleOther: "#FFFBF6",
+  headerBg: "#EDE6DB",
+  brand: "#0E9AA7",
+  // Light liquid glass on cream
+  glass: "rgba(255, 251, 246, 0.72)",
+  glassBorder: "rgba(45, 38, 32, 0.10)",
+  glassHighlight: "rgba(255, 255, 255, 0.65)",
+  glassBlur: "blur(14px) saturate(140%)",
+  glassShadow: "0 6px 24px rgba(45,38,32,0.08), inset 0 1px 0 rgba(255,255,255,0.7)",
 };
+/** Soft haptic — vibration when supported; no-op otherwise */
+function merveilHaptic(kind = "light") {
+  try {
+    if (typeof navigator === "undefined" || !navigator.vibrate) return;
+    if (kind === "success") navigator.vibrate([12, 40, 18]);
+    else if (kind === "call") navigator.vibrate([20, 30, 20, 30, 40]);
+    else if (kind === "select") navigator.vibrate(10);
+    else navigator.vibrate(8);
+  } catch {}
+}
+/** Shared liquid-glass chip style (presence, call HUD) */
+function glassChipStyle(extra = {}) {
+  return {
+    background: CT.glass,
+    backdropFilter: CT.glassBlur,
+    WebkitBackdropFilter: CT.glassBlur,
+    border: `1px solid ${CT.glassBorder}`,
+    boxShadow: CT.glassShadow,
+    ...extra,
+  };
+}
 
 
 function connectPresenceDot(status) {
@@ -10484,6 +10542,7 @@ function useUnfilteredPresence(currentUser) {
 async function initiateCitizenCall(user, mode) {
   if (!user?.id) { alert("Can't call — missing user."); return; }
   try {
+    merveilHaptic("call");
     window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
       detail: { userId: String(user.id), at: Date.now() },
     }));
@@ -10559,19 +10618,24 @@ function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
     <div
       className="flex items-center gap-3 mx-2 px-2.5 py-3 rounded-2xl transition-colors"
       style={{
-        background: live ? "rgba(14,154,167,0.10)" : CT.panel,
-        minHeight: 52,
-        border: `1px solid ${live ? "rgba(14,154,167,0.18)" : CT.line}`,
-        marginBottom: 4,
+        background: live
+          ? "linear-gradient(135deg, #FFFFFF 0%, #F7F1E8 100%)"
+          : "linear-gradient(180deg, #FFFBF6 0%, #F5EFE6 100%)",
+        minHeight: 56,
+        border: `1px solid ${live ? "rgba(29,111,191,0.28)" : CT.line}`,
+        boxShadow: live
+          ? "0 4px 16px rgba(29,111,191,0.10), inset 0 1px 0 rgba(255,255,255,0.9)"
+          : "0 2px 10px rgba(45,38,32,0.06), inset 0 1px 0 rgba(255,255,255,0.8)",
+        marginBottom: 6,
       }}
       role="listitem"
     >
       <button type="button" onClick={() => onProfile(user.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left" aria-label={`${user.name || "Citizen"}, ${statusLabel}`}>
         <div className="relative shrink-0">
           {user.avatar_url
-            ? <img src={user.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: `2px solid ${live ? "rgba(18,163,90,0.55)" : CT.line}` }} />
+            ? <img src={user.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: `2px solid ${live ? "rgba(29,111,191,0.55)" : CT.line}` }} />
             : <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold"
-                style={{ background: "linear-gradient(145deg,#0E9AA7,#0A7A85)", color: "#fff", border: `2px solid ${live ? "rgba(18,163,90,0.55)" : CT.line}` }}>
+                style={{ background: "linear-gradient(145deg,#0E9AA7,#0A7A85)", color: "#fff", border: `2px solid ${live ? "rgba(29,111,191,0.55)" : CT.line}` }}>
                 {(user.name || "?").slice(0, 1).toUpperCase()}
               </div>}
           <span className="absolute -bottom-0.5 -right-0.5" style={{ lineHeight: 0 }}>
@@ -10640,6 +10704,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
     if (!currentUser?.id) return;
     let cancelled = false;
     let first = true;
+    let emptyRetries = 0;
     const load = async () => {
       try {
         // Soft session keep so directory is not empty after cookie lag
@@ -10649,12 +10714,25 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
         if (cancelled) return;
         if (!data?.users) {
           if (first) setLoading(false);
+          // Identity race: server returned no payload — retry soon without sign-out
+          if (emptyRetries < 4) {
+            emptyRetries += 1;
+            setTimeout(() => { if (!cancelled) load(); }, 800 * emptyRetries);
+          }
           return;
         }
         const users = data.users.map((u) => {
           const { status, ...rest } = u;
           return rest;
         });
+        // Empty array with signed-in user is almost always session lag — retry
+        if (users.length === 0 && emptyRetries < 4) {
+          emptyRetries += 1;
+          if (first) setLoading(false);
+          setTimeout(() => { if (!cancelled) load(); }, 800 * emptyRetries);
+          return;
+        }
+        emptyRetries = 0;
         setCitizens((prev) => stableMergeById(prev, users));
         knownIdsRef.current = new Set(users.map((u) => String(u.id)));
         try {
@@ -10763,7 +10841,14 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search the network…"
           className="w-full text-sm px-3.5 py-2.5 rounded-xl outline-none"
-          style={{ background: CT.panel, color: CT.ink, border: `1px solid ${CT.line}` }}
+          style={{
+            background: "rgba(255,251,246,0.9)",
+            backdropFilter: CT.glassBlur,
+            WebkitBackdropFilter: CT.glassBlur,
+            color: CT.ink,
+            border: `1px solid ${CT.line}`,
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 8px rgba(45,38,32,0.04)",
+          }}
         />
       </div>
       <div className="overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: "calc(var(--nav-h) + var(--safe-bottom) + 24px)" }}>
@@ -10779,7 +10864,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
           const Section = ({ label, count, accent }) => (
             <div className="px-4 pt-3 pb-1.5 flex items-center gap-2">
               <span className="text-[10px] font-bold tracking-[0.16em] uppercase" style={{ color: accent || CT.sub }}>{label}</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(6,182,212,0.10)", color: CT.sub }}>{count}</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(196,165,116,0.18)", color: CT.accent }}>{count}</span>
               <div className="flex-1 h-px" style={{ background: CT.line }} />
             </div>
           );
@@ -10787,7 +10872,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
             <>
               {connected.length > 0 && (
                 <>
-                  <Section label={t("connect.inContact")} count={connected.length} accent="#06B6D4" />
+                  <Section label={t("connect.inContact")} count={connected.length} accent={CT.accent} />
                   {connected.map((u) => (
                     <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
                   ))}
@@ -11745,38 +11830,25 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         role="navigation"
         aria-label="Connect lists"
       >
-{/* Connect compact bar */}
+{/* Connect compact bar — single title, no duplicate CONNECT / no @ */}
         <div
-          className="px-3 pt-1.5 pb-1.5 border-b"
+          className="px-3 pt-2 pb-2 border-b"
           style={{
             borderColor: CT.line,
-            background: "#FFFFFF",
+            background: CT.headerBg || "#1E1814",
           }}
         >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold tracking-[0.2em] uppercase" style={{ color: "rgba(6,182,212,0.95)", fontFamily: "IBM Plex Mono,monospace" }}>
-                {t("nav.connect")}
-              </div>
-              <h2 className="text-xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: CT.ink, letterSpacing: "-0.02em" }}>
-                {t("nav.connect")}
-              </h2>
-              <p className="text-[11px] mt-0.5" style={{ color: CT.sub }}>
-                {document.documentElement.getAttribute("lang") === "fr"
-                  ? "Personnes · présence · conversations de confiance"
-                  : document.documentElement.getAttribute("lang") === "ar"
-                    ? "أشخاص · حضور · محادثات موثوقة"
-                    : "People · presence · trusted conversations"}
-              </p>
-            </div>
-            <button
-              onClick={() => setShowNewChat(true)}
-              title="Search people"
-              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "rgba(129,140,248,0.15)", border: "1px solid rgba(129,140,248,0.35)" }}
-            >
-              <AtSign size={16} style={{ color: CT.accent }} />
-            </button>
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: CT.ink, letterSpacing: "-0.02em" }}>
+              {t("nav.connect")}
+            </h2>
+            <p className="text-[11px] mt-0.5" style={{ color: CT.sub }}>
+              {document.documentElement.getAttribute("lang") === "fr"
+                ? "Personnes · présence · conversations de confiance"
+                : document.documentElement.getAttribute("lang") === "ar"
+                  ? "أشخاص · حضور · محادثات موثوقة"
+                  : "People · presence · trusted conversations"}
+            </p>
           </div>
 
           <div className="flex items-center gap-2 mt-3 flex-wrap">
@@ -11793,18 +11865,17 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                   return next;
                 });
               }}
-              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full"
+              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-full"
               style={{
-                background: isOnline
-                  ? (myStatus === "busy" ? "rgba(245,158,11,0.15)" : "rgba(34,197,94,0.15)")
-                  : "rgba(255,255,255,0.06)",
-                color: isOnline
-                  ? (myStatus === "busy" ? CT.busy : CT.online)
-                  : CT.sub,
-                border: `1px solid ${isOnline ? (myStatus === "busy" ? "rgba(245,158,11,0.35)" : "rgba(34,197,94,0.35)") : CT.line}`,
+                background: CT.glass,
+                backdropFilter: CT.glassBlur,
+                WebkitBackdropFilter: CT.glassBlur,
+                color: isOnline ? (myStatus === "busy" ? CT.busy : CT.online) : CT.sub,
+                border: `1px solid ${CT.glassBorder}`,
+                boxShadow: CT.glassShadow,
               }}
             >
-              <span className="w-2 h-2 rounded-full" style={{ background: presenceDot(isOnline ? myStatus : "offline"), boxShadow: isOnline ? `0 0 8px ${presenceDot(myStatus)}` : "none" }} />
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: presenceDot(isOnline ? myStatus : "offline"), boxShadow: isOnline ? `0 0 10px ${presenceDot(myStatus)}` : "none" }} />
               {isOnline ? (myStatus === "busy" ? "Busy" : "Online") : "Offline"}
             </button>
             {(() => {
@@ -11815,11 +11886,25 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               const offlineEst = Math.max(0, (directory.length || connectionPeople.length) - onlineEst);
               return (
                 <span className="text-[12px] font-bold inline-flex items-center gap-2" style={{ color: CT.ink }}>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(15,154,74,0.14)", color: CT.online }}>
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.online, boxShadow: `0 0 8px ${CT.online}` }} />
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{
+                    background: CT.glass,
+                    backdropFilter: CT.glassBlur,
+                    WebkitBackdropFilter: CT.glassBlur,
+                    border: `1px solid ${CT.glassBorder}`,
+                    boxShadow: CT.glassShadow,
+                    color: CT.online,
+                  }}>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.online, boxShadow: `0 0 10px ${CT.online}` }} />
                     {onlineEst} live
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(110,103,96,0.12)", color: CT.offline }}>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{
+                    background: CT.glass,
+                    backdropFilter: CT.glassBlur,
+                    WebkitBackdropFilter: CT.glassBlur,
+                    border: `1px solid ${CT.glassBorder}`,
+                    boxShadow: CT.glassShadow,
+                    color: CT.offline,
+                  }}>
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.offline }} />
                     {offlineEst > 0 ? offlineEst : "—"} away
                   </span>
@@ -11831,16 +11916,16 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
         {/* CONNECT V1 — Citizens | My Circle | Messages */}
         <div
-          className="flex items-center gap-1 px-3 py-2.5 border-b"
-          style={{ borderColor: CT.line, background: CT.panel }}
+          className="flex items-center gap-1 px-2 py-3 border-b"
+          style={{ borderColor: CT.line, background: CT.headerBg || "#1E1814" }}
           role="tablist"
           aria-label="Connect sections"
         >
           {[
-            { id: "citizens", label: t("connect.citizens"), activeBg: "#0F9A4A", activeFg: "#FFFFFF", idle: "#0F9A4A" },
-            { id: "circle", label: t("connect.circle"), activeBg: "#1A1816", activeFg: "#F5F1EB", idle: "#1A1816" },
-            { id: "messages", label: t("connect.messages"), activeBg: "#FFFFFF", activeFg: "#141210", idle: "#5A534C", border: true },
-            { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C6570", activeFg: "#FFFFFF", idle: "#5C6570" },
+            { id: "citizens", label: t("connect.citizens"), activeBg: "#1D6FBF", activeFg: "#FFFFFF", idle: "#7EB6E8" },
+            { id: "circle", label: t("connect.circle"), activeBg: "#1FA64A", activeFg: "#FFFFFF", idle: "#7DDB9A" },
+            { id: "messages", label: t("connect.messages"), activeBg: "#F5EDE3", activeFg: "#1E1814", idle: "#B8A99A", border: true },
+            { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C534A", activeFg: "#F5EDE3", idle: "#8A7B6C" },
           ].map((tabItem) => {
             const on = connectTab === tabItem.id;
             return (
@@ -11850,7 +11935,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               type="button"
               aria-selected={on}
               id={`connect-tab-${tabItem.id}`}
-              onClick={() => setConnectTab(tabItem.id)}
+              onClick={() => { merveilHaptic("select"); setConnectTab(tabItem.id); }}
               className="flex-1 text-[11px] font-bold py-2.5 rounded-xl transition-all min-h-[44px]"
               style={{
                 background: on ? tabItem.activeBg : "transparent",
@@ -25950,7 +26035,18 @@ function ProfileView({ currentUser, properties, services, onSignOut, onSignIn, o
     const load = () => {
       fetch("/api/profile-views", { credentials: "include" })
         .then((r) => (r.ok ? r.json() : null))
-        .then((data) => { if (!cancelled && data) setProfileViews(data); })
+        .then((data) => {
+          if (cancelled || !data) return;
+          // Never replace a known count with 0 from a failed/empty session poll
+          setProfileViews((prev) => {
+            const nextCount = Number(data.totalCount) || 0;
+            const nextViews = Array.isArray(data.views) ? data.views : [];
+            if (nextCount === 0 && nextViews.length === 0 && (prev.totalCount > 0 || prev.views?.length > 0)) {
+              return prev;
+            }
+            return { views: nextViews, totalCount: nextCount };
+          });
+        })
         .catch(() => {});
     };
     load();
@@ -26865,8 +26961,12 @@ function CitizenScorePanel({ currentUser }) {
 
   const loadRewards = useCallback(() => {
     if (!currentUser?.id) { setLoading(false); setData(null); setFailed(false); return; }
-    setLoading(true);
-    setFailed(false);
+    // Only show loading spinner when we have no score yet — never flash "— pts"
+    setLoading((had) => had);
+    setData((prev) => {
+      if (!prev) setLoading(true);
+      return prev;
+    });
     // Soft session restore then load with merveilFetch (retry on 401)
     (async () => {
       try {
@@ -26874,10 +26974,14 @@ function CitizenScorePanel({ currentUser }) {
         const r = await merveilFetch("/api/rewards");
         if (!r.ok) throw new Error(`rewards fetch failed (${r.status})`);
         const d = await r.json();
-        setData(d);
-        setFailed(false);
+        if (d && typeof d.totalScore === "number") {
+          setData(d);
+          setFailed(false);
+        }
+        // Keep previous data on empty/partial payloads — do not blank the score
       } catch {
-        setFailed(true);
+        // Keep last good score visible; only fail UI if we never loaded
+        setFailed((f) => f);
       } finally {
         setLoading(false);
       }
@@ -27773,7 +27877,17 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
     if (!currentUser?.id) return;
     fetch("/api/profile-views", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => data && setProfileViews(data))
+      .then((data) => {
+        if (!data) return;
+        setProfileViews((prev) => {
+          const nextCount = Number(data.totalCount) || 0;
+          const nextViews = Array.isArray(data.views) ? data.views : [];
+          if (nextCount === 0 && nextViews.length === 0 && (prev.totalCount > 0 || prev.views?.length > 0)) {
+            return prev;
+          }
+          return { views: nextViews, totalCount: nextCount };
+        });
+      })
       .catch(() => {});
   }, [currentUser?.id]);
 
@@ -30337,20 +30451,36 @@ function AppInner() {
   // (see the effect right after this) doesn't also trigger the AI
   // welcome greeting and callMerveilAI request meant for an actual
   // fresh sign-in.
-  const syncCurrentUser = (user) => {
-    setCurrentUser(user);
-    // localStorage: fast sync path for web. MerveilStore: Capacitor Preferences / SecureStorage when native.
-    if (user) {
-      try { localStorage.setItem("junction_user", JSON.stringify(user)); } catch {}
-      MerveilStore.setJson("junction_user", user).catch(() => {});
-    } else {
-      try { localStorage.removeItem("junction_user"); } catch {}
-      MerveilStore.remove("junction_user").catch(() => {});
-    }
+  const syncCurrentUser = (user, { allowIdChange = false } = {}) => {
+    // SECURITY: never adopt another citizen's id into the signed-in session.
+    // A call / profile view must never rewrite junction_user to the other party
+    // (that would open Edit / Wallet / Verify on their Passport).
+    // allowIdChange=true only for explicit sign-in (handleAuthed).
+    setCurrentUser((prev) => {
+      if (
+        !allowIdChange &&
+        user &&
+        prev?.id &&
+        user.id &&
+        String(user.id) !== String(prev.id)
+      ) {
+        console.warn("[merveil] blocked currentUser id swap", prev.id, "→", user.id);
+        return prev;
+      }
+      const next = user;
+      if (next) {
+        try { localStorage.setItem("junction_user", JSON.stringify(next)); } catch {}
+        MerveilStore.setJson("junction_user", next).catch(() => {});
+      } else {
+        try { localStorage.removeItem("junction_user"); } catch {}
+        MerveilStore.remove("junction_user").catch(() => {});
+      }
+      return next;
+    });
   };
 
   const handleAuthed = (user) => {
-    syncCurrentUser(user);
+    syncCurrentUser(user, { allowIdChange: true });
     setShowAuthModal(false);
     try {
       sessionStorage.removeItem("merveil_visitor");
@@ -30555,8 +30685,17 @@ function AppInner() {
   };
   const handleUserUpdated = (updatedFields) => {
     setCurrentUser((prev) => {
-      const next = { ...prev, ...updatedFields };
-      localStorage.setItem("junction_user", JSON.stringify(next));
+      if (!prev?.id) return prev;
+      const patch = { ...(updatedFields || {}) };
+      // SECURITY: never allow id / email swap from a partial profile payload
+      // (e.g. after viewing or calling another citizen).
+      if (patch.id && String(patch.id) !== String(prev.id)) {
+        console.warn("[merveil] blocked handleUserUpdated id overwrite");
+        delete patch.id;
+      }
+      delete patch.email; // email only from auth session, not profile cards
+      const next = { ...prev, ...patch, id: prev.id };
+      try { localStorage.setItem("junction_user", JSON.stringify(next)); } catch {}
       return next;
     });
   };
@@ -30786,8 +30925,8 @@ function AppInner() {
                 aria-current={isActive ? "page" : undefined}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg shrink-0 min-h-[40px]"
                 style={{
-                  color: isActive ? "#0E9AA7" : "rgba(18,22,28,0.62)",
-                  background: isActive ? "rgba(14,154,167,0.12)" : "transparent",
+                  color: isActive ? "#2EC4D0" : "rgba(232,238,242,0.72)",
+                  background: isActive ? "rgba(14,154,167,0.18)" : "transparent",
                   borderRadius: 10,
                 }}
               >
@@ -30801,9 +30940,9 @@ function AppInner() {
             <button onClick={handleSignOut} title="Sign out"
               className="hidden lg:flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg shrink-0"
               style={{
-                background: "rgba(18,22,28,0.04)",
-                color: "rgba(18,22,28,0.72)",
-                border: "1px solid rgba(18,22,28,0.08)",
+                background: "rgba(255,255,255,0.08)",
+                color: "rgba(232,238,242,0.85)",
+                border: "1px solid rgba(255,255,255,0.12)",
                 fontFamily: "'IBM Plex Mono',monospace",
               }}>
               <span style={{
@@ -30827,27 +30966,31 @@ function AppInner() {
             title="Plus"
             className="relative h-8 px-2.5 rounded-full flex items-center justify-center gap-1 shrink-0"
             style={{
-              background: showPlusMenu ? "rgba(18,22,28,0.1)" : "rgba(18,22,28,0.04)",
-              color: "rgba(18,22,28,0.78)",
-              boxShadow: "inset 0 0 0 1px rgba(18,22,28,0.08)",
+              background: showPlusMenu ? "rgba(14,154,167,0.28)" : "rgba(255,255,255,0.10)",
+              color: "#E8EEF2",
+              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.16), 0 2px 10px rgba(0,0,0,0.2)",
               border: "none",
             }}
           >
-            <Plus size={14} style={{ color: "rgba(18,22,28,0.75)" }} />
-            <span className="text-[11px] font-bold hidden xs:inline" style={{ color: "rgba(18,22,28,0.78)" }}>Plus</span>
+            <Plus size={16} style={{ color: "#E8EEF2" }} />
+            <span className="text-[11px] font-bold hidden xs:inline" style={{ color: "#E8EEF2" }}>Plus</span>
           </button>
           
           
           <button
             onClick={() => { setShowNotifications((s) => !s); setShowPlusMenu(false); }}
             title="Notifications"
-            className="relative w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: "rgba(18,22,28,0.04)", boxShadow: "inset 0 0 0 1px rgba(18,22,28,0.08)", border: "none" }}
+            className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            style={{
+              background: showNotifications ? "rgba(14,154,167,0.28)" : "rgba(255,255,255,0.10)",
+              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.16), 0 2px 10px rgba(0,0,0,0.2)",
+              border: "none",
+            }}
           >
-            <Bell size={15} style={{ color: "rgba(18,22,28,0.72)" }} />
+            <Bell size={17} style={{ color: "#E8EEF2" }} />
             {(unreadCount + incomingRequests.length + missedCalls.length) > 0 && (
               <span className="absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center"
-                style={{ background: "#12161C", color: "#fff" }}>
+                style={{ background: "#0E9AA7", color: "#fff", boxShadow: "0 0 0 2px #0B1218" }}>
                 {(unreadCount + incomingRequests.length + missedCalls.length) > 9 ? "9+" : (unreadCount + incomingRequests.length + missedCalls.length)}
               </span>
             )}
@@ -31329,7 +31472,12 @@ function AppInner() {
           paddingRight: "var(--safe-right)",
           maxWidth: "100%",
         }}>
-        <div className="flex items-center justify-between px-1.5 pt-1.5 pb-1.5 gap-0.5" style={{ background: "var(--t-nav)" }}>
+        <div className="flex items-center justify-between px-1 pt-2 pb-2 gap-0.5" style={{
+          background: "linear-gradient(180deg, #F3EEE7 0%, #E8E2D9 100%)",
+          borderTop: "1px solid rgba(26,24,22,0.12)",
+          boxShadow: "0 -8px 24px rgba(26,24,22,0.06)",
+          minHeight: 64,
+        }}>
           {[
             {id:"pulse",    icon:LayoutGrid,    labelKey:"nav.pulse", newId: "pulse_reels_brand", color: "#0E9AA7"},
             {id:"messages", icon:MessageCircle, labelKey:"nav.connect", newId: "connect_realtime", color: "#0F9A4A"},
@@ -31354,7 +31502,7 @@ function AppInner() {
                     boxShadow: isActive ? `0 4px 14px ${c}33, inset 0 1px 0 rgba(255,255,255,0.35)` : "none",
                     transition: "all .2s ease",
                   }}>
-                  <Icon size={20} strokeWidth={isActive ? 2.35 : 1.85} color={isActive ? c : "#6B645C"} aria-hidden="true" style={{ filter: isActive ? `drop-shadow(0 2px 3px ${c}55)` : "none" }} />
+                  <Icon size={22} strokeWidth={isActive ? 2.4 : 1.9} color={isActive ? c : "#4A453F"} aria-hidden="true" style={{ filter: isActive ? `drop-shadow(0 2px 3px ${c}55)` : "none" }} />
                   {n.newId && featureIsNew(n.newId) && tab !== n.id && (
                     <span className="absolute -top-1 -left-1 text-[9px] leading-none" aria-hidden="true">🆕</span>
                   )}
