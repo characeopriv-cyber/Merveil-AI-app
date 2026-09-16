@@ -1122,9 +1122,9 @@ const FONT_IMPORT = `
   color: var(--t-ink);
 }
 .m-shell-header {
-  background: #FFFFFF;
-  border-bottom: 1px solid #E4E6EB;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  background: linear-gradient(180deg, #0E131A 0%, #0B1218 100%);
+  border-bottom: 1px solid rgba(14,154,167,0.18);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.25);
 }
 :root[data-theme="dark"] .m-shell-header {
   background: linear-gradient(180deg, #0E131A 0%, #0B0F14 100%);
@@ -2000,10 +2000,10 @@ function isNewCitizen(user, maxDays = 5) {
 
 /** High-contrast presence colors (a11y) */
 const PRESENCE_COLORS = {
-  online: "#16A34A",  // green-600 — WCAG on dark & light chips
-  busy: "#D97706",    // amber-600
-  offline: "#94A3B8", // slate-400
-  away: "#94A3B8",
+  online: "#3DDC84",
+  busy: "#E0A84A",
+  offline: "#8A7B6C",
+  away: "#8A7B6C",
 };
 
 function PresenceDot({ status, size = 14, className = "", title }) {
@@ -2021,7 +2021,7 @@ function PresenceDot({ status, size = 14, className = "", title }) {
         height: size,
         borderRadius: "50%",
         background: color,
-        border: "2px solid #F5F1EB",
+        border: "2px solid #352C24",
         boxShadow: live
           ? `0 0 0 2px ${color}33, 0 0 10px ${color}88`
           : "0 0 0 1px rgba(0,0,0,0.12)",
@@ -7266,7 +7266,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   // Living Orbit end state
   if (ending) {
     return (
-      <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #1A1612 0%, #0A0908 55%, #050504 100%)" }}>
+      <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #3D2E22 0%, #1A1410 55%, #0A0806 100%)" }}>
         <div className="text-[11px] font-bold tracking-widest" style={{ color: "rgba(196,165,116,0.85)" }}>CONNECTION COMPLETE</div>
         <div className="text-white text-lg font-semibold">{otherName}</div>
         <div className="text-white/60 text-sm">{mm}:{ss} · {mode === "video" ? "Video" : "Voice"} · {participants.length} participant{participants.length !== 1 ? "s" : ""}</div>
@@ -7331,7 +7331,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   }
 
   return (
-    <div className="fixed inset-0 z-[150] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 28%, #1A1612 0%, #0C0B0A 55%, #050504 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
+    <div className="fixed inset-0 z-[150] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 20%, #3D2E22 0%, #1E1814 42%, #120E0B 78%, #0A0806 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
       {/* Remote video full-bleed when connected (video mode) */}
       {mode === "video" && (
         <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" style={{ display: status === "connected" && videoOn ? "block" : "none", opacity: focusMode ? 1 : 0.92 }} />
@@ -7346,9 +7346,15 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
       {/* Top bar — secure + quality + minimize (background call) */}
       <div className="relative z-30 flex items-center justify-between px-4 pt-5">
-        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)" }}>
-          <Shield size={12} color={callE2ee.status === "verified" ? "#34D399" : callE2ee.status === "key_only" ? "#2EC4D0" : callE2ee.status === "failed" ? "#F87171" : "#94A3B8"} />
-          <span className="text-[10px] font-semibold text-white/90" title={callE2ee.detail || ""}>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{
+          background: "rgba(30,24,20,0.55)",
+          backdropFilter: "blur(16px) saturate(150%)",
+          WebkitBackdropFilter: "blur(16px) saturate(150%)",
+          border: "1px solid rgba(245,237,227,0.16)",
+          boxShadow: "0 8px 28px rgba(0,0,0,0.35), inset 0 1px 0 rgba(245,237,227,0.1)",
+        }}>
+          <Shield size={12} color={callE2ee.status === "verified" ? "#34D399" : callE2ee.status === "key_only" ? "#C4A574" : callE2ee.status === "failed" ? "#F87171" : "#B8A99A"} />
+          <span className="text-[10px] font-semibold text-[#F5EDE3]" title={callE2ee.detail || ""}>
             {callE2ee.status === "verified" ? "E2EE verified"
               : callE2ee.status === "key_only" ? "Keys verified"
               : callE2ee.status === "failed" ? "E2EE failed"
@@ -7358,7 +7364,13 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => status === "connected" && setShowStats((s) => !s)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)" }}>
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full" style={{
+              background: "rgba(30,24,20,0.55)",
+              backdropFilter: "blur(16px) saturate(150%)",
+              WebkitBackdropFilter: "blur(16px) saturate(150%)",
+              border: "1px solid rgba(245,237,227,0.14)",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(245,237,227,0.08)",
+            }}>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: qualityColor, boxShadow: `0 0 6px ${qualityColor}` }} />
             <span className="text-[10px] font-medium text-white/80">
               {mediaError ? "Media error"
@@ -7426,20 +7438,25 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                     <div
                       className="rounded-full overflow-hidden flex items-center justify-center"
                       style={{
-                        width: participants.length > 2 ? 64 : isSelf ? 72 : 96,
-                        height: participants.length > 2 ? 64 : isSelf ? 72 : 96,
-                        background: isSelf ? "linear-gradient(145deg,#C4A574,#2A241C)" : "linear-gradient(145deg,#0E9AA7,#0A7A85)",
-                        border: `2.5px solid ${p.role === "pending" ? "rgba(251,191,36,0.6)" : "rgba(255,255,255,0.35)"}`,
-                        boxShadow: status === "connected" && p.role !== "pending" ? "0 0 24px rgba(14,165,233,0.35)" : "none",
+                        width: participants.length > 2 ? 96 : isSelf ? 124 : 140,
+                        height: participants.length > 2 ? 96 : isSelf ? 124 : 140,
+                        background: isSelf ? "linear-gradient(145deg,#C4A574,#3D2E1F)" : "linear-gradient(145deg,#0E9AA7,#0A5A62)",
+                        border: `3px solid ${p.role === "pending" ? "rgba(251,191,36,0.75)" : "rgba(196,165,116,0.65)"}`,
+                        boxShadow: p.role !== "pending"
+                          ? "0 0 0 1px rgba(196,165,116,0.35), 0 0 0 6px rgba(196,165,116,0.08), 0 16px 48px rgba(0,0,0,0.5), 0 0 40px rgba(196,165,116,0.22)"
+                          : "0 10px 28px rgba(0,0,0,0.4)",
+                        animation: status === "calling" || status === "connecting" || status === "connected"
+                          ? (isSelf ? "merveilCallWave 3s ease-in-out infinite" : "merveilCallWave 3s ease-in-out infinite 0.35s")
+                          : "none",
                       }}
                     >
                       {p.avatar ? (
                         <img src={p.avatar} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-white font-bold" style={{ fontSize: participants.length > 2 ? 16 : isSelf ? 18 : 28 }}>{isSelf ? "You" : initials}</span>
+                        <span className="text-white font-bold" style={{ fontSize: participants.length > 2 ? 22 : isSelf ? 26 : 36 }}>{isSelf ? "You" : initials}</span>
                       )}
                     </div>
-                    <span className="text-[11px] font-medium text-white/80 max-w-[72px] truncate">{isSelf ? "You" : (p.name || "Citizen")}</span>
+                    <span className="text-[13px] font-semibold text-[#F5EDE3] max-w-[100px] truncate" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}>{isSelf ? "You" : (p.name || "Citizen")}</span>
                   </button>
                 );
               })}
@@ -10347,22 +10364,50 @@ function MyConnectionsPresence({ currentUser, onOpenChat }) {
 // in the same pass as the realtime + structural changes.
 // ---------------------------------------------------------------
 const CT = {
-  // Stronger contrast — still warm, not sterile white
-  bg: "#E2DCD3",
-  panel: "#EFEAE3",
-  panelHover: "#E5DFD6",
-  line: "rgba(26,24,22,0.14)",
-  ink: "#141210",
-  sub: "#5A534C",
-  accent: "#0E9AA7",
-  online: "#0F9A4A",
-  busy: "#C4841D",
-  offline: "#6E6760",
-  chatBg: "linear-gradient(180deg, #D8D2C8 0%, #D0CABF 50%, #C8C2B7 100%)",
-  bubbleMine: "linear-gradient(135deg, #0E9AA7 0%, #0A7A85 100%)",
-  bubbleOther: "#F3EEE7",
-  headerBg: "#D6D0C6",
+  // LOCKED — luxury wood + liquid-glass system (Connect + Call)
+  bg: "#2A221C",
+  panel: "#352C24",
+  panelHover: "#3F342B",
+  line: "rgba(245,237,227,0.12)",
+  ink: "#F5EDE3",
+  sub: "#B8A99A",
+  accent: "#C4A574",
+  online: "#3DDC84",
+  busy: "#E0A84A",
+  offline: "#8A7B6C",
+  chatBg: "linear-gradient(180deg, #241C16 0%, #2A221C 45%, #1E1814 100%)",
+  bubbleMine: "linear-gradient(135deg, #C4A574 0%, #A8894F 100%)",
+  bubbleOther: "#3F342B",
+  headerBg: "#1E1814",
+  brand: "#0E9AA7",
+  // Liquid glass (wood-tinted — not pure white frost)
+  glass: "rgba(30, 24, 20, 0.52)",
+  glassBorder: "rgba(245, 237, 227, 0.16)",
+  glassHighlight: "rgba(196, 165, 116, 0.22)",
+  glassBlur: "blur(16px) saturate(150%)",
+  glassShadow: "0 8px 32px rgba(0,0,0,0.38), inset 0 1px 0 rgba(245,237,227,0.12)",
 };
+/** Soft haptic — vibration when supported; no-op otherwise */
+function merveilHaptic(kind = "light") {
+  try {
+    if (typeof navigator === "undefined" || !navigator.vibrate) return;
+    if (kind === "success") navigator.vibrate([12, 40, 18]);
+    else if (kind === "call") navigator.vibrate([20, 30, 20, 30, 40]);
+    else if (kind === "select") navigator.vibrate(10);
+    else navigator.vibrate(8);
+  } catch {}
+}
+/** Shared liquid-glass chip style (presence, call HUD) */
+function glassChipStyle(extra = {}) {
+  return {
+    background: CT.glass,
+    backdropFilter: CT.glassBlur,
+    WebkitBackdropFilter: CT.glassBlur,
+    border: `1px solid ${CT.glassBorder}`,
+    boxShadow: CT.glassShadow,
+    ...extra,
+  };
+}
 
 
 function connectPresenceDot(status) {
@@ -10493,6 +10538,7 @@ function useUnfilteredPresence(currentUser) {
 async function initiateCitizenCall(user, mode) {
   if (!user?.id) { alert("Can't call — missing user."); return; }
   try {
+    merveilHaptic("call");
     window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
       detail: { userId: String(user.id), at: Date.now() },
     }));
@@ -10568,10 +10614,15 @@ function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
     <div
       className="flex items-center gap-3 mx-2 px-2.5 py-3 rounded-2xl transition-colors"
       style={{
-        background: live ? "rgba(14,154,167,0.10)" : CT.panel,
-        minHeight: 52,
-        border: `1px solid ${live ? "rgba(14,154,167,0.18)" : CT.line}`,
-        marginBottom: 4,
+        background: live
+          ? "linear-gradient(135deg, #3F342B 0%, #352C24 100%)"
+          : "linear-gradient(180deg, #3A3028 0%, #352C24 100%)",
+        minHeight: 56,
+        border: `1px solid ${live ? "rgba(196,165,116,0.28)" : CT.line}`,
+        boxShadow: live
+          ? "0 4px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(245,237,227,0.06)"
+          : "0 2px 10px rgba(0,0,0,0.18), inset 0 1px 0 rgba(245,237,227,0.04)",
+        marginBottom: 6,
       }}
       role="listitem"
     >
@@ -10772,7 +10823,14 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search the network…"
           className="w-full text-sm px-3.5 py-2.5 rounded-xl outline-none"
-          style={{ background: CT.panel, color: CT.ink, border: `1px solid ${CT.line}` }}
+          style={{
+            background: "rgba(30,24,20,0.65)",
+            backdropFilter: CT.glassBlur,
+            WebkitBackdropFilter: CT.glassBlur,
+            color: CT.ink,
+            border: `1px solid ${CT.glassBorder}`,
+            boxShadow: "inset 0 1px 0 rgba(245,237,227,0.06)",
+          }}
         />
       </div>
       <div className="overflow-y-auto flex-1 min-h-0" style={{ paddingBottom: "calc(var(--nav-h) + var(--safe-bottom) + 24px)" }}>
@@ -10788,7 +10846,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
           const Section = ({ label, count, accent }) => (
             <div className="px-4 pt-3 pb-1.5 flex items-center gap-2">
               <span className="text-[10px] font-bold tracking-[0.16em] uppercase" style={{ color: accent || CT.sub }}>{label}</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(6,182,212,0.10)", color: CT.sub }}>{count}</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(196,165,116,0.18)", color: CT.accent }}>{count}</span>
               <div className="flex-1 h-px" style={{ background: CT.line }} />
             </div>
           );
@@ -10796,7 +10854,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
             <>
               {connected.length > 0 && (
                 <>
-                  <Section label={t("connect.inContact")} count={connected.length} accent="#06B6D4" />
+                  <Section label={t("connect.inContact")} count={connected.length} accent={CT.accent} />
                   {connected.map((u) => (
                     <CitizenRow key={u.id} user={u} status={u.status} onMessage={onMessage} onCall={onCall} onProfile={onProfile} />
                   ))}
@@ -11754,38 +11812,25 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         role="navigation"
         aria-label="Connect lists"
       >
-{/* Connect compact bar */}
+{/* Connect compact bar — single title, no duplicate CONNECT / no @ */}
         <div
-          className="px-3 pt-1.5 pb-1.5 border-b"
+          className="px-3 pt-2 pb-2 border-b"
           style={{
             borderColor: CT.line,
-            background: "#FFFFFF",
+            background: CT.headerBg || "#1E1814",
           }}
         >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold tracking-[0.2em] uppercase" style={{ color: "rgba(6,182,212,0.95)", fontFamily: "IBM Plex Mono,monospace" }}>
-                {t("nav.connect")}
-              </div>
-              <h2 className="text-xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: CT.ink, letterSpacing: "-0.02em" }}>
-                {t("nav.connect")}
-              </h2>
-              <p className="text-[11px] mt-0.5" style={{ color: CT.sub }}>
-                {document.documentElement.getAttribute("lang") === "fr"
-                  ? "Personnes · présence · conversations de confiance"
-                  : document.documentElement.getAttribute("lang") === "ar"
-                    ? "أشخاص · حضور · محادثات موثوقة"
-                    : "People · presence · trusted conversations"}
-              </p>
-            </div>
-            <button
-              onClick={() => setShowNewChat(true)}
-              title="Search people"
-              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "rgba(129,140,248,0.15)", border: "1px solid rgba(129,140,248,0.35)" }}
-            >
-              <AtSign size={16} style={{ color: CT.accent }} />
-            </button>
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: CT.ink, letterSpacing: "-0.02em" }}>
+              {t("nav.connect")}
+            </h2>
+            <p className="text-[11px] mt-0.5" style={{ color: CT.sub }}>
+              {document.documentElement.getAttribute("lang") === "fr"
+                ? "Personnes · présence · conversations de confiance"
+                : document.documentElement.getAttribute("lang") === "ar"
+                  ? "أشخاص · حضور · محادثات موثوقة"
+                  : "People · presence · trusted conversations"}
+            </p>
           </div>
 
           <div className="flex items-center gap-2 mt-3 flex-wrap">
@@ -11802,15 +11847,14 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                   return next;
                 });
               }}
-              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full"
+              className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-full"
               style={{
-                background: isOnline
-                  ? (myStatus === "busy" ? "rgba(245,158,11,0.15)" : "rgba(34,197,94,0.15)")
-                  : "rgba(255,255,255,0.06)",
-                color: isOnline
-                  ? (myStatus === "busy" ? CT.busy : CT.online)
-                  : CT.sub,
-                border: `1px solid ${isOnline ? (myStatus === "busy" ? "rgba(245,158,11,0.35)" : "rgba(34,197,94,0.35)") : CT.line}`,
+                background: CT.glass,
+                backdropFilter: CT.glassBlur,
+                WebkitBackdropFilter: CT.glassBlur,
+                color: isOnline ? (myStatus === "busy" ? CT.busy : CT.online) : CT.sub,
+                border: `1px solid ${CT.glassBorder}`,
+                boxShadow: CT.glassShadow,
               }}
             >
               <span className="w-2.5 h-2.5 rounded-full" style={{ background: presenceDot(isOnline ? myStatus : "offline"), boxShadow: isOnline ? `0 0 10px ${presenceDot(myStatus)}` : "none" }} />
@@ -11824,11 +11868,25 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               const offlineEst = Math.max(0, (directory.length || connectionPeople.length) - onlineEst);
               return (
                 <span className="text-[12px] font-bold inline-flex items-center gap-2" style={{ color: CT.ink }}>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(15,154,74,0.14)", color: CT.online }}>
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.online, boxShadow: `0 0 8px ${CT.online}` }} />
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{
+                    background: CT.glass,
+                    backdropFilter: CT.glassBlur,
+                    WebkitBackdropFilter: CT.glassBlur,
+                    border: `1px solid ${CT.glassBorder}`,
+                    boxShadow: CT.glassShadow,
+                    color: CT.online,
+                  }}>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.online, boxShadow: `0 0 10px ${CT.online}` }} />
                     {onlineEst} live
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ background: "rgba(110,103,96,0.12)", color: CT.offline }}>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{
+                    background: CT.glass,
+                    backdropFilter: CT.glassBlur,
+                    WebkitBackdropFilter: CT.glassBlur,
+                    border: `1px solid ${CT.glassBorder}`,
+                    boxShadow: CT.glassShadow,
+                    color: CT.offline,
+                  }}>
                     <span className="w-2.5 h-2.5 rounded-full" style={{ background: CT.offline }} />
                     {offlineEst > 0 ? offlineEst : "—"} away
                   </span>
@@ -11841,15 +11899,15 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         {/* CONNECT V1 — Citizens | My Circle | Messages */}
         <div
           className="flex items-center gap-1 px-2 py-3 border-b"
-          style={{ borderColor: CT.line, background: CT.headerBg || "#D6D0C6" }}
+          style={{ borderColor: CT.line, background: CT.headerBg || "#1E1814" }}
           role="tablist"
           aria-label="Connect sections"
         >
           {[
-            { id: "citizens", label: t("connect.citizens"), activeBg: "#0F9A4A", activeFg: "#FFFFFF", idle: "#0F9A4A" },
-            { id: "circle", label: t("connect.circle"), activeBg: "#1A1816", activeFg: "#F5F1EB", idle: "#1A1816" },
-            { id: "messages", label: t("connect.messages"), activeBg: "#FFFFFF", activeFg: "#141210", idle: "#5A534C", border: true },
-            { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C6570", activeFg: "#FFFFFF", idle: "#5C6570" },
+            { id: "citizens", label: t("connect.citizens"), activeBg: "#1D6FBF", activeFg: "#FFFFFF", idle: "#7EB6E8" },
+            { id: "circle", label: t("connect.circle"), activeBg: "#1FA64A", activeFg: "#FFFFFF", idle: "#7DDB9A" },
+            { id: "messages", label: t("connect.messages"), activeBg: "#F5EDE3", activeFg: "#1E1814", idle: "#B8A99A", border: true },
+            { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C534A", activeFg: "#F5EDE3", idle: "#8A7B6C" },
           ].map((tabItem) => {
             const on = connectTab === tabItem.id;
             return (
@@ -11859,7 +11917,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               type="button"
               aria-selected={on}
               id={`connect-tab-${tabItem.id}`}
-              onClick={() => setConnectTab(tabItem.id)}
+              onClick={() => { merveilHaptic("select"); setConnectTab(tabItem.id); }}
               className="flex-1 text-[11px] font-bold py-2.5 rounded-xl transition-all min-h-[44px]"
               style={{
                 background: on ? tabItem.activeBg : "transparent",
@@ -30795,8 +30853,8 @@ function AppInner() {
                 aria-current={isActive ? "page" : undefined}
                 className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg shrink-0 min-h-[40px]"
                 style={{
-                  color: isActive ? "#0E9AA7" : "rgba(18,22,28,0.62)",
-                  background: isActive ? "rgba(14,154,167,0.12)" : "transparent",
+                  color: isActive ? "#2EC4D0" : "rgba(232,238,242,0.72)",
+                  background: isActive ? "rgba(14,154,167,0.18)" : "transparent",
                   borderRadius: 10,
                 }}
               >
@@ -30810,9 +30868,9 @@ function AppInner() {
             <button onClick={handleSignOut} title="Sign out"
               className="hidden lg:flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg shrink-0"
               style={{
-                background: "rgba(18,22,28,0.04)",
-                color: "rgba(18,22,28,0.72)",
-                border: "1px solid rgba(18,22,28,0.08)",
+                background: "rgba(255,255,255,0.08)",
+                color: "rgba(232,238,242,0.85)",
+                border: "1px solid rgba(255,255,255,0.12)",
                 fontFamily: "'IBM Plex Mono',monospace",
               }}>
               <span style={{
@@ -30836,27 +30894,31 @@ function AppInner() {
             title="Plus"
             className="relative h-8 px-2.5 rounded-full flex items-center justify-center gap-1 shrink-0"
             style={{
-              background: showPlusMenu ? "rgba(18,22,28,0.1)" : "rgba(18,22,28,0.04)",
-              color: "rgba(18,22,28,0.78)",
-              boxShadow: "inset 0 0 0 1px rgba(18,22,28,0.08)",
+              background: showPlusMenu ? "rgba(14,154,167,0.28)" : "rgba(255,255,255,0.10)",
+              color: "#E8EEF2",
+              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.16), 0 2px 10px rgba(0,0,0,0.2)",
               border: "none",
             }}
           >
-            <Plus size={14} style={{ color: "rgba(18,22,28,0.75)" }} />
-            <span className="text-[11px] font-bold hidden xs:inline" style={{ color: "rgba(18,22,28,0.78)" }}>Plus</span>
+            <Plus size={16} style={{ color: "#E8EEF2" }} />
+            <span className="text-[11px] font-bold hidden xs:inline" style={{ color: "#E8EEF2" }}>Plus</span>
           </button>
           
           
           <button
             onClick={() => { setShowNotifications((s) => !s); setShowPlusMenu(false); }}
             title="Notifications"
-            className="relative w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: "rgba(18,22,28,0.04)", boxShadow: "inset 0 0 0 1px rgba(18,22,28,0.08)", border: "none" }}
+            className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            style={{
+              background: showNotifications ? "rgba(14,154,167,0.28)" : "rgba(255,255,255,0.10)",
+              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.16), 0 2px 10px rgba(0,0,0,0.2)",
+              border: "none",
+            }}
           >
-            <Bell size={15} style={{ color: "rgba(18,22,28,0.72)" }} />
+            <Bell size={17} style={{ color: "#E8EEF2" }} />
             {(unreadCount + incomingRequests.length + missedCalls.length) > 0 && (
               <span className="absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center"
-                style={{ background: "#12161C", color: "#fff" }}>
+                style={{ background: "#0E9AA7", color: "#fff", boxShadow: "0 0 0 2px #0B1218" }}>
                 {(unreadCount + incomingRequests.length + missedCalls.length) > 9 ? "9+" : (unreadCount + incomingRequests.length + missedCalls.length)}
               </span>
             )}
