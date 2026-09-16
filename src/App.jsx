@@ -1877,6 +1877,10 @@ function t(key, lang) {
  *  does not tear down rows every poll. Returns `prev` if ids+order+fields match. */
 function stableMergeById(prev, next, idKey = "id") {
   if (!Array.isArray(next)) return Array.isArray(prev) ? prev : [];
+  // CRITICAL: empty poll (session race) must NEVER wipe a list that already
+  // has people. That is why Connect filled after sign-in then went empty a
+  // few seconds later on the next directory / messages / circle poll.
+  if (next.length === 0) return Array.isArray(prev) ? prev : [];
   if (!Array.isArray(prev) || prev.length === 0) return next;
   const prevMap = new Map(prev.map((x) => [String(x?.[idKey]), x]));
   let changed = prev.length !== next.length;
@@ -10700,6 +10704,7 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
     if (!currentUser?.id) return;
     let cancelled = false;
     let first = true;
+    let emptyRetries = 0;
     const load = async () => {
       try {
         // Soft session keep so directory is not empty after cookie lag
@@ -10709,12 +10714,25 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
         if (cancelled) return;
         if (!data?.users) {
           if (first) setLoading(false);
+          // Identity race: server returned no payload — retry soon without sign-out
+          if (emptyRetries < 4) {
+            emptyRetries += 1;
+            setTimeout(() => { if (!cancelled) load(); }, 800 * emptyRetries);
+          }
           return;
         }
         const users = data.users.map((u) => {
           const { status, ...rest } = u;
           return rest;
         });
+        // Empty array with signed-in user is almost always session lag — retry
+        if (users.length === 0 && emptyRetries < 4) {
+          emptyRetries += 1;
+          if (first) setLoading(false);
+          setTimeout(() => { if (!cancelled) load(); }, 800 * emptyRetries);
+          return;
+        }
+        emptyRetries = 0;
         setCitizens((prev) => stableMergeById(prev, users));
         knownIdsRef.current = new Set(users.map((u) => String(u.id)));
         try {
@@ -26017,7 +26035,18 @@ function ProfileView({ currentUser, properties, services, onSignOut, onSignIn, o
     const load = () => {
       fetch("/api/profile-views", { credentials: "include" })
         .then((r) => (r.ok ? r.json() : null))
-        .then((data) => { if (!cancelled && data) setProfileViews(data); })
+        .then((data) => {
+          if (cancelled || !data) return;
+          // Never replace a known count with 0 from a failed/empty session poll
+          setProfileViews((prev) => {
+            const nextCount = Number(data.totalCount) || 0;
+            const nextViews = Array.isArray(data.views) ? data.views : [];
+            if (nextCount === 0 && nextViews.length === 0 && (prev.totalCount > 0 || prev.views?.length > 0)) {
+              return prev;
+            }
+            return { views: nextViews, totalCount: nextCount };
+          });
+        })
         .catch(() => {});
     };
     load();
@@ -26932,8 +26961,12 @@ function CitizenScorePanel({ currentUser }) {
 
   const loadRewards = useCallback(() => {
     if (!currentUser?.id) { setLoading(false); setData(null); setFailed(false); return; }
-    setLoading(true);
-    setFailed(false);
+    // Only show loading spinner when we have no score yet — never flash "— pts"
+    setLoading((had) => had);
+    setData((prev) => {
+      if (!prev) setLoading(true);
+      return prev;
+    });
     // Soft session restore then load with merveilFetch (retry on 401)
     (async () => {
       try {
@@ -26941,10 +26974,14 @@ function CitizenScorePanel({ currentUser }) {
         const r = await merveilFetch("/api/rewards");
         if (!r.ok) throw new Error(`rewards fetch failed (${r.status})`);
         const d = await r.json();
-        setData(d);
-        setFailed(false);
+        if (d && typeof d.totalScore === "number") {
+          setData(d);
+          setFailed(false);
+        }
+        // Keep previous data on empty/partial payloads — do not blank the score
       } catch {
-        setFailed(true);
+        // Keep last good score visible; only fail UI if we never loaded
+        setFailed((f) => f);
       } finally {
         setLoading(false);
       }
@@ -27840,7 +27877,17 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
     if (!currentUser?.id) return;
     fetch("/api/profile-views", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => data && setProfileViews(data))
+      .then((data) => {
+        if (!data) return;
+        setProfileViews((prev) => {
+          const nextCount = Number(data.totalCount) || 0;
+          const nextViews = Array.isArray(data.views) ? data.views : [];
+          if (nextCount === 0 && nextViews.length === 0 && (prev.totalCount > 0 || prev.views?.length > 0)) {
+            return prev;
+          }
+          return { views: nextViews, totalCount: nextCount };
+        });
+      })
       .catch(() => {});
   }, [currentUser?.id]);
 
