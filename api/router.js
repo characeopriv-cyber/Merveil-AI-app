@@ -7763,13 +7763,21 @@ export default async function handler(req, res) {
       if (action === "profile" && method === "GET") {
         const userId = req.query.userId;
         if (!userId) return sendJson(res, 400, { error: "userId required" });
+        // Public card only — never expose wallet, KYC docs, or private settings.
+        // Full self profile continues to come from /api/auth/session + mapProfile.
         const { data, error } = await anonClient()
           .from("profiles")
-          .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought")
+          .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought, role_label")
           .eq("id", userId)
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
         if (!data) return sendJson(res, 404, { error: "Not found" });
+        // Strip anything sensitive if schema ever expands into this select
+        delete data.email;
+        delete data.phone;
+        delete data.kyc_document_url;
+        delete data.id_document_number;
+        delete data.full_legal_name;
 
         const { data: listings } = await anonClient()
           .from("properties")
@@ -7828,6 +7836,14 @@ export default async function handler(req, res) {
       if (action === "profile" && method === "PATCH") {
         if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });
         const body = await readBody(req);
+        // SECURITY: ignore any client-supplied target id — only the signed-in
+        // citizen may update their own row. Prevents IDOR after calls/profile views.
+        if (body.id && String(body.id) !== String(citizen.id)) {
+          return sendJson(res, 403, { error: "You can only edit your own Passport.", code: "PASSPORT_OWNER_ONLY" });
+        }
+        if (body.userId && String(body.userId) !== String(citizen.id)) {
+          return sendJson(res, 403, { error: "You can only edit your own Passport.", code: "PASSPORT_OWNER_ONLY" });
+        }
         const fields = {};
         if (body.name !== undefined) fields.name = body.name;
         if (body.bio !== undefined) fields.bio = body.bio;
