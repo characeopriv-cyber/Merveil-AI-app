@@ -11,6 +11,7 @@ import {
   junctionIdFor,
   decodeJwtSub,
   getAccessToken,
+  getRefreshToken,
 } from "../lib/supabaseServer.js";
 
 // Server-side FCM (native) + Web Push (PWA). Path works when pushSend.js
@@ -2016,7 +2017,16 @@ export default async function handler(req, res) {
       // Uses service role so RLS never hides other citizens; session race
       // still resolves caller via jwtSub when access token just rotated.
       if (method === "GET" && action === "directory") {
-        const callerId = user?.id || sessionResult.jwtSub || decodeJwtSub(getAccessToken(req) || "");
+        // Always resolve identity from access OR refresh JWT payload so a
+        // mid-refresh race never returns empty citizens (forces sign-out/in).
+        const callerId =
+          user?.id ||
+          sessionResult.jwtSub ||
+          jwtSub ||
+          citizenId ||
+          decodeJwtSub(getAccessToken(req) || "") ||
+          decodeJwtSub(getRefreshToken(req) || "") ||
+          null;
         if (!callerId) return sendJson(res, 200, { users: [] });
         const q = (req.query.q || "").trim().toLowerCase();
         let svcDir;
@@ -5581,7 +5591,14 @@ export default async function handler(req, res) {
     // and a real payment path before it can show real money (see notes
     // to the team).
     if (resource === "rewards" && method === "GET") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      // Prefer full user; fall back to jwtSub so Passport score does not
+      // blank out during access-token refresh (same race as Connect).
+      const me = user?.id || jwtSub || citizenId;
+      if (!me) return sendJson(res, 401, { error: "Sign in required." });
+      let scoreDb;
+      try { scoreDb = adminClient(); } catch {
+        scoreDb = token ? userClient(token) : anonClient();
+      }
 
       const ecosystems = [
         { key: "pulse", table: "properties" },
@@ -5593,20 +5610,20 @@ export default async function handler(req, res) {
       const breakdown = {};
       let activityScore = 0;
       for (const eco of ecosystems) {
-        const { data, error } = await anonClient()
+        const { data, error } = await scoreDb
           .from(eco.table)
           .select("views, likes_count")
-          .eq("owner_id", user.id);
+          .eq("owner_id", me);
         if (error) { breakdown[eco.key] = { posts: 0, views: 0, likes: 0, points: 0 }; continue; }
-        const posts = data.length;
-        const views = data.reduce((s, r) => s + (r.views || 0), 0);
-        const likes = data.reduce((s, r) => s + (r.likes_count || 0), 0);
+        const posts = (data || []).length;
+        const views = (data || []).reduce((s, r) => s + (r.views || 0), 0);
+        const likes = (data || []).reduce((s, r) => s + (r.likes_count || 0), 0);
         const points = posts * 20 + Math.round(views / 10) + likes * 5;
         breakdown[eco.key] = { posts, views, likes, points };
         activityScore += points;
       }
 
-      const { data: profile } = await anonClient().from("profiles").select("*").eq("id", user.id).maybeSingle();
+      const { data: profile } = await scoreDb.from("profiles").select("*").eq("id", me).maybeSingle();
       const completionPct = profile ? [
         20,
         profile.avatar_url ? 15 : 0,
@@ -5629,7 +5646,7 @@ export default async function handler(req, res) {
       let foundingRank = null;
       let isFounding = false;
       try {
-        const { count: earlier } = await anonClient()
+        const { count: earlier } = await scoreDb
           .from("profiles")
           .select("*", { count: "exact", head: true })
           .lt("created_at", profile?.created_at || new Date().toISOString());
@@ -5642,10 +5659,10 @@ export default async function handler(req, res) {
       let dailyToday = null;
       let dailyStreak = 0;
       try {
-        const { data: claims } = await anonClient()
+        const { data: claims } = await scoreDb
           .from("daily_rewards")
           .select("claim_date, points")
-          .eq("user_id", user.id)
+          .eq("user_id", me)
           .order("claim_date", { ascending: false })
           .limit(60);
         dailyPointsTotal = (claims || []).reduce((s, c) => s + (c.points || 0), 0);
@@ -7625,36 +7642,47 @@ export default async function handler(req, res) {
       if (method === "POST") {
         const body = await readBody(req);
         if (!body.viewedId) return sendJson(res, 400, { error: "viewedId required" });
-        if (user && user.id === body.viewedId) return sendJson(res, 200, { ok: true }); // don't log self-views
+        const viewerMe = user?.id || jwtSub || citizenId || null;
+        if (viewerMe && String(viewerMe) === String(body.viewedId)) {
+          return sendJson(res, 200, { ok: true }); // don't log self-views
+        }
+        let viewsWriter = sb;
+        try { viewsWriter = adminClient(); } catch { /* user/anon client */ }
         let viewerCountry = null;
-        if (user) {
-          const { data: viewerProf } = await anonClient().from("profiles").select("country").eq("id", user.id).maybeSingle();
+        if (viewerMe) {
+          const { data: viewerProf } = await viewsWriter.from("profiles").select("country").eq("id", viewerMe).maybeSingle();
           viewerCountry = viewerProf?.country || null;
         }
-        await sb.from("profile_views").insert({
+        await viewsWriter.from("profile_views").insert({
           viewed_id: body.viewedId,
-          viewer_id: user?.id || null,
+          viewer_id: viewerMe || null,
           viewer_country: viewerCountry,
         });
         return sendJson(res, 200, { ok: true });
       }
 
       if (method === "GET") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
-        const { data, error } = await sb
+        // jwtSub fallback — same race as Connect; never force sign-out to see viewers
+        const me = user?.id || jwtSub || citizenId;
+        if (!me) return sendJson(res, 401, { error: "Sign in required." });
+        let viewsDb;
+        try { viewsDb = adminClient(); } catch {
+          viewsDb = token ? userClient(token) : anonClient();
+        }
+        const { data, error } = await viewsDb
           .from("profile_views")
           .select("viewer_id, viewer_country, created_at")
-          .eq("viewed_id", user.id)
+          .eq("viewed_id", me)
           .order("created_at", { ascending: false })
           .limit(100);
         if (error) return sendJson(res, 400, { error: error.message });
         const viewerIds = [...new Set((data || []).map((v) => v.viewer_id).filter(Boolean))];
         let profileMap = {};
         if (viewerIds.length) {
-          const { data: profs } = await anonClient().from("profiles").select("id, name, avatar_url").in("id", viewerIds);
+          const { data: profs } = await viewsDb.from("profiles").select("id, name, avatar_url").in("id", viewerIds);
           profileMap = Object.fromEntries((profs || []).map((p) => [p.id, p]));
         }
-        const { count: totalCount } = await sb.from("profile_views").select("*", { count: "exact", head: true }).eq("viewed_id", user.id);
+        const { count: totalCount } = await viewsDb.from("profile_views").select("*", { count: "exact", head: true }).eq("viewed_id", me);
         const views = (data || []).map((v) => ({
           viewer: v.viewer_id ? (profileMap[v.viewer_id] || null) : null,
           country: v.viewer_country,
@@ -10874,79 +10902,6 @@ export default async function handler(req, res) {
       }
 
       return sendJson(res, 404, { error: "Unknown AI Call action." });
-    }
-
-    
-    // ---------------------------------------------------------- /api/enrich
-    // Content Enrichment Engine (Developer Platform).
-    // Uses `resource` (first /api segment) — same pattern as share, calls, etc.
-    // Optional cache via enrichment_cache when service role is configured.
-    if (resource === "enrich") {
-      if (method === "OPTIONS") {
-        res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
-        return sendJson(res, 204, {});
-      }
-      if (method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
-      try {
-        const body = await readBody(req);
-        const prompt = String(body?.prompt || "").trim();
-        if (!prompt) return sendJson(res, 400, { error: "prompt_required" });
-
-        let enrichment = null;
-        let cached = false;
-        try {
-          const crypto = await import("crypto");
-          const hash = crypto.createHash("md5").update(prompt.toLowerCase()).digest("hex");
-          const svc = (() => { try { return adminClient(); } catch { return null; } })();
-          if (svc) {
-            const { data: row } = await svc
-              .from("enrichment_cache")
-              .select("enriched_data")
-              .eq("prompt_hash", hash)
-              .gt("expires_at", new Date().toISOString())
-              .maybeSingle();
-            if (row?.enriched_data) {
-              enrichment = row.enriched_data;
-              cached = true;
-            }
-          }
-        } catch { /* cache optional */ }
-
-        const { enrichProject, assetsFromEnrichment, determineProjectType } = await import(
-          "../lib/enrichmentEngine.js"
-        );
-        if (!enrichment) {
-          enrichment = await enrichProject(prompt, process.env);
-          try {
-            const crypto = await import("crypto");
-            const hash = crypto.createHash("md5").update(prompt.toLowerCase()).digest("hex");
-            const svc = (() => { try { return adminClient(); } catch { return null; } })();
-            if (svc) {
-              await svc.from("enrichment_cache").upsert(
-                {
-                  prompt_hash: hash,
-                  prompt,
-                  enriched_data: enrichment,
-                  expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-                },
-                { onConflict: "prompt_hash" }
-              );
-            }
-          } catch { /* cache write optional */ }
-        }
-
-        return sendJson(res, 200, {
-          success: true,
-          cached,
-          enrichment,
-          assets: assetsFromEnrichment(enrichment),
-          projectType: determineProjectType(enrichment.entities || [], prompt),
-        });
-      } catch (e) {
-        return sendJson(res, 500, { error: e?.message || "enrich_failed" });
-      }
     }
 
     return sendJson(res, 404, { error: "Unknown API route" });
