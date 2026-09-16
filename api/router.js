@@ -12,6 +12,7 @@ import {
   decodeJwtSub,
   getAccessToken,
   getRefreshToken,
+  forgetSession,
 } from "../lib/supabaseServer.js";
 
 // Server-side FCM (native) + Web Push (PWA). Path works when pushSend.js
@@ -1174,8 +1175,37 @@ export default async function handler(req, res) {
       }
 
       if (sub === "login" && method === "DELETE") {
+        // Zero-trust sign-out gate: clear cookies + revoke server sessions
+        // so a stolen localStorage cache cannot keep acting as the citizen.
+        const signOutId =
+          user?.id ||
+          sessionResult.jwtSub ||
+          decodeJwtSub(getAccessToken(req) || "") ||
+          decodeJwtSub(getRefreshToken(req) || "") ||
+          null;
+        if (signOutId) {
+          try { forgetSession(signOutId); } catch {}
+          try {
+            const svc = adminClient();
+            await svc
+              .from("user_sessions")
+              .update({ revoked_at: new Date().toISOString() })
+              .eq("user_id", signOutId)
+              .is("revoked_at", null);
+            try {
+              await svc.from("security_events").insert({
+                user_id: signOutId,
+                event_type: "logout",
+                risk_score: 0,
+                created_at: new Date().toISOString(),
+              });
+            } catch { /* optional table */ }
+          } catch { /* service role optional on soft envs */ }
+        } else {
+          try { forgetSession(null); } catch {}
+        }
         clearSessionCookie(res);
-        return sendJson(res, 200, { ok: true });
+        return sendJson(res, 200, { ok: true, signedOut: true, user: null });
       }
 
       if (sub === "register" && method === "POST") {
