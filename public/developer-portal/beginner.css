@@ -1,18 +1,18 @@
-/* Merveil Beginner V7 — light, cyan #3fe0e8, circular prompt */
+/* Merveil Developer — brand dark (aligned with citizen entry) */
 :root {
-  --bg: #f7f5f1;
-  --bg-card: #ffffff;
-  --ink: #12141a;
-  --ink-2: #5c6370;
-  --ink-3: #8b919c;
-  --line: #e6e2dc;
-  --cyan: #3fe0e8;
-  --cyan-d: #1ab8c0;
-  --cyan-soft: rgba(63, 224, 232, 0.14);
-  --violet: #7c5cff;
-  --shadow: 0 12px 40px rgba(18, 20, 26, 0.06);
-  --sans: Manrope, Inter, system-ui, sans-serif;
-  --display: Unbounded, Manrope, system-ui, sans-serif;
+  --bg: #0B1218;
+  --bg-card: #121C28;
+  --ink: #E8EEF2;
+  --ink-2: #8BA3B5;
+  --ink-3: #6B7C8C;
+  --line: rgba(232, 238, 242, 0.10);
+  --cyan: #0E9AA7;
+  --cyan-d: #2EC4D0;
+  --cyan-soft: rgba(14, 154, 167, 0.16);
+  --violet: #2EC4D0;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  --sans: "IBM Plex Sans", Manrope, Inter, system-ui, sans-serif;
+  --display: "Space Grotesk", Unbounded, Manrope, system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -53,7 +53,7 @@ a { color: inherit; text-decoration: none; }
 .nav-link {
   padding: 8px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--ink-2);
 }
-.nav-link:hover { background: #efece6; color: var(--ink); }
+.nav-link:hover { background: rgba(14,154,167,0.12); color: var(--ink); }
 .nav-link.pro { border: 1px solid var(--line); background: var(--bg-card); }
 .nav-link.pro:hover { border-color: var(--cyan); color: var(--cyan-d); }
 
@@ -170,7 +170,7 @@ a { color: inherit; text-decoration: none; }
 .btn:hover { border-color: #c8c4bc; }
 .btn.primary { background: var(--cyan); border-color: var(--cyan); color: #062a2c; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
-.mode-tabs { display: flex; gap: 4px; background: #efece6; padding: 3px; border-radius: 999px; }
+.mode-tabs { display: flex; gap: 4px; background: rgba(14,154,167,0.12); padding: 3px; border-radius: 999px; }
 .mode-tabs button {
   padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; color: var(--ink-2);
 }
@@ -246,7 +246,7 @@ a { color: inherit; text-decoration: none; }
   padding: 6px 12px; border-radius: 999px; margin-bottom: 12px;
   background: var(--cyan-soft); color: var(--cyan-d); font-size: 12.5px; font-weight: 600;
 }
-.verified-pill.muted { background: #efece6; color: var(--ink-2); }
+.verified-pill.muted { background: rgba(14,154,167,0.12); color: var(--ink-2); }
 
 /* V8 tools: code editor, themes, history */
 .code-editor {

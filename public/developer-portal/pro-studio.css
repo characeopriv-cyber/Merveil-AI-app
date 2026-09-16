@@ -1,13 +1,13 @@
 :root {
-  --cyan: #3fe0e8;
-  --cyan-d: #1ab8c0;
-  --bg: #f7f4ef; --bg-1: #ffffff; --bg-2: #f0ebe3; --bg-3: #e8e2d8;
-  --ink: #1a1a1a; --ink-2: #5c5c5c; --ink-3: #8a8a8a;
-  --line: #e8e2d8; --line-2: #d9d1c4;
-  --orange: #3fe0e8; --orange-soft: rgba(63,224,232,0.14);
-  --green: #1a7f4b; --red: #c62828; --blue: #2563eb;
-  --mono: 'JetBrains Mono', ui-monospace, monospace;
-  --sans: Inter, system-ui, sans-serif;
+  --cyan: #0E9AA7;
+  --cyan-d: #2EC4D0;
+  --bg: #0B1218; --bg-1: #121C28; --bg-2: #182433; --bg-3: #1E2A38;
+  --ink: #E8EEF2; --ink-2: #8BA3B5; --ink-3: #6B7C8C;
+  --line: rgba(232,238,242,0.10); --line-2: rgba(232,238,242,0.06);
+  --brand: #0E9AA7;
+  --shadow: 0 12px 40px rgba(0,0,0,0.35);
+  --sans: "IBM Plex Sans", Manrope, system-ui, sans-serif;
+  --display: "Space Grotesk", Unbounded, system-ui, sans-serif;
 }
 *{box-sizing:border-box}html,body{height:100%;margin:0}
 body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px}
