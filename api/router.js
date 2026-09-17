@@ -5055,10 +5055,25 @@ export default async function handler(req, res) {
         const ownerIds = [...new Set(posts.map((p) => p.owner_id).filter(Boolean))];
         let ownerMap = {};
         if (ownerIds.length) {
-          const { data: owners } = await anonClient().from("profiles").select("id, name, avatar_url").in("id", ownerIds);
-          ownerMap = Object.fromEntries((owners || []).map((o) => [o.id, o]));
+          // Service role — anon RLS hid real names → every poster showed "Merveil Citizen"
+          let owners = null;
+          try {
+            const svc = adminClient();
+            ({ data: owners } = await svc.from("profiles").select("id, name, avatar_url").in("id", ownerIds));
+          } catch {
+            ({ data: owners } = await anonClient().from("profiles").select("id, name, avatar_url").in("id", ownerIds));
+          }
+          ownerMap = Object.fromEntries((owners || []).map((o) => [String(o.id), o]));
         }
-        const enriched = posts.map((p) => ({ ...p, owner_name: ownerMap[p.owner_id]?.name || null, owner_avatar: ownerMap[p.owner_id]?.avatar_url || null }));
+        const enriched = posts.map((p) => {
+          const ow = ownerMap[String(p.owner_id)] || null;
+          const isAi = !p.owner_id || String(p.owner_id) === "merveil-ai" || p.content_origin === "ai" || p.content_origin === "seed";
+          return {
+            ...p,
+            owner_name: ow?.name || (isAi ? "Merveil AI" : p.owner_name) || null,
+            owner_avatar: ow?.avatar_url || p.owner_avatar || null,
+          };
+        });
         const hasMore = posts.length >= pageSize;
         const nextBefore = posts.length ? posts[posts.length - 1].created_at : null;
         return sendJson(res, 200, { posts: enriched, hasMore, nextBefore });
