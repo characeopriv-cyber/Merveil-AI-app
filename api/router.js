@@ -7144,18 +7144,55 @@ export default async function handler(req, res) {
           : { data: [] };
         const profileMap = Object.fromEntries((profiles || []).map((p) => [String(p.id), p]));
 
+        // Same ranking source as directory: latest message OR call with this person
+        const lastByUser = {};
+        try {
+          const { data: myConvos } = await svc
+            .from("conversations")
+            .select("id, participant_ids, last_message_at, updated_at, created_at")
+            .contains("participant_ids", [cid])
+            .limit(200);
+          for (const c of myConvos || []) {
+            const other = (c.participant_ids || []).find((pid) => String(pid) !== String(cid));
+            if (!other) continue;
+            const ts = new Date(c.last_message_at || c.updated_at || c.created_at || 0).getTime() || 0;
+            if (!lastByUser[String(other)] || ts > lastByUser[String(other)]) lastByUser[String(other)] = ts;
+          }
+          const { data: myCalls } = await svc
+            .from("calls")
+            .select("caller_id, receiver_id, created_at, ended_at")
+            .or(`caller_id.eq.${cid},receiver_id.eq.${cid}`)
+            .order("created_at", { ascending: false })
+            .limit(200);
+          for (const c of myCalls || []) {
+            const other = String(c.caller_id) === String(cid) ? c.receiver_id : c.caller_id;
+            if (!other) continue;
+            const ts = new Date(c.ended_at || c.created_at || 0).getTime() || 0;
+            if (!lastByUser[String(other)] || ts > lastByUser[String(other)]) lastByUser[String(other)] = ts;
+          }
+        } catch { /* ranking best-effort */ }
+
         const items = (rows || []).map((r) => {
           const otherId = String(r.user_id) === String(cid) ? r.connected_user_id : r.user_id;
           const person = profileMap[String(otherId)] || { id: otherId, name: "Merveil Citizen" };
+          const lastContactAt = lastByUser[String(otherId)] || 0;
           return {
             connectionId: r.id,
             status: r.status,
             createdAt: r.created_at,
             respondedAt: r.responded_at,
             direction: String(r.user_id) === String(cid) ? "outgoing" : "incoming",
-            person: { ...person, id: person.id || otherId },
+            lastContactAt,
+            last_message_at: lastContactAt ? new Date(lastContactAt).toISOString() : null,
+            person: {
+              ...person,
+              id: person.id || otherId,
+              lastContactAt,
+              last_message_at: lastContactAt ? new Date(lastContactAt).toISOString() : null,
+            },
           };
         });
+        items.sort((a, b) => (b.lastContactAt || 0) - (a.lastContactAt || 0));
         return sendJson(res, 200, { connections: items, kind });
       }
 
@@ -7375,6 +7412,15 @@ export default async function handler(req, res) {
       // not permit INSERT from the caller's session.
       const { data: call, error } = await svcCreate.from("calls").insert({ caller_id: callerId, receiver_id: receiverId, type, status: "ringing" }).select("*").maybeSingle();
       if (error) return sendJson(res, 400, { error: error.message });
+      // Facebook/WhatsApp: call starts → conversation floats to top immediately
+      // (not only when the call ends). Keeps Citizens / Circle / Messages in sync.
+      try {
+        await writeCallSystemMessage(
+          svcCreate,
+          call,
+          type === "video" ? "Video call" : "Voice call"
+        );
+      } catch {}
       // FCM / Web Push to callee when app is backgrounded
       try {
         const callerName = parties?.find((p) => p.id === callerId)?.name || "Merveil Citizen";
@@ -7549,6 +7595,33 @@ export default async function handler(req, res) {
               : "Call ended");
           await writeCallSystemMessage(svc, call, label);
         } catch {}
+        // Thank both participants by name (Merveil AI appreciation)
+        if (finalStatus === "ended") {
+          try {
+            const ids = [call.caller_id, call.receiver_id].filter(Boolean);
+            const { data: names } = await svc.from("profiles").select("id, name").in("id", ids);
+            const nameOf = (id) => {
+              const n = (names || []).find((p) => String(p.id) === String(id))?.name;
+              return (n || "Citizen").split(" ")[0];
+            };
+            const a = nameOf(call.caller_id);
+            const b = nameOf(call.receiver_id);
+            const bodyFor = (selfFirst, otherFirst) =>
+              `Thank you ${selfFirst} and ${otherFirst} for choosing Merveil AI for your calls. We appreciate you.`;
+            await Promise.all([
+              notifyUser(call.caller_id, {
+                title: "Merveil AI",
+                body: bodyFor(a, b),
+                data: { url: "/?tab=messages", type: "call_thanks", callId: call.id },
+              }).catch(() => {}),
+              notifyUser(call.receiver_id, {
+                title: "Merveil AI",
+                body: bodyFor(b, a),
+                data: { url: "/?tab=messages", type: "call_thanks", callId: call.id },
+              }).catch(() => {}),
+            ]);
+          } catch { /* push optional */ }
+        }
       }
       return sendJson(res, 200, { ok: true });
     }
