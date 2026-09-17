@@ -3398,12 +3398,11 @@ const MerveilChatTones = (() => {
   };
 })();
 
-/** Circular 3D receipt dots — not Meta ticks. 1 = sent, 2 = delivered/online, 2 green = read */
+/** Circular 3D receipt dots under bubble (WhatsApp placement, not Meta ticks). */
 function ChatReceiptDots({ state }) {
   // state: "sent" | "delivered" | "read"
   const filled = state === "read" ? 2 : state === "delivered" ? 2 : 1;
-  const color = state === "read" ? "#34D399" : state === "delivered" ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.45)";
-  const glow = state === "read" ? "0 0 6px rgba(52,211,153,0.65)" : state === "delivered" ? "0 1px 3px rgba(0,0,0,0.25)" : "none";
+  const glow = state === "read" ? "0 0 5px rgba(52,211,153,0.55)" : "0 1px 2px rgba(0,0,0,0.12)";
   return (
     <span className="inline-flex items-center gap-[3px] ml-0.5" title={state === "read" ? "Read" : state === "delivered" ? "Delivered" : "Sent"} aria-label={state}>
       {[0, 1].map((i) => (
@@ -3417,10 +3416,10 @@ function ChatReceiptDots({ state }) {
             background: state === "read"
               ? "radial-gradient(circle at 35% 30%, #A7F3D0 0%, #34D399 45%, #059669 100%)"
               : state === "delivered"
-                ? "radial-gradient(circle at 35% 30%, #fff 0%, #E5E7EB 55%, #9CA3AF 100%)"
-                : "radial-gradient(circle at 35% 30%, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.35) 100%)",
+                ? "radial-gradient(circle at 35% 30%, #F8FAFC 0%, #CBD5E1 55%, #64748B 100%)"
+                : "radial-gradient(circle at 35% 30%, #E2E8F0 0%, #94A3B8 100%)",
             boxShadow: glow,
-            border: "0.5px solid rgba(0,0,0,0.12)",
+            border: "0.5px solid rgba(0,0,0,0.14)",
           }}
         />
       ))}
@@ -6799,14 +6798,26 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
+  const remoteAudioHostRef = useRef(null); // multi-peer audio elements
   const pcRef = useRef(null);
+  const peersRef = useRef(new Map()); // peerId -> { pc, pendingIce, makingOffer }
   const channelRef = useRef(null);
   const localStreamRef = useRef(null);
   const endedRef = useRef(false);
+  const selfPeerIdRef = useRef(null);
   // Stream acquired on Accept tap (user gesture) — critical for iOS/Android
   const initialStreamRef = useRef(initialStream || null);
   const iceServers = useIceServers();
   const rtcStats = useWebRtcStats(pcRef, status === "connected");
+
+  try {
+    if (!selfPeerIdRef.current) {
+      const u = JSON.parse(localStorage.getItem("junction_user") || "null");
+      selfPeerIdRef.current = u?.id ? String(u.id) : `anon-${Math.random().toString(36).slice(2, 10)}`;
+    }
+  } catch {
+    if (!selfPeerIdRef.current) selfPeerIdRef.current = `anon-${Math.random().toString(36).slice(2, 10)}`;
+  }
 
   // Outbound ring while waiting for answer
   useEffect(() => {
@@ -6819,11 +6830,29 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     if (endedRef.current) return;
     endedRef.current = true;
     CallRingtone.stop();
-    if (notifyRemote) { try { channelRef.current?.send({ type: "broadcast", event: reason === "rejected" ? "call_rejected" : "call_ended", payload: {} }); } catch {} }
+    if (notifyRemote) {
+      try {
+        channelRef.current?.send({
+          type: "broadcast",
+          event: reason === "rejected" ? "call_rejected" : "call_ended",
+          payload: { from: selfPeerIdRef.current },
+        });
+      } catch {}
+    }
     pcRef.current?.close();
+    peersRef.current.forEach((entry) => {
+      try { entry.pc?.close(); } catch {}
+    });
+    peersRef.current.clear();
+    try {
+      if (remoteAudioHostRef.current) remoteAudioHostRef.current.innerHTML = "";
+    } catch {}
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     channelRef.current?.unsubscribe();
-    merveilFetch("/api/calls?action=end", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ callId }) }).catch(() => {});
+    merveilFetch("/api/calls?action=end", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ callId }) })
+      .finally(() => {
+        try { window.dispatchEvent(new CustomEvent("merveil:conversations-refresh")); } catch {}
+      });
     onEnd?.(reason);
   }, [callId, onEnd]);
 
@@ -6845,9 +6874,10 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   useEffect(() => {
     if (!iceServers || !callId) return;
     let cancelled = false;
-    const pendingIce = []; // queue ICE until remote description is set
+    const pendingIce = []; // queue ICE until remote description is set (legacy 1:1)
     let makingOffer = false;
     let polite = role === "receiver"; // receiver is polite peer for glare
+    const selfId = selfPeerIdRef.current;
 
     const pc = new RTCPeerConnection({
       iceServers,
@@ -6863,10 +6893,83 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
       }
     };
 
-    const sendSignal = (event, payload) => {
+    const sendSignal = (event, payload, toPeerId = null) => {
       try {
-        channelRef.current?.send({ type: "broadcast", event, payload });
+        channelRef.current?.send({
+          type: "broadcast",
+          event,
+          payload: { ...payload, from: selfId, to: toPeerId || payload?.to || null },
+        });
       } catch {}
+    };
+
+    const attachRemoteStream = (peerId, stream) => {
+      if (mode === "video" && remoteVideoRef.current && !remoteVideoRef.current.srcObject) {
+        remoteVideoRef.current.srcObject = stream;
+        remoteVideoRef.current.play?.().catch(() => {});
+      }
+      if (remoteAudioRef.current && !remoteAudioRef.current.srcObject) {
+        remoteAudioRef.current.srcObject = stream;
+        remoteAudioRef.current.play?.().catch(() => {});
+      }
+      // Multi-peer: one audio element per remote so everyone is heard
+      try {
+        const host = remoteAudioHostRef.current;
+        if (!host || !peerId) return;
+        let el = host.querySelector(`[data-peer="${CSS.escape(String(peerId))}"]`);
+        if (!el) {
+          el = document.createElement("audio");
+          el.autoplay = true;
+          el.setAttribute("playsinline", "");
+          el.dataset.peer = String(peerId);
+          host.appendChild(el);
+        }
+        el.srcObject = stream;
+        el.play?.().catch(() => {});
+      } catch {}
+    };
+
+    const ensureMeshPeer = (peerId) => {
+      if (!peerId || peerId === selfId || cancelled) return null;
+      if (peersRef.current.has(peerId)) return peersRef.current.get(peerId);
+      const peerPc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 4 });
+      const entry = { pc: peerPc, pendingIce: [], makingOffer: false };
+      peersRef.current.set(peerId, entry);
+      try {
+        localStreamRef.current?.getTracks().forEach((track) => peerPc.addTrack(track, localStreamRef.current));
+      } catch {}
+      peerPc.ontrack = (e) => {
+        const stream = e.streams?.[0] || new MediaStream([e.track]);
+        attachRemoteStream(peerId, stream);
+        setStatus("connected");
+        setParticipants((prev) => {
+          if (prev.some((p) => String(p.id) === String(peerId))) {
+            return prev.map((p) => (String(p.id) === String(peerId) ? { ...p, role: p.role === "self" ? "self" : "peer" } : p));
+          }
+          return [...prev, { id: peerId, name: "Citizen", role: "peer", avatar: null }].slice(0, 10);
+        });
+      };
+      peerPc.onicecandidate = (e) => {
+        if (e.candidate) sendSignal("ice_candidate", { candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate }, peerId);
+      };
+      peerPc.onconnectionstatechange = () => {
+        if (peerPc.connectionState === "connected" || peerPc.connectionState === "completed") setStatus("connected");
+      };
+      // Lower id offers first (deterministic mesh, avoids glare storms)
+      const shouldOffer = String(selfId) < String(peerId);
+      if (shouldOffer) {
+        (async () => {
+          try {
+            entry.makingOffer = true;
+            const offer = await peerPc.createOffer();
+            await peerPc.setLocalDescription(offer);
+            sendSignal("offer", { sdp: peerPc.localDescription, mesh: true }, peerId);
+          } catch {} finally {
+            entry.makingOffer = false;
+          }
+        })();
+      }
+      return entry;
     };
 
     pc.onconnectionstatechange = () => {
@@ -6874,11 +6977,11 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
       const st = pc.connectionState;
       if (st === "connected" || st === "completed") setStatus("connected");
       if (st === "failed") {
-        // Prefer ICE restart over instant hangup
         try { pc.restartIce?.(); } catch {}
         setTimeout(() => {
           if (!cancelled && pcRef.current && pcRef.current.connectionState === "failed") {
-            endCall("failed", false);
+            // Don't end whole conference if mesh peers still live
+            if (peersRef.current.size === 0) endCall("failed", false);
           }
         }, 8000);
       }
@@ -6886,7 +6989,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         try { pc.restartIce?.(); } catch {}
         setTimeout(() => {
           if (!cancelled && pcRef.current && ["disconnected", "failed"].includes(pcRef.current.connectionState)) {
-            endCall("network-lost", false);
+            if (peersRef.current.size === 0) endCall("network-lost", false);
           }
         }, 12000);
       }
@@ -6895,26 +6998,17 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
       if (cancelled) return;
       if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") setStatus("connected");
       if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
-        // Aggressive recovery: restart ICE once before giving up
         try { pc.restartIce?.(); } catch {}
       }
     };
     pc.ontrack = (e) => {
       const stream = e.streams?.[0] || new MediaStream([e.track]);
-      if (mode === "video" && remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-        remoteVideoRef.current.play?.().catch(() => {});
-      }
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = stream;
-        remoteAudioRef.current.play?.().catch(() => {});
-      }
+      attachRemoteStream("primary", stream);
     };
     pc.onicecandidate = (e) => {
       if (e.candidate) sendSignal("ice_candidate", { candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate });
     };
     pc.onnegotiationneeded = async () => {
-      // Caller drives the initial offer; polite peer only answers.
       if (cancelled || role !== "caller" || makingOffer) return;
       try {
         makingOffer = true;
@@ -6927,8 +7021,6 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
       }
     };
 
-    // Prefer private channel (Realtime Authorization); fall back to public
-    // topic scoped by call UUID so signaling still works without RLS config.
     const channel = supabaseBrowser.channel(`call:${callId}`, {
       config: { broadcast: { self: false, ack: false } },
     });
@@ -6936,24 +7028,71 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
     channel.on("broadcast", { event: "offer" }, async ({ payload }) => {
       if (cancelled || !payload?.sdp) return;
+      const from = payload.from ? String(payload.from) : null;
+      const to = payload.to ? String(payload.to) : null;
+      // Mesh-targeted offer
+      if (from && to && to === selfId && from !== selfId) {
+        const entry = ensureMeshPeer(from);
+        if (!entry) return;
+        try {
+          const peerPc = entry.pc;
+          const collision = entry.makingOffer || peerPc.signalingState !== "stable";
+          const peerPolite = String(selfId) > String(from);
+          if (collision) {
+            if (!peerPolite) return;
+            await peerPc.setLocalDescription({ type: "rollback" });
+          }
+          await peerPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          while (entry.pendingIce.length) {
+            try { await peerPc.addIceCandidate(entry.pendingIce.shift()); } catch {}
+          }
+          const answer = await peerPc.createAnswer();
+          await peerPc.setLocalDescription(answer);
+          sendSignal("answer", { sdp: peerPc.localDescription, mesh: true }, from);
+        } catch (err) {
+          console.warn("mesh offer failed", err);
+        }
+        return;
+      }
+      // Legacy 1:1 (no to, or to missing)
+      if (to && to !== selfId) return;
       try {
         const offerCollision = makingOffer || pc.signalingState !== "stable";
         if (offerCollision) {
-          if (!polite) return; // impolite peer ignores colliding offer
+          if (!polite) return;
           await pc.setLocalDescription({ type: "rollback" });
         }
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
         await flushIce();
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        sendSignal("answer", { sdp: pc.localDescription });
+        sendSignal("answer", { sdp: pc.localDescription }, from || null);
       } catch (err) {
         console.warn("offer handling failed", err);
       }
     });
 
     channel.on("broadcast", { event: "answer" }, async ({ payload }) => {
-      if (cancelled || !payload?.sdp || role !== "caller") return;
+      if (cancelled || !payload?.sdp) return;
+      const from = payload.from ? String(payload.from) : null;
+      const to = payload.to ? String(payload.to) : null;
+      if (from && to && to === selfId && peersRef.current.has(from)) {
+        const entry = peersRef.current.get(from);
+        try {
+          const peerPc = entry.pc;
+          if (peerPc.signalingState === "have-local-offer" || !peerPc.currentRemoteDescription) {
+            await peerPc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            while (entry.pendingIce.length) {
+              try { await peerPc.addIceCandidate(entry.pendingIce.shift()); } catch {}
+            }
+          }
+        } catch (err) {
+          console.warn("mesh answer failed", err);
+        }
+        return;
+      }
+      if (role !== "caller" && !payload.mesh) return;
+      if (to && to !== selfId) return;
       try {
         if (pc.signalingState === "have-local-offer" || !pc.currentRemoteDescription) {
           await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
@@ -6964,9 +7103,60 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
       }
     });
 
+    channel.on("broadcast", { event: "peer_hello" }, ({ payload }) => {
+      if (cancelled || !payload?.peerId) return;
+      const pid = String(payload.peerId);
+      if (pid === selfId) return;
+      ensureMeshPeer(pid);
+      setParticipants((prev) => {
+        if (prev.some((p) => String(p.id) === pid)) {
+          return prev.map((p) => (String(p.id) === pid ? {
+            ...p,
+            name: payload.name || p.name,
+            avatar: payload.avatar || p.avatar,
+            role: p.role === "pending" ? "peer" : p.role,
+          } : p));
+        }
+        if (prev.length >= 10) return prev;
+        return [...prev, {
+          id: pid,
+          name: payload.name || "Citizen",
+          avatar: payload.avatar || null,
+          role: "peer",
+        }];
+      });
+    });
+
+    channel.on("broadcast", { event: "conference_invite" }, ({ payload }) => {
+      if (cancelled || !payload?.userId) return;
+      setParticipants((prev) => {
+        if (prev.some((p) => String(p.id) === String(payload.userId))) return prev;
+        if (prev.length >= 10) return prev;
+        return [...prev, {
+          id: payload.userId,
+          name: payload.name || "Citizen",
+          avatar: payload.avatar || null,
+          role: "pending",
+        }];
+      });
+    });
+
     channel.on("broadcast", { event: "ice_candidate" }, async ({ payload }) => {
       if (cancelled || !payload?.candidate) return;
       const candidate = new RTCIceCandidate(payload.candidate);
+      const from = payload.from ? String(payload.from) : null;
+      const to = payload.to ? String(payload.to) : null;
+      if (from && to && to === selfId && from !== selfId) {
+        const entry = peersRef.current.get(from) || ensureMeshPeer(from);
+        if (!entry) return;
+        if (!entry.pc.remoteDescription) {
+          entry.pendingIce.push(candidate);
+          return;
+        }
+        try { await entry.pc.addIceCandidate(candidate); } catch {}
+        return;
+      }
+      if (to && to !== selfId) return;
       if (!pc.remoteDescription) {
         pendingIce.push(candidate);
         return;
@@ -7151,10 +7341,36 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         }
         localStreamRef.current = stream;
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        // Mesh peers created before media get tracks now
+        peersRef.current.forEach((entry) => {
+          try {
+            stream.getTracks().forEach((track) => {
+              if (!entry.pc.getSenders().some((s) => s.track?.kind === track.kind)) {
+                entry.pc.addTrack(track, stream);
+              }
+            });
+          } catch {}
+        });
         if (mode === "video" && localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
           localVideoRef.current.play?.().catch(() => {});
         }
+        // Announce presence so all conference members mesh with us
+        try {
+          let name = "You";
+          let avatar = null;
+          try {
+            const u = JSON.parse(localStorage.getItem("junction_user") || "null");
+            name = u?.name || name;
+            avatar = u?.avatar_url || u?.avatarUrl || null;
+          } catch {}
+          sendSignal("peer_hello", { peerId: selfId, name, avatar });
+          [800, 2000].forEach((ms) => {
+            setTimeout(() => {
+              if (!cancelled) sendSignal("peer_hello", { peerId: selfId, name, avatar });
+            }, ms);
+          });
+        } catch {}
       } catch (err) {
         setMediaError(err?.message || (mode === "video" ? "Camera/microphone access denied." : "Microphone access denied."));
         endCall("media-denied", true);
@@ -7321,12 +7537,17 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
       pcRef.current?.getSenders?.().forEach((s) => {
         if (s.track && s.track.kind === "audio") s.track.enabled = !muted;
       });
+      peersRef.current.forEach((entry) => {
+        entry.pc?.getSenders?.().forEach((s) => {
+          if (s.track && s.track.kind === "audio") s.track.enabled = !muted;
+        });
+      });
     } catch {}
     try {
       channelRef.current?.send({
         type: "broadcast",
         event: "media-state",
-        payload: { type: "mute", isMuted: muted, ts: Date.now() },
+        payload: { type: "mute", isMuted: muted, ts: Date.now(), from: selfPeerIdRef.current },
       });
     } catch {}
   }, [muted]);
@@ -7338,12 +7559,17 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
       pcRef.current?.getSenders?.().forEach((s) => {
         if (s.track && s.track.kind === "video") s.track.enabled = !!videoOn;
       });
+      peersRef.current.forEach((entry) => {
+        entry.pc?.getSenders?.().forEach((s) => {
+          if (s.track && s.track.kind === "video") s.track.enabled = !!videoOn;
+        });
+      });
     } catch {}
     try {
       channelRef.current?.send({
         type: "broadcast",
         event: "media-state",
-        payload: { type: "video", isVideoOff: !videoOn, ts: Date.now() },
+        payload: { type: "video", isVideoOff: !videoOn, ts: Date.now(), from: selfPeerIdRef.current },
       });
     } catch {}
   }, [videoOn, mode]);
@@ -7506,15 +7732,105 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     } catch {}
   };
 
+  const [circleForConf, setCircleForConf] = useState([]);
+  const [confLoading, setConfLoading] = useState(false);
+  const [confInvitingId, setConfInvitingId] = useState(null);
+  const [confError, setConfError] = useState(null);
+
+  // Load accepted connections when opening conference tools
+  useEffect(() => {
+    if (callToolPanel !== "conference") return;
+    let cancelled = false;
+    setConfLoading(true);
+    merveilFetch("/api/connections?action=list", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        const rows = d?.connections || d?.people || d?.items || [];
+        const mapped = rows
+          .map((c) => {
+            const other = c.person || c.other || c.user || c.profile || c;
+            const id = other.id || c.connected_user_id || c.user_id || c.other_user_id;
+            if (!id) return null;
+            return {
+              id: String(id),
+              name: other.name || c.name || "Citizen",
+              avatar: other.avatar_url || other.avatarUrl || c.avatar_url || null,
+            };
+          })
+          .filter(Boolean);
+        // de-dupe
+        const seen = new Set();
+        setCircleForConf(mapped.filter((p) => {
+          if (seen.has(p.id)) return false;
+          seen.add(p.id);
+          return true;
+        }));
+      })
+      .catch(() => { if (!cancelled) setCircleForConf([]); })
+      .finally(() => { if (!cancelled) setConfLoading(false); });
+    return () => { cancelled = true; };
+  }, [callToolPanel]);
+
+  const inviteConnectedCitizen = async (person) => {
+    if (!person?.id || confInvitingId) return;
+    if (participants.length >= 10) {
+      setConfError("Conference full (max 10).");
+      return;
+    }
+    if (participants.some((p) => String(p.id) === String(person.id))) {
+      setConfError("Already in this call.");
+      return;
+    }
+    setConfError(null);
+    setConfInvitingId(person.id);
+    try {
+      const res = await merveilFetch("/api/calls?action=invite-conference", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentCallId: callId,
+          receiverId: person.id,
+          type: mode === "video" ? "video" : "voice",
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setConfError(data?.error || "Couldn't invite.");
+        return;
+      }
+      setParticipants((prev) => {
+        if (prev.some((p) => String(p.id) === String(person.id))) return prev;
+        if (prev.length >= 10) return prev;
+        return [...prev, {
+          id: person.id,
+          name: data?.invitee?.name || person.name,
+          avatar: data?.invitee?.avatar_url || person.avatar,
+          role: "pending",
+        }];
+      });
+      setInviteFlash(`Calling ${person.name}…`);
+      setTimeout(() => setInviteFlash(null), 2800);
+      try {
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "conference_invite",
+          payload: { userId: person.id, name: person.name, avatar: person.avatar },
+        });
+      } catch {}
+    } catch {
+      setConfError("Network error — try again.");
+    } finally {
+      setConfInvitingId(null);
+    }
+  };
+
   const inviteConferenceLink = () => {
     const url = `${window.location.origin}/?joinCall=${encodeURIComponent(callId)}&mode=${mode === "video" ? "video" : "voice"}`;
     try { navigator.clipboard?.writeText(url); } catch {}
-    setInviteFlash("Conference link copied — send to participants");
+    setInviteFlash("Link copied (backup) — prefer Add connected");
     setTimeout(() => setInviteFlash(null), 3500);
-    setParticipants((prev) => {
-      if (prev.length >= 8) return prev;
-      return [...prev, { id: `invite-${Date.now()}`, name: "Invited…", role: "pending", avatar: null }];
-    });
   };
 
   // Living Orbit end state — dark ink on cream (readable, not white-on-cream)
@@ -7594,6 +7910,8 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" style={{ display: status === "connected" && videoOn ? "block" : "none", opacity: focusMode ? 1 : 0.92 }} />
       )}
       <audio ref={remoteAudioRef} autoPlay playsInline />
+      {/* Multi-peer conference audio (one element per remote citizen) */}
+      <div ref={remoteAudioHostRef} className="sr-only" aria-hidden />
       {/* Ambient field when not full video */}
       {(mode !== "video" || status !== "connected" || !videoOn) && (
         <div className="absolute inset-0 pointer-events-none" style={{
@@ -7872,7 +8190,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                   { id: "share_interface", label: "Share Interface", sub: "Pulse, Connect, Market, Developer, Interface — show what you're discussing" },
                   { id: "share_property", label: "Share Property", sub: "Open Pulse listings while on the call" },
                   { id: "share_passport", label: "Share Passport", sub: "Open the other person's Passport" },
-                  { id: "conference", label: "Add participants", sub: "Conference link · invite more people (A→A)" },
+                  { id: "conference", label: "Add participants", sub: "Add connected citizens · max 10" },
                 ].map((row) => (
                   <button key={row.id} type="button" onClick={() => {
                     if (row.id === "captions") {
@@ -8088,17 +8406,71 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                   )}
                   {callToolPanel === "conference" && (
                     <div className="text-[11px] space-y-2" style={{ color: "#CBD5E1" }}>
-                      <p>Invite more people to this call (conference). Share the link — when they open it on Merveil they join the same room.</p>
-                      <div className="flex flex-wrap gap-2 mb-2">
+                      <p className="font-semibold text-white/90">Add connected citizens</p>
+                      <p>Only people in your Circle (accepted connection). They get a real call — they accept and enter. Max 10.</p>
+                      <div className="flex flex-wrap gap-2 mb-1">
                         {participants.map((p) => (
                           <span key={p.id} className="text-[10px] font-semibold px-2 py-1 rounded-full"
-                            style={{ background: "rgba(255,255,255,0.08)", color: "#E2E8F0" }}>{p.name}</span>
+                            style={{
+                              background: p.role === "pending" ? "rgba(251,191,36,0.2)" : "rgba(14,154,167,0.25)",
+                              color: p.role === "pending" ? "#FCD34D" : "#E2E8F0",
+                            }}>
+                            {p.name}{p.role === "pending" ? " · ringing" : ""}
+                          </span>
                         ))}
                       </div>
-                      <button type="button" className="w-full text-xs font-bold py-2.5 rounded-lg"
-                        style={{ background: "#06B6D4", color: "#04111F" }}
-                        onClick={inviteConferenceLink}>Copy conference invite link</button>
-                      <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>Audio (A→A) and video both supported. Mesh limited to ~8 on this client.</p>
+                      <div className="text-[10px] mb-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        {participants.length}/10 in room
+                      </div>
+                      {confError && <div className="text-[11px] font-semibold" style={{ color: "#FCA5A5" }}>{confError}</div>}
+                      {confLoading ? (
+                        <div className="text-[11px] py-3 text-center" style={{ color: "rgba(255,255,255,0.5)" }}>Loading your Circle…</div>
+                      ) : circleForConf.length === 0 ? (
+                        <div className="text-[11px] py-3 text-center" style={{ color: "rgba(255,255,255,0.5)" }}>
+                          No connected citizens yet. Connect with someone first, then add them here.
+                        </div>
+                      ) : (
+                        <div className="max-h-48 overflow-y-auto rounded-xl" style={{ background: "rgba(0,0,0,0.25)" }}>
+                          {circleForConf
+                            .filter((p) => !participants.some((x) => String(x.id) === String(p.id) && x.role !== "pending"))
+                            .map((p) => {
+                              const already = participants.some((x) => String(x.id) === String(p.id));
+                              const busy = confInvitingId === p.id;
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  disabled={busy || participants.length >= 10 || already}
+                                  onClick={() => inviteConnectedCitizen(p)}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b last:border-0"
+                                  style={{ borderColor: "rgba(255,255,255,0.06)", opacity: already ? 0.5 : 1 }}
+                                >
+                                  {p.avatar ? (
+                                    <img src={p.avatar} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                                      style={{ background: "linear-gradient(135deg,#0E9AA7,#0A5A62)" }}>
+                                      {(p.name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-semibold text-white truncate">{p.name}</div>
+                                    <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                                      {already ? "Already invited" : "Connected · tap to call in"}
+                                    </div>
+                                  </div>
+                                  <span className="text-[10px] font-bold px-2 py-1 rounded-full shrink-0"
+                                    style={{ background: busy ? "rgba(251,191,36,0.25)" : "rgba(6,182,212,0.3)", color: busy ? "#FCD34D" : "#67E8F9" }}>
+                                    {busy ? "Calling…" : already ? "Sent" : "Add"}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      )}
+                      <button type="button" className="w-full text-[10px] font-semibold py-2 rounded-lg mt-1"
+                        style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.55)" }}
+                        onClick={inviteConferenceLink}>Copy backup link (optional)</button>
                     </div>
                   )}
                 </div>
@@ -8580,11 +8952,12 @@ function IncomingCallBanner({ call, callerProfile, onAccept, onReject, accepting
   useEffect(() => {
     if (!call) return;
     const name = callerProfile?.name || "Merveil Citizen";
-    Permissions.show(`Incoming ${call.type || "voice"} call`, {
-      body: `${name} is calling you on Merveil`,
+    const isConf = !!call.conference_id;
+    Permissions.show(isConf ? "Conference invite" : `Incoming ${call.type || "voice"} call`, {
+      body: isConf ? `${name} is inviting you to a conference on Merveil` : `${name} is calling you on Merveil`,
       tag: `call-${call.id}`,
       urgent: true,
-      data: { callId: call.id, type: "incoming_call", url: "/?tab=messages" },
+      data: { callId: call.id, conferenceId: call.conference_id || null, type: "incoming_call", url: "/?tab=messages" },
       onClick: () => onAccept?.(),
     });
   }, [call?.id, callerProfile?.name]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -8618,7 +8991,11 @@ function IncomingCallBanner({ call, callerProfile, onAccept, onReject, accepting
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-white truncate">{callerProfile?.name || "Merveil Citizen"}</div>
         <div className="text-xs text-white/60">
-          {accepting ? "Connecting…" : `Incoming ${call.type || "voice"} call…`}
+          {accepting
+            ? "Connecting…"
+            : call.conference_id
+              ? `Conference invite · ${call.type || "voice"}`
+              : `Incoming ${call.type || "voice"} call…`}
         </div>
       </div>
       {!accepting && (
@@ -10008,7 +10385,8 @@ function ReelsView({ properties, liveViews, onChat, currentUserId, onRequireSign
           onOpenProfile={(uid) => {
             if (!uid) return;
             try {
-              window.dispatchEvent(new CustomEvent("merveil:open-passport-view", { detail: { userId: uid } }));
+              // Creator page (not only Passport sheet) — same as World
+              window.dispatchEvent(new CustomEvent("merveil:open-creator-profile", { detail: { userId: uid } }));
             } catch {}
           }}
           currentUserId={currentUserId}
@@ -11647,9 +12025,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     }
   };
 
-  // Load real conversations — slower poll under load; new activity still
-  // sorts to top via last_message_at from the optimized batch endpoint.
-  // stableMergeById keeps row identity so the list does not flash every 2.5s.
+  // Conversations list — realtime + short poll so new chats/calls appear like Citizens/Circle
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
@@ -11658,7 +12034,6 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (cancelled || !data?.conversations) return;
-          // WhatsApp-style: most recent activity on top (last_message_at desc)
           const sorted = [...data.conversations].sort((a, b) => {
             const ta = new Date(a.last_message_at || a.updated_at || a.created_at || 0).getTime();
             const tb = new Date(b.last_message_at || b.updated_at || b.created_at || 0).getTime();
@@ -11669,9 +12044,32 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         .catch(() => {});
     };
     load();
-    // Realtime is primary; poll is a slow safety net (was 2.5s — too chatty).
-    const interval = setInterval(load, 8000);
-    return () => { cancelled = true; clearInterval(interval); };
+    const interval = setInterval(load, 3500);
+    // Realtime: any message INSERT bumps the list (call system lines included)
+    let channel = null;
+    (async () => {
+      try { await ensureRealtimeAuth(); } catch {}
+      if (cancelled) return;
+      try {
+        channel = supabaseBrowser
+          .channel(`conv-list-${currentUser.id}-${Date.now()}`)
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
+            if (!cancelled) load();
+          })
+          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversations" }, () => {
+            if (!cancelled) load();
+          })
+          .subscribe();
+      } catch {}
+    })();
+    const onBump = () => { if (!cancelled) load(); };
+    window.addEventListener("merveil:conversations-refresh", onBump);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener("merveil:conversations-refresh", onBump);
+      try { channel?.unsubscribe(); } catch {}
+    };
   }, [currentUser?.id]);
 
   // Load messages for the active human conversation. Realtime + slow poll
@@ -12023,6 +12421,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         );
         return [...next].sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
       });
+      try { window.dispatchEvent(new CustomEvent("merveil:conversations-refresh")); } catch {}
     }
     if (!isOnline) {
       setOutbox((p) => [...p, { conversationId: activeId, payload, queuedAt: Date.now() }]);
@@ -12821,22 +13220,24 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                         </div>
                       )}
                       {text}
-                      <div className="flex items-center justify-end gap-1 mt-1">
-                        {m.edited_at && <span className="text-[9px] opacity-60">edited</span>}
-                        {timeLabel && <span className="text-[10px] tabular-nums font-medium" style={{ color: mine ? "rgba(255,255,255,0.72)" : T.sub }}>{timeLabel}</span>}
-                        {mine && !isAiThread && (() => {
-                          // Circular 3D dots (not Meta ticks): 1 = sent, 2 white = delivered/online, 2 green = read
-                          const isRead = (m.read_by || []).some((uid) => String(uid) !== String(currentUser.id))
-                            || m.status === "read" || !!m.read_at;
-                          const peerOnline = otherUserId && (presence[otherUserId] === "online" || presence[otherUserId] === "busy");
-                          const isDelivered = isRead
-                            || m.status === "delivered"
-                            || !!m.delivered_at
-                            || peerOnline;
-                          const state = isRead ? "read" : isDelivered ? "delivered" : "sent";
-                          return <ChatReceiptDots state={state} />;
-                        })()}
-                      </div>
+                    </div>
+                  )}
+                  {/* WhatsApp-style: time + circular receipts under the bubble */}
+                  {editingMessageId !== m.id && (
+                    <div className={`flex items-center gap-1 mt-0.5 px-1 ${mine ? "justify-end" : "justify-start"}`}>
+                      {m.edited_at && <span className="text-[9px]" style={{ color: T.sub }}>edited</span>}
+                      {timeLabel && <span className="text-[10px] tabular-nums font-medium" style={{ color: T.sub }}>{timeLabel}</span>}
+                      {mine && !isAiThread && (() => {
+                        const isRead = (m.read_by || []).some((uid) => String(uid) !== String(currentUser.id))
+                          || m.status === "read" || !!m.read_at;
+                        const peerOnline = otherUserId && (presence[otherUserId] === "online" || presence[otherUserId] === "busy");
+                        const isDelivered = isRead
+                          || m.status === "delivered"
+                          || !!m.delivered_at
+                          || peerOnline;
+                        const state = isRead ? "read" : isDelivered ? "delivered" : "sent";
+                        return <ChatReceiptDots state={state} />;
+                      })()}
                     </div>
                   )}
                   {mine && !isAiThread && editingMessageId !== m.id && (
@@ -13136,12 +13537,22 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           onChat={async (userId) => {
             if (!currentUser) return onSignIn?.();
             try {
-              const res = await fetch("/api/conversations", {
+              const res = await merveilFetch("/api/conversations", {
                 method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ participantIds: [currentUser.id, userId] }),
               });
-              const data = await res.json();
+              const data = await res.json().catch(() => null);
               if (data?.conversation?.id) {
+                // Ensure thread appears in list immediately (like Citizens / Circle)
+                setThreads((prev) => {
+                  if (prev.some((t) => t.id === data.conversation.id)) return prev;
+                  return [{
+                    ...data.conversation,
+                    participant_ids: data.conversation.participant_ids || [currentUser.id, userId],
+                    last_message_at: new Date().toISOString(),
+                    unread_count: 0,
+                  }, ...prev];
+                });
                 setActiveId(data.conversation.id);
                 setConnectTab("messages");
                 setMobileView("chat");
@@ -17759,7 +18170,11 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
       const t = setTimeout(tryPlay, 200);
       const t2 = setTimeout(tryPlay, 600);
       // Real World-reel views only (not property / passport). Skip seeds.
+      // Optimistic local bump so VIEWS updates without waiting for a full reload.
       if (!compact && post?.id && !post?._seed) {
+        try {
+          window.dispatchEvent(new CustomEvent("merveil:world-view-bump", { detail: { postId: post.id } }));
+        } catch {}
         merveilFetch("/api/world?action=view", {
           method: "POST",
           credentials: "include",
@@ -17845,31 +18260,39 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
     <div className="relative w-full h-full overflow-hidden" style={{ background: "#0B0E14" }}>
       {/* Never pure black: gradient base so network lag never looks "broken" */}
       <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#1F2937 0%,#0E9AA755 50%,#0B0E14 100%)" }} />
+      {/* Poster first so content is visible immediately (no black “Loading reel…”) */}
+      {(post.photo_url || post.poster_url || post.cover_url || post.thumbnail_url) && (
+        <img
+          src={post.photo_url || post.poster_url || post.cover_url || post.thumbnail_url}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ opacity: post.video_url && videoReady && !videoError ? 0 : 1, transition: "opacity 180ms ease" }}
+        />
+      )}
       {post.video_url && !videoError ? (
         <video
           ref={videoRef}
           key={post.video_url}
           src={post.video_url}
           className="absolute inset-0 w-full h-full object-cover"
-          style={{ opacity: videoReady ? 1 : 0.35 }}
+          style={{ opacity: videoReady ? 1 : 0 }}
           loop
           muted={!!forceMuted || muted}
           playsInline
           autoPlay
           preload="auto"
+          poster={post.photo_url || post.poster_url || post.cover_url || undefined}
           onLoadedData={() => { setVideoReady(true); try { videoRef.current?.play()?.catch(() => {}); } catch {} }}
           onCanPlay={() => { setVideoReady(true); try { videoRef.current?.play()?.catch(() => {}); } catch {} }}
           onError={() => setVideoError(true)}
         />
-      ) : post.photo_url ? (
-        <img src={post.photo_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+      ) : !post.photo_url && !post.poster_url && !post.cover_url ? (
+        null
       ) : null}
-      {(!post.video_url || videoError || !videoReady) && (
+      {videoError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none px-6 text-center">
           <div className="text-sm font-bold text-white/90">{post.title || "World Reel"}</div>
-          <div className="text-[11px] text-white/55">
-            {videoError ? "Video unavailable — swipe or Post your own" : "Loading reel…"}
-          </div>
+          <div className="text-[11px] text-white/55">Video unavailable — swipe or Post your own</div>
         </div>
       )}
       <div className="absolute inset-0 pointer-events-none" style={{ background: "linear-gradient(180deg, rgba(0,0,0,.35) 0%, transparent 22%, transparent 55%, rgba(0,0,0,.75) 100%)" }}/>
@@ -19108,6 +19531,21 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     setReelMode(mode);
     try { localStorage.setItem("merveil_reels_presentation", mode); } catch {}
   };
+  // Optimistic view counts while watching reels
+  useEffect(() => {
+    const onBump = (e) => {
+      const id = e?.detail?.postId;
+      if (!id) return;
+      setPosts((prev) => prev.map((p) => {
+        if (String(p.id) !== String(id)) return p;
+        const v = (Number(p.views) || Number(p.views_count) || 0) + 1;
+        return { ...p, views: v, views_count: v };
+      }));
+    };
+    window.addEventListener("merveil:world-view-bump", onBump);
+    return () => window.removeEventListener("merveil:world-view-bump", onBump);
+  }, []);
+
   // Back closes creator profile
   useEffect(() => {
     if (!viewingCreatorId) return;
@@ -19898,7 +20336,32 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           userId={viewingCreatorId}
           currentUser={currentUser}
           onClose={() => setViewingCreatorId(null)}
-          onChat={() => { setViewingCreatorId(null); onChat?.(); }}
+          onChat={async (uid) => {
+            const target = uid || viewingCreatorId;
+            setViewingCreatorId(null);
+            if (!currentUser?.id || !target) { onChat?.(); return; }
+            try {
+              const res = await merveilFetch("/api/conversations", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ participantIds: [currentUser.id, target] }),
+              });
+              const data = await res.json().catch(() => null);
+              if (data?.conversation?.id) {
+                window.dispatchEvent(new CustomEvent("merveil:navigate-tab", { detail: { tab: "messages" } }));
+                window.dispatchEvent(new CustomEvent("merveil:open-conversation", {
+                  detail: {
+                    conversationId: data.conversation.id,
+                    otherUserId: target,
+                    participantIds: data.conversation.participant_ids || [currentUser.id, target],
+                  },
+                }));
+                return;
+              }
+            } catch {}
+            onChat?.();
+          }}
           onOpenOwnPassport={() => {
             setViewingCreatorId(null);
             window.dispatchEvent(new CustomEvent("merveil:goto-passport"));
@@ -25496,7 +25959,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                 {!isSelf && (
                   <button type="button" onClick={() => onChat?.(userId)}
                     className="flex-1 text-sm font-bold py-2.5 rounded-xl" style={{ background: "#EAE4DB", color: "#12161C", border: "1px solid #C4BAAC" }}>
-                    Message
+                    Chat
                   </button>
                 )}
                 <button type="button" onClick={openPassport}
@@ -30700,6 +31163,15 @@ function AppInner() {
   const [incomingCall, setIncomingCall] = useIncomingCallListener(currentUser);
   const [incomingCallerProfile, setIncomingCallerProfile] = useState(null);
   const [acceptedCall, setAcceptedCall] = useState(null);
+  const [globalCreatorId, setGlobalCreatorId] = useState(null);
+  useEffect(() => {
+    const onOpen = (e) => {
+      const id = e?.detail?.userId;
+      if (id && String(id) !== "merveil-ai") setGlobalCreatorId(String(id));
+    };
+    window.addEventListener("merveil:open-creator-profile", onOpen);
+    return () => window.removeEventListener("merveil:open-creator-profile", onOpen);
+  }, []);
   // Root-level live call (receiver pickup) — survives tab switches
   const [rootLiveCall, setRootLiveCall] = useState(null); // { callId, mode, role, otherName, initialStream }
   const [acceptingCall, setAcceptingCall] = useState(false);
@@ -30745,14 +31217,17 @@ function AppInner() {
 
     setIncomingCall(null);
     setAcceptingCall(false);
+    // Conference invite: join the parent room (conference_id) so host + invitee share signaling
+    const roomId = call.conference_id || call.id;
     setRootLiveCall({
-      callId: call.id,
+      callId: roomId,
       mode,
       role: "receiver",
-      otherName: callerName,
+      otherName: call.conference_id ? `${callerName} · Conference` : callerName,
       otherAvatar: incomingCallerProfile?.avatar_url || incomingCallerProfile?.avatar || null,
       otherId: call.caller_id || incomingCallerProfile?.id || null,
       initialStream: earlyStream,
+      conference: !!call.conference_id,
     });
     // Do NOT set acceptedCall → MessagesView activeCall (would open a second RealCallScreen).
     // Root owns the inbound call UI; just switch to Messages for context after hangup.
@@ -31841,6 +32316,42 @@ function AppInner() {
             </div>
           )}
           {tab === "messages" && <MessagesView currentUser={currentUser} onSignIn={requireSignIn} onReadThread={pollUnread} acceptedCall={acceptedCall} onAcceptedCallConsumed={() => setAcceptedCall(null)} />}
+          {globalCreatorId && (
+            <CreatorProfileModal
+              userId={globalCreatorId}
+              currentUser={currentUser}
+              onClose={() => setGlobalCreatorId(null)}
+              onChat={async (uid) => {
+                const target = uid || globalCreatorId;
+                setGlobalCreatorId(null);
+                if (!currentUser?.id || !target) { setTab("messages"); return; }
+                try {
+                  const res = await merveilFetch("/api/conversations", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ participantIds: [currentUser.id, target] }),
+                  });
+                  const data = await res.json().catch(() => null);
+                  if (data?.conversation?.id) {
+                    setTab("messages");
+                    window.dispatchEvent(new CustomEvent("merveil:open-conversation", {
+                      detail: {
+                        conversationId: data.conversation.id,
+                        otherUserId: target,
+                        participantIds: data.conversation.participant_ids || [currentUser.id, target],
+                      },
+                    }));
+                  } else setTab("messages");
+                } catch { setTab("messages"); }
+              }}
+              onOpenOwnPassport={() => {
+                setGlobalCreatorId(null);
+                setTab("passport");
+              }}
+              onPlayPost={() => setGlobalCreatorId(null)}
+            />
+          )}
           {tab === "community" && <CommunityView onOpenPost={() => (currentUser ? setShowPostModal(true) : requireSignIn())} onOpenChat={() => setTab("messages")} currentUserId={currentUser?.id} onRequireSignIn={requireSignIn} />}
           {tab === "sound" && (
             <SoundView
