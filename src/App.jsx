@@ -3388,41 +3388,54 @@ const MerveilChatTones = (() => {
     send() { tone([720, 920], [0.05, 0.07], [0.07, 0.05]); },
     receive() { tone([520, 680], [0.06, 0.09], [0.08, 0.06]); },
     view() { tone([400], [0.05], [0.04]); },
-    /** Soft key-reflect while the other person is typing (throttled) */
+    /** Soft key-reflect while typing (self + peer). Slightly more present like Messenger. */
     typing() {
       const now = Date.now();
-      if (now - lastTypingAt < 900) return;
+      if (now - lastTypingAt < 420) return;
       lastTypingAt = now;
-      tone([610, 640], [0.04, 0.05], [0.045, 0.035]);
+      tone([680, 760, 820], [0.035, 0.04, 0.045], [0.055, 0.05, 0.04]);
     },
   };
 })();
 
-/** Circular 3D receipt dots under bubble (WhatsApp placement, not Meta ticks). */
-function ChatReceiptDots({ state }) {
-  // state: "sent" | "delivered" | "read"
-  const filled = state === "read" ? 2 : state === "delivered" ? 2 : 1;
-  const glow = state === "read" ? "0 0 5px rgba(52,211,153,0.55)" : "0 1px 2px rgba(0,0,0,0.12)";
+/** Envelope receipts under bubble — tight bottom-right of own messages.
+ *  sent (offline) = sealed closed envelope
+ *  delivered (online) = closed unsealed envelope
+ *  read = open blue envelope
+ */
+function ChatEnvelopeReceipt({ state }) {
+  const title = state === "read" ? "Vu" : state === "delivered" ? "Distribué" : "Envoyé";
+  if (state === "read") {
+    // Open blue envelope
+    return (
+      <span className="inline-flex items-center leading-none" title={title} aria-label={title} style={{ marginLeft: 2, lineHeight: 0 }}>
+        <svg width="14" height="12" viewBox="0 0 24 20" fill="none" aria-hidden>
+          <path d="M2 7.5L12 14L22 7.5" stroke="#2563EB" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M3 4h18a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="#2563EB" strokeWidth="2" fill="rgba(37,99,235,0.12)" />
+          <path d="M2 6.5L12 1.5L22 6.5" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    );
+  }
+  if (state === "delivered") {
+    // Closed, unsealed
+    return (
+      <span className="inline-flex items-center leading-none" title={title} aria-label={title} style={{ marginLeft: 2, lineHeight: 0 }}>
+        <svg width="14" height="12" viewBox="0 0 24 20" fill="none" aria-hidden>
+          <rect x="2" y="4" width="20" height="13" rx="1.5" stroke="#64748B" strokeWidth="2" fill="rgba(100,116,139,0.08)" />
+          <path d="M3 5.5L12 12L21 5.5" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    );
+  }
+  // Sealed / offline
   return (
-    <span className="inline-flex items-center gap-[3px] ml-0.5" title={state === "read" ? "Read" : state === "delivered" ? "Delivered" : "Sent"} aria-label={state}>
-      {[0, 1].map((i) => (
-        <span
-          key={i}
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            display: i < filled ? "inline-block" : "none",
-            background: state === "read"
-              ? "radial-gradient(circle at 35% 30%, #A7F3D0 0%, #34D399 45%, #059669 100%)"
-              : state === "delivered"
-                ? "radial-gradient(circle at 35% 30%, #F8FAFC 0%, #CBD5E1 55%, #64748B 100%)"
-                : "radial-gradient(circle at 35% 30%, #E2E8F0 0%, #94A3B8 100%)",
-            boxShadow: glow,
-            border: "0.5px solid rgba(0,0,0,0.14)",
-          }}
-        />
-      ))}
+    <span className="inline-flex items-center leading-none" title={title} aria-label={title} style={{ marginLeft: 2, lineHeight: 0 }}>
+      <svg width="14" height="12" viewBox="0 0 24 20" fill="none" aria-hidden>
+        <rect x="2" y="4" width="20" height="13" rx="1.5" stroke="#94A3B8" strokeWidth="2" fill="rgba(148,163,184,0.15)" />
+        <path d="M3 5.5L12 12L21 5.5" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="12" cy="11" r="2.2" fill="#94A3B8" />
+      </svg>
     </span>
   );
 }
@@ -9325,7 +9338,7 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
 
   if (!current || !p) return null;
 
-  const posterName = (p.owner_name || p.lister_name || p.listerName || "").trim() || null;
+  const posterName = (p.owner_name || p.author_name || p.lister_name || p.listerName || "").trim() || null;
   const listerRole = LISTER_TYPE_STYLE[p.listedAs]?.label || null;
   const ownerId = p.ownerId || p.owner_id || p.user_id;
   const isOwn = currentUserId && ownerId && String(ownerId) === String(currentUserId);
@@ -9591,7 +9604,9 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
               </div>
               {!isOwn && (
                 <span type="button" onClick={(e) => { e.stopPropagation(); onChat?.(); }}
-                  className="text-[11px] font-semibold px-3 py-1.5 rounded-full" style={{ background: "#06B6D4", color: "#04111F" }}>Message</span>
+                  className="text-[11px] font-semibold px-3 py-1.5 rounded-full inline-flex items-center gap-1" style={{ background: "#06B6D4", color: "#04111F" }}>
+                  <span aria-hidden>💌</span> Chat
+                </span>
               )}
             </button>
 
@@ -12108,17 +12123,26 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               const id = String(m.id || "");
               if (!id.startsWith("local-") && !id.startsWith("err-")) return false;
               if (id.startsWith("err-")) return true;
-              return !msgs.some((s) =>
-                (m.body && s.body === m.body && String(s.sender_id) === String(m.sender_id))
-                || (m.media_url && s.media_url === m.media_url)
-              );
+              return !msgs.some((s) => {
+                if (String(s.sender_id) !== String(m.sender_id)) return false;
+                if (m.body && s.body === m.body) return true;
+                if (m.media_url && s.media_url === m.media_url) return true;
+                // Near-time match for encrypted / empty body races
+                const dt = Math.abs(new Date(s.created_at || 0) - new Date(m.created_at || 0));
+                return dt < 15000 && !!m.body && (s.body === m.body || s.is_e2ee);
+              });
             });
-            const merged = stableMergeById(prev.filter((m) => {
+            const serverOnly = msgs;
+            const prevServer = prev.filter((m) => {
               const id = String(m.id || "");
               return !id.startsWith("local-") && !id.startsWith("err-");
-            }), msgs);
+            });
+            // Never wipe a non-empty thread with an empty poll (transient 401/empty)
+            if (serverOnly.length === 0 && (prevServer.length > 0 || locals.length > 0)) {
+              return prev;
+            }
+            const merged = stableMergeById(prevServer, serverOnly);
             const next = [...merged, ...locals];
-            // If nothing meaningful changed, keep previous array ref
             if (next.length === prev.length && next.every((m, i) => m === prev[i])) return prev;
             return next;
           });
@@ -12314,6 +12338,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     const now = Date.now();
     if (now - lastTypedEmitRef.current < 700) return;
     lastTypedEmitRef.current = now;
+    // Messenger-style: you hear your own soft key-reflect while typing
+    try { MerveilChatTones.typing(); } catch {}
     try {
       typingChannelRef.current?.send({
         type: "broadcast",
@@ -13222,11 +13248,11 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                       {text}
                     </div>
                   )}
-                  {/* WhatsApp-style: time + circular receipts under the bubble */}
+                  {/* Envelope receipt tight under bubble (bottom-right for mine) */}
                   {editingMessageId !== m.id && (
-                    <div className={`flex items-center gap-1 mt-0.5 px-1 ${mine ? "justify-end" : "justify-start"}`}>
-                      {m.edited_at && <span className="text-[9px]" style={{ color: T.sub }}>edited</span>}
-                      {timeLabel && <span className="text-[10px] tabular-nums font-medium" style={{ color: T.sub }}>{timeLabel}</span>}
+                    <div className={`flex items-center gap-0.5 ${mine ? "justify-end" : "justify-start"}`} style={{ marginTop: 1, paddingRight: mine ? 2 : 0, paddingLeft: mine ? 0 : 2 }}>
+                      {m.edited_at && <span className="text-[9px] mr-0.5" style={{ color: T.sub }}>edited</span>}
+                      {timeLabel && <span className="text-[9px] tabular-nums font-medium mr-0.5" style={{ color: T.sub }}>{timeLabel}</span>}
                       {mine && !isAiThread && (() => {
                         const isRead = (m.read_by || []).some((uid) => String(uid) !== String(currentUser.id))
                           || m.status === "read" || !!m.read_at;
@@ -13236,7 +13262,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                           || !!m.delivered_at
                           || peerOnline;
                         const state = isRead ? "read" : isDelivered ? "delivered" : "sent";
-                        return <ChatReceiptDots state={state} />;
+                        return <ChatEnvelopeReceipt state={state} />;
                       })()}
                     </div>
                   )}
@@ -18480,7 +18506,9 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
                 )}
               </span>
               <span className="text-sm font-semibold text-white inline-flex items-center gap-1">
-                {post.owner_name || "Merveil Citizen"}
+                {post.owner_name
+                  || (String(post.owner_id || "") === "merveil-ai" || post.content_origin === "ai" || post.content_origin === "seed" ? "Merveil AI" : null)
+                  || "Citizen"}
                 {isNewCitizen({ created_at: post.owner_created_at }) && <NewEmojiBadge show />}
               </span>
             </button>
@@ -18490,7 +18518,7 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
             <button onClick={(e) => { e.stopPropagation(); onChat?.(); }}
               className="text-xs font-semibold px-3.5 py-2 rounded-full flex items-center gap-1.5"
               style={{ background: "#06B6D4", color: "#fff" }}>
-              <MessageCircle size={13}/> Message
+              <span aria-hidden style={{ fontSize: 13, lineHeight: 1 }}>💌</span> Chat
             </button>
           </div>
 
