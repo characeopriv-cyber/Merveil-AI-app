@@ -1882,23 +1882,34 @@ function stableMergeById(prev, next, idKey = "id") {
   // few seconds later on the next directory / messages / circle poll.
   if (next.length === 0) return Array.isArray(prev) ? prev : [];
   if (!Array.isArray(prev) || prev.length === 0) return next;
+  const TIME_KEYS = new Set([
+    "lastContactAt", "last_contact_at", "last_message_at", "updated_at", "last_seen_at",
+  ]);
   const prevMap = new Map(prev.map((x) => [String(x?.[idKey]), x]));
   let changed = prev.length !== next.length;
   const out = next.map((n) => {
     const id = String(n?.[idKey]);
     const p = prevMap.get(id);
     if (!p) { changed = true; return n; }
-    let same = true;
-    for (const k of Object.keys(n)) {
-      if (p[k] !== n[k]) { same = false; break; }
-    }
-    if (same) {
-      for (const k of Object.keys(p)) {
-        if (!(k in n) && p[k] !== undefined) { same = false; break; }
+    // Never let a slower server poll erase a fresher client contact bump
+    // (Facebook: last interaction time only moves forward).
+    const merged = { ...p, ...n };
+    for (const k of TIME_KEYS) {
+      const best = contactTs(p[k], n[k], ContactClock.get(id));
+      if (best > 0) {
+        if (k === "lastContactAt" || k === "last_contact_at") merged[k] = best;
+        else merged[k] = new Date(best).toISOString();
       }
     }
+    if (ContactClock.get(id) > 0) {
+      merged.contactRank = Math.max(Number(merged.contactRank) || 0, 1);
+    }
+    let same = true;
+    for (const k of Object.keys(merged)) {
+      if (p[k] !== merged[k]) { same = false; break; }
+    }
     if (!same) changed = true;
-    return same ? p : { ...p, ...n };
+    return same ? p : merged;
   });
   if (!changed) {
     for (let i = 0; i < out.length; i++) {
@@ -2284,8 +2295,8 @@ function AnimatedPhone({ size = 13, color = "currentColor" }) {
 
 function timeAgo(iso) {
   if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return "";
+  const t = typeof iso === "number" ? iso : new Date(iso).getTime();
+  if (!Number.isFinite(t) || t <= 0) return "";
   const diffMs = Date.now() - t;
   if (diffMs < 0) return "Just now";
   const mins = Math.floor(diffMs / 60000);
@@ -2299,7 +2310,68 @@ function timeAgo(iso) {
   if (days === 1) return "1d ago";
   if (days < 7) return `${days}d ago`;
   if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Facebook-style shared last-interaction clock for Connect (Citizens / Circle / Messages).
+// Client bumps on call/message so all tabs show the same "1 min ago" until the server catches up.
+const ContactClock = {
+  _m: new Map(),
+  _tick: 0,
+  _listeners: new Set(),
+  bump(userId, at = Date.now()) {
+    if (!userId) return;
+    const id = String(userId);
+    const ts = Number(at) || Date.now();
+    const prev = this._m.get(id) || 0;
+    if (ts <= prev) return;
+    this._m.set(id, ts);
+    this._tick += 1;
+    try {
+      const raw = sessionStorage.getItem("merveil_contact_clock");
+      const obj = raw ? JSON.parse(raw) : {};
+      obj[id] = ts;
+      sessionStorage.setItem("merveil_contact_clock", JSON.stringify(obj));
+    } catch {}
+    this._listeners.forEach((fn) => { try { fn(id, ts); } catch {} });
+  },
+  get(userId) {
+    if (!userId) return 0;
+    const id = String(userId);
+    let ts = this._m.get(id) || 0;
+    if (!ts) {
+      try {
+        const raw = sessionStorage.getItem("merveil_contact_clock");
+        const obj = raw ? JSON.parse(raw) : {};
+        ts = Number(obj[id]) || 0;
+        if (ts) this._m.set(id, ts);
+      } catch {}
+    }
+    return ts;
+  },
+  maxIso(userId, ...candidates) {
+    let best = this.get(userId) || 0;
+    for (const c of candidates) {
+      if (c == null || c === 0 || c === "") continue;
+      const t = typeof c === "number" ? c : new Date(c).getTime();
+      if (Number.isFinite(t) && t > best) best = t;
+    }
+    return best > 0 ? new Date(best).toISOString() : null;
+  },
+  subscribe(fn) {
+    this._listeners.add(fn);
+    return () => this._listeners.delete(fn);
+  },
+};
+
+function contactTs(...candidates) {
+  let best = 0;
+  for (const c of candidates) {
+    if (c == null || c === 0 || c === "") continue;
+    const t = typeof c === "number" ? c : new Date(c).getTime();
+    if (Number.isFinite(t) && t > best) best = t;
+  }
+  return best;
 }
 
 // Job and seeker listings come exclusively from the database — no seed/demo data.
@@ -3179,13 +3251,11 @@ const CallRingtone = (() => {
   }
   /** Call once from any user gesture so mobile browsers allow sound later. */
   function unlock() {
-    if (unlocked) return;
     unlocked = true;
     const c = ensure();
     if (!c) return;
     try {
       if (c.state === "suspended") c.resume();
-      // silent buffer kick
       const buf = c.createBuffer(1, 1, 22050);
       const src = c.createBufferSource();
       src.buffer = buf;
@@ -3193,39 +3263,39 @@ const CallRingtone = (() => {
       src.start(0);
     } catch {}
   }
-  // Unlock on first touch/click anywhere
   if (typeof window !== "undefined") {
     const once = () => { unlock(); window.removeEventListener("pointerdown", once); window.removeEventListener("touchstart", once); window.removeEventListener("click", once); };
     window.addEventListener("pointerdown", once, { once: true, passive: true });
     window.addEventListener("touchstart", once, { once: true, passive: true });
     window.addEventListener("click", once, { once: true });
   }
-  function beep(c, t0, freq, dur, gain) {
+  function beep(c, t0, freq, dur, gain, type = "sine") {
     try {
       const o = c.createOscillator();
       const g = c.createGain();
-      o.type = "sine";
+      o.type = type;
       o.frequency.setValueAtTime(freq, t0);
       g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(Math.max(0.001, gain), t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.001, gain), t0 + 0.015);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
       o.connect(g); g.connect(c.destination);
       o.start(t0); o.stop(t0 + dur + 0.05);
     } catch {}
   }
   let loud = false;
+  // Classic two-tone ring (not silent): 440/480 Hz pattern, audible by default
   function pulse() {
     const c = ensure();
     if (!c || !playing) return;
     if (c.state === "suspended") { try { c.resume(); } catch {} }
     const t = c.currentTime;
-    // Normal by default; user can boost via 📢 (setLoud)
-    const g1 = loud ? 0.32 : 0.10;
-    const g2 = loud ? 0.28 : 0.08;
-    beep(c, t, 440, 0.20, g1);
-    beep(c, t + 0.22, 520, 0.20, g2);
-    beep(c, t + 0.5, 440, 0.20, g1);
-    beep(c, t + 0.72, 520, 0.20, g2);
+    const g1 = loud ? 0.42 : 0.22;
+    const g2 = loud ? 0.38 : 0.20;
+    // Dual-tone phone-style ring bursts
+    beep(c, t, 440, 0.35, g1, "sine");
+    beep(c, t, 480, 0.35, g2, "sine");
+    beep(c, t + 0.45, 440, 0.35, g1, "sine");
+    beep(c, t + 0.45, 480, 0.35, g2, "sine");
   }
   return {
     unlock,
@@ -3235,12 +3305,12 @@ const CallRingtone = (() => {
       unlock();
       if (playing) return;
       playing = true;
-      loud = false; // always start normal — user taps speaker to boost
+      loud = false;
       const c = ensure();
       if (c && c.state === "suspended") { try { c.resume(); } catch {} }
       pulse();
-      timer = setInterval(pulse, 2000);
-      try { if (navigator.vibrate) navigator.vibrate([180, 100, 180]); } catch {}
+      timer = setInterval(pulse, 1800);
+      try { if (navigator.vibrate) navigator.vibrate([220, 90, 220, 90, 220]); } catch {}
     },
     stop() {
       playing = false;
@@ -3248,6 +3318,50 @@ const CallRingtone = (() => {
       if (timer) { clearInterval(timer); timer = null; }
       try { if (navigator.vibrate) navigator.vibrate(0); } catch {}
     },
+  };
+})();
+
+/** Merveil-owned chat tones (not Meta). Soft, short, brand teal. */
+const MerveilChatTones = (() => {
+  let ctx = null;
+  function ensure() {
+    if (ctx) return ctx;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
+    } catch { return null; }
+    return ctx;
+  }
+  function tone(freqs, durations, gains) {
+    try {
+      CallRingtone.unlock?.();
+      const c = ensure();
+      if (!c) return;
+      if (c.state === "suspended") c.resume();
+      const t0 = c.currentTime;
+      freqs.forEach((f, i) => {
+        const o = c.createOscillator();
+        const g = c.createGain();
+        o.type = "sine";
+        o.frequency.setValueAtTime(f, t0);
+        const dur = durations[i] ?? 0.08;
+        const gain = gains[i] ?? 0.08;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        o.connect(g); g.connect(c.destination);
+        o.start(t0); o.stop(t0 + dur + 0.02);
+      });
+    } catch {}
+  }
+  return {
+    /** Sent a message */
+    send() { tone([720, 920], [0.05, 0.07], [0.07, 0.05]); },
+    /** Received a message */
+    receive() { tone([520, 680], [0.06, 0.09], [0.08, 0.06]); },
+    /** Opened / viewed a thread */
+    view() { tone([400], [0.05], [0.04]); },
   };
 })();
 
@@ -7184,12 +7298,24 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   // Background / minimize: keep WebRTC alive while user uses chat or other apps in browser
   const [minimized, setMinimized] = useState(false);
   const [participants, setParticipants] = useState(() => {
-    const self = { id: "self", name: "You", role: "self", avatar: null };
+    let selfAvatar = null;
+    let selfName = "You";
+    try {
+      const u = JSON.parse(localStorage.getItem("junction_user") || "null");
+      if (u) {
+        selfAvatar = u.avatar_url || u.avatarUrl || null;
+        selfName = u.name || "You";
+      }
+    } catch {}
+    const self = { id: "self", name: selfName, role: "self", avatar: selfAvatar };
     const other = otherUser
       ? { id: otherUser.id || "peer", name: otherUser.name || "Merveil Citizen", role: "peer", avatar: otherUser.avatar_url || otherUser.avatar || null }
       : { id: "peer", name: "Merveil Citizen", role: "peer", avatar: null };
     return [self, other];
   });
+  // Voice-reactive wave levels (0–1) for self + peers
+  const [voiceLevels, setVoiceLevels] = useState({ self: 0, peer: 0 });
+  const voiceRafRef = useRef(null);
   const [inviteFlash, setInviteFlash] = useState(null);
   const mm = String(Math.floor(duration / 60)).padStart(2, "0");
   const ss = String(duration % 60).padStart(2, "0");
@@ -7215,6 +7341,65 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [status]);
 
+  // Voice-level meters → avatar wave scales with speech rhythm
+  useEffect(() => {
+    if (status !== "connected") {
+      setVoiceLevels({ self: 0, peer: 0 });
+      return undefined;
+    }
+    let cancelled = false;
+    let localAnalyser = null;
+    let remoteAnalyser = null;
+    let localData = null;
+    let remoteData = null;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return undefined;
+      const ac = new AC();
+      try { if (ac.state === "suspended") ac.resume(); } catch {}
+      const attach = (stream, isLocal) => {
+        if (!stream) return;
+        try {
+          const src = ac.createMediaStreamSource(stream);
+          const an = ac.createAnalyser();
+          an.fftSize = 256;
+          an.smoothingTimeConstant = 0.55;
+          src.connect(an);
+          const data = new Uint8Array(an.frequencyBinCount);
+          if (isLocal) { localAnalyser = an; localData = data; }
+          else { remoteAnalyser = an; remoteData = data; }
+        } catch {}
+      };
+      attach(localStreamRef.current, true);
+      // Remote stream from audio element
+      try {
+        const el = remoteAudioRef.current;
+        if (el?.srcObject) attach(el.srcObject, false);
+      } catch {}
+      const tick = () => {
+        if (cancelled) return;
+        const levelOf = (an, data) => {
+          if (!an || !data) return 0;
+          an.getByteFrequencyData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) sum += data[i];
+          const avg = sum / (data.length * 255);
+          return Math.min(1, avg * 2.4);
+        };
+        setVoiceLevels({
+          self: muted ? 0 : levelOf(localAnalyser, localData),
+          peer: levelOf(remoteAnalyser, remoteData),
+        });
+        voiceRafRef.current = requestAnimationFrame(tick);
+      };
+      voiceRafRef.current = requestAnimationFrame(tick);
+    } catch {}
+    return () => {
+      cancelled = true;
+      if (voiceRafRef.current) cancelAnimationFrame(voiceRafRef.current);
+    };
+  }, [status, muted]);
+
   // Speaker route: setSinkId when available
   useEffect(() => {
     const el = remoteAudioRef.current;
@@ -7223,9 +7408,11 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   }, [speaker]);
 
   const handleEnd = () => {
+    if (endedRef.current || ending) return; // one tap only — no double-end
     setEnding(true);
     setMinimized(false);
-    setTimeout(() => endCall("ended", true), 900);
+    // End immediately (no 900ms lag that forced a second tap)
+    endCall("ended", true);
   };
 
   const openInApp = (pathOrHash) => {
@@ -7267,23 +7454,26 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     });
   };
 
-  // Living Orbit end state
+  // Living Orbit end state — dark ink on cream (readable, not white-on-cream)
   if (ending) {
+    const selfAv = participants.find((p) => p.role === "self")?.avatar || null;
     return (
       <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #FFFBF6 0%, #F0E9DF 55%, #E5DCCE 100%)" }}>
-        <div className="text-[11px] font-bold tracking-widest" style={{ color: "rgba(196,165,116,0.85)" }}>CONNECTION COMPLETE</div>
-        <div className="text-white text-lg font-semibold">{otherName}</div>
-        <div className="text-white/60 text-sm">{mm}:{ss} · {mode === "video" ? "Video" : "Voice"} · {participants.length} participant{participants.length !== 1 ? "s" : ""}</div>
+        <div className="text-[11px] font-bold tracking-widest" style={{ color: "#0E9AA7" }}>CONNECTION COMPLETE</div>
+        <div className="text-lg font-semibold" style={{ color: "#1A1612" }}>{otherName}</div>
+        <div className="text-sm" style={{ color: "#6B6158" }}>{mm}:{ss} · {mode === "video" ? "Video" : "Voice"} · {participants.length} participant{participants.length !== 1 ? "s" : ""}</div>
         <div className="flex items-center gap-2 mt-2">
-          <div className="w-10 h-10 rounded-full" style={{ background: "linear-gradient(135deg,#C4A574,#1A1612)", border: "2px solid rgba(255,255,255,0.2)" }} />
-          <div className="w-2 h-0.5 rounded-full" style={{ background: "#0EA5E9", width: 40 }} />
-          <div className="w-3 h-3 rounded-full" style={{ background: "#0EA5E9", boxShadow: "0 0 12px #0EA5E9" }} />
-          <div className="w-2 h-0.5 rounded-full" style={{ background: "#0EA5E9", width: 40 }} />
+          {selfAv
+            ? <img src={selfAv} alt="" className="w-10 h-10 rounded-full object-cover" style={{ border: "2px solid rgba(14,154,167,0.45)" }} />
+            : <div className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#C4A574,#3D2E1F)", border: "2px solid rgba(14,154,167,0.35)" }}>You</div>}
+          <div className="h-0.5 rounded-full" style={{ background: "#0E9AA7", width: 40 }} />
+          <div className="w-3 h-3 rounded-full" style={{ background: "#0E9AA7", boxShadow: "0 0 12px rgba(14,154,167,0.55)" }} />
+          <div className="h-0.5 rounded-full" style={{ background: "#0E9AA7", width: 40 }} />
           {otherAvatar
-            ? <img src={otherAvatar} alt="" className="w-10 h-10 rounded-full object-cover" style={{ border: "2px solid rgba(255,255,255,0.2)" }} />
-            : <div className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#0E9AA7,#12100E)", border: "2px solid rgba(255,255,255,0.2)" }}>{otherInitials}</div>}
+            ? <img src={otherAvatar} alt="" className="w-10 h-10 rounded-full object-cover" style={{ border: "2px solid rgba(14,154,167,0.45)" }} />
+            : <div className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#0E9AA7,#0A5A62)", border: "2px solid rgba(14,154,167,0.35)" }}>{otherInitials}</div>}
         </div>
-        <div className="text-[11px] mt-4" style={{ color: "rgba(255,255,255,0.4)" }}>Returning to Connect…</div>
+        <div className="text-[11px] mt-4 font-medium" style={{ color: "#6B6158" }}>Thank you for choosing Merveil AI</div>
       </div>
     );
   }
@@ -7395,8 +7585,8 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
             </button>
           )}
           <button onClick={() => setShowTools(true)} className="w-9 h-9 rounded-full flex items-center justify-center"
-            style={{ background: "rgba(255,255,255,0.12)" }} aria-label="Call tools">
-            <MoreVertical size={18} color="#fff" />
+            style={{ background: "rgba(255,251,246,0.9)", border: "1px solid rgba(45,38,32,0.12)" }} aria-label="Call tools">
+            <MoreVertical size={18} color="#1A1612" />
           </button>
         </div>
       </div>
@@ -7432,6 +7622,11 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
               {participants.slice(0, 8).map((p) => {
                 const initials = (p.name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
                 const isSelf = p.role === "self";
+                const level = isSelf ? (voiceLevels.self || 0) : (voiceLevels.peer || 0);
+                const base = participants.length > 2 ? 96 : isSelf ? 124 : 140;
+                // Speech rhythm: quiet → almost still; speaking → scale + glow
+                const scale = 1 + Math.min(0.22, level * 0.28);
+                const glow = 8 + level * 36;
                 return (
                   <button
                     key={p.id}
@@ -7442,14 +7637,16 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                     <div
                       className="rounded-full overflow-hidden flex items-center justify-center"
                       style={{
-                        width: participants.length > 2 ? 96 : isSelf ? 124 : 140,
-                        height: participants.length > 2 ? 96 : isSelf ? 124 : 140,
+                        width: base,
+                        height: base,
+                        transform: `scale(${scale})`,
+                        transition: "transform 80ms linear, box-shadow 80ms linear",
                         background: isSelf ? "linear-gradient(145deg,#C4A574,#3D2E1F)" : "linear-gradient(145deg,#0E9AA7,#0A5A62)",
-                        border: `3px solid ${p.role === "pending" ? "rgba(251,191,36,0.75)" : "rgba(196,165,116,0.65)"}`,
+                        border: `3px solid ${p.role === "pending" ? "rgba(251,191,36,0.75)" : level > 0.08 ? "rgba(14,154,167,0.85)" : "rgba(196,165,116,0.65)"}`,
                         boxShadow: p.role !== "pending"
-                          ? "0 0 0 1px rgba(196,165,116,0.35), 0 0 0 6px rgba(196,165,116,0.08), 0 16px 48px rgba(0,0,0,0.5), 0 0 40px rgba(196,165,116,0.22)"
-                          : "0 10px 28px rgba(0,0,0,0.4)",
-                        animation: status === "calling" || status === "connecting" || status === "connected"
+                          ? `0 0 0 1px rgba(196,165,116,0.35), 0 0 0 ${6 + level * 10}px rgba(14,154,167,${0.08 + level * 0.2}), 0 16px 48px rgba(0,0,0,0.28), 0 0 ${glow}px rgba(14,154,167,${0.15 + level * 0.35})`
+                          : "0 10px 28px rgba(0,0,0,0.25)",
+                        animation: status === "calling" || status === "connecting"
                           ? (isSelf ? "merveilCallWave 3s ease-in-out infinite" : "merveilCallWave 3s ease-in-out infinite 0.35s")
                           : "none",
                       }}
@@ -7460,7 +7657,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                         <span className="text-white font-bold" style={{ fontSize: participants.length > 2 ? 22 : isSelf ? 26 : 36 }}>{isSelf ? "You" : initials}</span>
                       )}
                     </div>
-                    <span className="text-[13px] font-semibold text-[#1A1612] max-w-[100px] truncate" style={{ textShadow: "0 1px 0 rgba(255,255,255,0.6)" }}>{isSelf ? "You" : (p.name || "Citizen")}</span>
+                    <span className="text-[13px] font-semibold max-w-[100px] truncate" style={{ color: "#1A1612", textShadow: "0 1px 0 rgba(255,255,255,0.6)" }}>{isSelf ? "You" : (p.name || "Citizen")}</span>
                   </button>
                 );
               })}
@@ -7471,13 +7668,13 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
               className="w-12 h-12 rounded-full flex items-center justify-center z-10 mb-2"
               style={{
                 background: "linear-gradient(135deg,#C4A574,#0E9AA7)",
-                boxShadow: "0 0 20px rgba(14,165,233,0.5)",
-                border: "2px solid rgba(255,255,255,0.4)",
+                boxShadow: "0 0 20px rgba(14,154,167,0.45)",
+                border: "2px solid rgba(255,255,255,0.55)",
               }}
               aria-label="Merveil Intelligence Core">
               <Sparkles size={18} color="#fff" />
             </button>
-            <div className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.45)" }}>
+            <div className="text-[10px] font-semibold" style={{ color: "#6B6158" }}>
               {participants.length} participant{participants.length !== 1 ? "s" : ""} · tap core for tools
             </div>
           </div>
@@ -10543,8 +10740,10 @@ async function initiateCitizenCall(user, mode) {
   if (!user?.id) { alert("Can't call — missing user."); return; }
   try {
     merveilHaptic("call");
+    const at = Date.now();
+    ContactClock.bump(user.id, at);
     window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
-      detail: { userId: String(user.id), at: Date.now() },
+      detail: { userId: String(user.id), at },
     }));
   } catch {}
   const tryCreate = async () => {
@@ -10590,8 +10789,10 @@ async function initiateCitizenCall(user, mode) {
     }
     // WhatsApp-style: called person rises to top immediately (Citizens / Circle / Messages)
     try {
+      const at = Date.now();
+      ContactClock.bump(user.id, at);
       window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
-        detail: { userId: String(user.id), at: Date.now() },
+        detail: { userId: String(user.id), at },
       }));
     } catch {}
     window.dispatchEvent(new CustomEvent("merveil:start-call", {
@@ -10611,8 +10812,15 @@ async function initiateCitizenCall(user, mode) {
 function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
   const trusted = user.passport_tier === "professional" || user.passport_tier === "investor" || user.passport_tier === "company";
   const live = status === "online" || status === "busy";
-  const contactIso = user.lastContactAt || user.last_contact_at || user.last_message_at || user.last_seen_at || null;
-  const contactLabel = contactIso ? timeAgo(typeof contactIso === "number" ? new Date(contactIso).toISOString() : contactIso) : "";
+  // Shared clock so Citizens / Circle / Messages never disagree after a call
+  const contactIso = ContactClock.maxIso(
+    user.id,
+    user.lastContactAt,
+    user.last_contact_at,
+    user.last_message_at,
+    user.last_seen_at
+  );
+  const contactLabel = contactIso ? timeAgo(contactIso) : "";
   const statusLabel = status === "online" ? "Online now" : status === "busy" ? "Busy" : (user.role_label || "Away");
   return (
     <div
@@ -10751,9 +10959,10 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
       const uid = String(e?.detail?.userId || "");
       const at = Number(e?.detail?.at) || Date.now();
       if (!uid) return;
+      ContactClock.bump(uid, at);
       setCitizens((prev) => prev.map((u) =>
         String(u.id) === uid
-          ? { ...u, contactRank: 1, lastContactAt: at }
+          ? { ...u, contactRank: 1, lastContactAt: at, last_message_at: new Date(at).toISOString() }
           : u
       ));
     };
@@ -10910,16 +11119,24 @@ function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile })
 // MY CIRCLE — people the citizen has actually connected with. Distinct
 // data source from Citizens (connections, not the full directory).
 function MyCircleTab({ currentUser, connectionPeople, presenceMap, onMessage, onCall, onProfile }) {
+  // Re-render when ContactClock bumps so Circle times match Citizens/Messages
+  const [, setClockTick] = useState(0);
+  useEffect(() => ContactClock.subscribe(() => setClockTick((t) => t + 1)), []);
   const rows = useMemo(() => {
     const list = connectionPeople.map((p) => {
       const status = presenceMap[p.id] || p.status || "offline";
-      if (p.status === status) return p;
-      return { ...p, status };
+      const lastContactAt = contactTs(
+        ContactClock.get(p.id),
+        p.lastContactAt,
+        p.last_contact_at,
+        p.last_message_at,
+        p.last_seen_at
+      );
+      return { ...p, status, lastContactAt: lastContactAt || p.lastContactAt };
     });
     list.sort((a, b) => {
-      // Same as Citizens: last contact / message / call first, then name
-      const ta = new Date(a.lastContactAt || a.last_contact_at || a.last_message_at || a.last_seen_at || 0).getTime() || 0;
-      const tb = new Date(b.lastContactAt || b.last_contact_at || b.last_message_at || b.last_seen_at || 0).getTime() || 0;
+      const ta = contactTs(a.lastContactAt, ContactClock.get(a.id));
+      const tb = contactTs(b.lastContactAt, ContactClock.get(b.id));
       if (tb !== ta) return tb - ta;
       return (a.name || "").localeCompare(b.name || "");
     });
@@ -11145,6 +11362,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       const uid = String(e?.detail?.userId || "");
       const at = Number(e?.detail?.at) || Date.now();
       if (!uid) return;
+      ContactClock.bump(uid, at);
       setConnectionPeople((prev) => prev.map((p) =>
         String(p.id) === uid
           ? { ...p, lastContactAt: at, last_message_at: new Date(at).toISOString() }
@@ -11154,9 +11372,15 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         const uidMe = String(currentUser?.id || "");
         return [...prev].map((th) => {
           const ids = (th.participant_ids || []).map(String);
-          if (!ids.includes(uid) || !ids.includes(uidMe)) return th;
-          return { ...th, last_message_at: new Date(at).toISOString(), updated_at: new Date(at).toISOString() };
-        }).sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+          const other = th.other_user_id ? String(th.other_user_id) : ids.find((x) => x !== uidMe);
+          if (String(other) !== uid && !ids.includes(uid)) return th;
+          return {
+            ...th,
+            last_message_at: new Date(at).toISOString(),
+            updated_at: new Date(at).toISOString(),
+            last_body: th.last_body || "Call",
+          };
+        }).sort((a, b) => contactTs(b.last_message_at) - contactTs(a.last_message_at));
       });
     };
     window.addEventListener("merveil:contact-bump", onBump);
@@ -11167,7 +11391,15 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     merveilFetch("/api/connections?action=list&kind=accepted")
       .then((r) => (r.ok ? r.json() : { connections: [] }))
       .then((d) => {
-        const people = (d.connections || []).map((c) => c.person).filter((p) => p?.id);
+        const people = (d.connections || []).map((c) => {
+          const p = c.person;
+          if (!p?.id) return null;
+          return {
+            ...p,
+            lastContactAt: c.lastContactAt || p.lastContactAt || 0,
+            last_message_at: c.last_message_at || p.last_message_at || null,
+          };
+        }).filter(Boolean);
         setConnectionPeople((prev) => stableMergeById(prev, people));
       })
       .catch(() => {});
@@ -11437,11 +11669,16 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           .on(
             "postgres_changes",
             { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${activeId}` },
+            // receive tone fired inside callback below
             (payload) => {
               if (cancelled || !payload?.new) return;
               (async () => {
                 const row = payload.new.is_e2ee ? await mvDecryptRow(payload.new, activeId) : payload.new;
                 if (cancelled) return;
+                const fromOther = String(row.sender_id) !== String(currentUser?.id);
+                if (fromOther) {
+                  try { MerveilChatTones.receive(); } catch {}
+                }
                 setThreadMessages((prev) => {
                   if (prev.some((m) => m.id === row.id)) return prev;
                   const withoutLocal = prev.filter((m) => !(String(m.id).startsWith("local-") && m.body === row.body));
@@ -11649,6 +11886,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       is_e2ee: !!payload.is_e2ee,
     };
     setThreadMessages((p) => [...p, optimistic]);
+    try { MerveilChatTones.send(); } catch {}
     if (activeId) {
       setThreads((prev) => {
         const next = prev.map((t) =>
@@ -12169,6 +12407,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               const open = async () => {
                 setActiveId(r.thread.id);
                 setMobileView("chat");
+                try { MerveilChatTones.view(); } catch {}
                 setThreads((prev) => prev.map((th) => th.id === r.thread.id ? { ...th, unread_count: 0 } : th));
                 // Always mark server-side read + refresh badge (sticky badges were from skipping this)
                 if (currentUser?.id) {
@@ -12182,9 +12421,14 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                 }
               };
               const unreadN = r.thread?.unread_count || 0;
-              const lastIso = r.thread?.last_message_at || r.lastAt || r.thread?.updated_at;
+              const lastIso = ContactClock.maxIso(
+                r.userId,
+                r.thread?.last_message_at,
+                r.lastAt,
+                r.thread?.updated_at
+              );
               const when = lastIso ? timeAgo(lastIso) : "";
-              const isMissed = /missed call|no answer|call ended/i.test(String(subtitle || ""));
+              const isMissed = /missed call|no answer|call ended|voice call|video call/i.test(String(subtitle || ""));
               return (
                 <div key={r.userId} className="w-full border-b flex items-center gap-1" style={{ borderColor: CT.line, background: r.thread?.id === activeId ? "rgba(14,154,167,0.10)" : (unreadN > 0 ? "rgba(14,154,167,0.06)" : CT.panel) }}>
                   <button type="button" onClick={open} className="flex-1 min-w-0 text-left px-3 py-3.5 flex items-center gap-3">
