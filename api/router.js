@@ -893,6 +893,28 @@ function mapAuthUser(row) {
 
 export default async function handler(req, res) {
   try {
+    // CORS first — every response (including errors) can cross-origin from
+    // junction.technology / Vercel previews / local dev with credentials.
+    try {
+      const { applyCors } = await import("../lib/supabaseServer.js");
+      applyCors(req, res);
+    } catch {
+      try {
+        const origin = String(req.headers?.origin || "");
+        if (origin) {
+          res.setHeader("Access-Control-Allow-Origin", origin);
+          res.setHeader("Vary", "Origin");
+          res.setHeader("Access-Control-Allow-Credentials", "true");
+          res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+          res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin");
+        }
+      } catch { /* ignore */ }
+    }
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
+
     // Derived straight from the URL rather than req.query.path — the
     // latter only works if this file's name matches character-for-
     // character (including the literal "..."), which is fragile when
@@ -5249,6 +5271,73 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { saved: true });
       }
 
+      // Gallery download — same-origin proxy so CORS never blocks Save to device
+      if (method === "GET" && action === "download") {
+        const postId = req.query.postId;
+        if (!postId) return sendJson(res, 400, { error: "postId required" });
+        let svcDl;
+        try { svcDl = adminClient(); } catch { svcDl = anonClient(); }
+        const { data: post } = await svcDl.from("world_posts")
+          .select("id, title, video_url, photo_url, photo_urls")
+          .eq("id", postId)
+          .maybeSingle();
+        if (!post) return sendJson(res, 404, { error: "Post not found" });
+        const mediaUrl = post.video_url || post.photo_url || (post.photo_urls && post.photo_urls[0]);
+        if (!mediaUrl) return sendJson(res, 404, { error: "No media on this post" });
+        try {
+          const upstream = await fetch(mediaUrl, { redirect: "follow" });
+          if (!upstream.ok) return sendJson(res, 502, { error: "Could not fetch media" });
+          const buf = Buffer.from(await upstream.arrayBuffer());
+          const ctype = upstream.headers.get("content-type") || (post.video_url ? "video/mp4" : "image/jpeg");
+          const ext = ctype.includes("video") ? "mp4" : ctype.includes("png") ? "png" : ctype.includes("webp") ? "webp" : "jpg";
+          const safeTitle = String(post.title || "merveil-reel").replace(/[^\w\-]+/g, "_").slice(0, 40);
+          res.setHeader("Content-Type", ctype);
+          res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
+          res.setHeader("Cache-Control", "private, max-age=60");
+          res.status(200).end(buf);
+          return;
+        } catch (e) {
+          return sendJson(res, 502, { error: e.message || "Download failed" });
+        }
+      }
+
+      // Full saved gallery for the signed-in citizen (TikTok / IG saved tab)
+      if (method === "GET" && action === "gallery") {
+        const actorId = user?.id || citizen?.id || jwtSub;
+        if (!actorId) return sendJson(res, 401, { error: "Sign in required." });
+        let svcG;
+        try { svcG = adminClient(); } catch { svcG = sb; }
+        const { data: saves } = await svcG.from("world_saves")
+          .select("world_post_id, created_at")
+          .eq("user_id", actorId)
+          .order("created_at", { ascending: false })
+          .limit(100);
+        const ids = (saves || []).map((s) => s.world_post_id).filter(Boolean);
+        if (!ids.length) return sendJson(res, 200, { items: [], count: 0 });
+        const { data: posts } = await svcG.from("world_posts")
+          .select("id, title, topic, description, video_url, photo_url, photo_urls, media_type, views, likes_count, super_count, owner_id, created_at")
+          .in("id", ids);
+        const byId = Object.fromEntries((posts || []).map((p) => [String(p.id), p]));
+        const ownerIds = [...new Set((posts || []).map((p) => p.owner_id).filter(Boolean))];
+        let owners = {};
+        if (ownerIds.length) {
+          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url").in("id", ownerIds);
+          owners = Object.fromEntries((profs || []).map((p) => [String(p.id), p]));
+        }
+        const items = ids.map((id) => {
+          const p = byId[String(id)];
+          if (!p) return null;
+          const ow = owners[String(p.owner_id)] || {};
+          return {
+            ...p,
+            owner_name: ow.name || null,
+            owner_avatar: ow.avatar_url || null,
+            saved_at: (saves || []).find((s) => String(s.world_post_id) === String(id))?.created_at || null,
+          };
+        }).filter(Boolean);
+        return sendJson(res, 200, { items, count: items.length });
+      }
+
       // In-app repost: creates a new world_post owned by the current user
       // that references the original (TikTok/Instagram-style). Increments
       // the original's reposts_count when the column exists.
@@ -7276,12 +7365,12 @@ export default async function handler(req, res) {
       if (!svc || !call?.caller_id || !call?.receiver_id || !bodyText) return;
       const a = String(call.caller_id);
       const b = String(call.receiver_id);
-      // Prefer existing 1:1 conversation
+      // Prefer existing 1:1 conversation — create if missing so both always see the line
       let convId = null;
       const { data: shared } = await svc.from("conversations")
         .select("id, participant_ids")
         .contains("participant_ids", [a])
-        .limit(80);
+        .limit(120);
       const hit = (shared || []).find((c) => {
         const ids = (c.participant_ids || []).map(String);
         return ids.length === 2 && ids.includes(a) && ids.includes(b);
@@ -7297,20 +7386,28 @@ export default async function handler(req, res) {
         convId = created?.id || null;
       }
       if (!convId) return;
-      // Sender = caller for missed; system line still attributed to a participant
-      const senderId = call.status === "ringing" || bodyText.toLowerCase().includes("missed")
-        ? call.caller_id
-        : call.caller_id;
-      // body only — message_type column is optional and not required for preview
-      await svc.from("messages").insert({
+      const nowIso = new Date().toISOString();
+      // WhatsApp-style system lines visible to both participants
+      const payload = {
         conversation_id: convId,
-        sender_id: senderId,
+        sender_id: call.caller_id,
         body: bodyText,
-      }).catch(() => {});
+        type: "system",
+      };
+      let inserted = null;
+      ({ data: inserted } = await svc.from("messages").insert(payload).select("id").maybeSingle());
+      if (!inserted) {
+        // Fallback without type column
+        await svc.from("messages").insert({
+          conversation_id: convId,
+          sender_id: call.caller_id,
+          body: bodyText,
+        }).catch(() => {});
+      }
       await svc.from("conversations").update({
-        last_message_at: new Date().toISOString(),
+        last_message_at: nowIso,
         last_body: bodyText,
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
       }).eq("id", convId).catch(() => {});
     }
 
@@ -7433,7 +7530,7 @@ export default async function handler(req, res) {
         await writeCallSystemMessage(
           svcCreate,
           call,
-          type === "video" ? "Video call" : "Voice call"
+          type === "video" ? "📹 Video call" : "📞 Voice call"
         );
       } catch {}
       // FCM / Web Push to callee when app is backgrounded
@@ -7721,13 +7818,20 @@ export default async function handler(req, res) {
         if (String(call.receiver_id) !== me) return sendJson(res, 403, { error: "Only the receiver can accept." });
         const { error } = await svc.from("calls").update({ status: "accepted", connected_at: new Date().toISOString() }).eq("id", call.id);
         if (error) return sendJson(res, 400, { error: error.message });
+        try {
+          await writeCallSystemMessage(
+            svc,
+            { ...call, status: "accepted" },
+            call.type === "video" ? "📹 Video call" : "📞 Voice call"
+          );
+        } catch {}
       } else if (action === "reject") {
         if (String(call.receiver_id) !== me) return sendJson(res, 403, { error: "Only the receiver can reject." });
         const { error } = await svc.from("calls").update({ status: "rejected", ended_at: new Date().toISOString() }).eq("id", call.id);
         if (error) return sendJson(res, 400, { error: error.message });
         // Leave a system line in the 1:1 chat so both sides see "Missed call"
         try {
-          await writeCallSystemMessage(svc, call, "Missed call");
+          await writeCallSystemMessage(svc, call, call.type === "video" ? "📞 Missed video call" : "📞 Missed call");
         } catch {}
       } else {
         const endedAt = new Date();
@@ -7738,12 +7842,38 @@ export default async function handler(req, res) {
         if (error) return sendJson(res, 400, { error: error.message });
         try {
           const label = finalStatus === "missed"
-            ? (call.type === "video" ? "Missed video call" : "Missed call")
+            ? (call.type === "video" ? "📞 Missed video call" : "📞 Missed call")
             : (duration > 0
-              ? `${call.type === "video" ? "Video" : "Voice"} call · ${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`
-              : "Call ended");
+              ? `${call.type === "video" ? "📹" : "📞"} ${call.type === "video" ? "Video" : "Voice"} call · ${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`
+              : "📞 Call ended");
           await writeCallSystemMessage(svc, call, label);
         } catch {}
+        // Push: missed call notification (WhatsApp-style) to the side that didn't end it
+        if (finalStatus === "missed") {
+          try {
+            const otherId = String(call.caller_id) === me ? call.receiver_id : call.caller_id;
+            const { data: nm } = await svc.from("profiles").select("name").eq("id", call.caller_id).maybeSingle();
+            const callerName = nm?.name || "Someone";
+            notifyUser(otherId === call.receiver_id ? call.receiver_id : call.caller_id, {
+              title: call.type === "video" ? "Missed video call" : "Missed call",
+              body: `${callerName} tried to reach you on Merveil`,
+              data: {
+                url: "/?tab=messages",
+                tag: `missed-${call.id}`,
+                callId: call.id,
+                type: "missed_call",
+              },
+              urgent: false,
+            }).catch(() => {});
+            // Always notify the receiver on missed
+            notifyUser(call.receiver_id, {
+              title: call.type === "video" ? "Missed video call" : "Missed call",
+              body: `${callerName} tried to reach you on Merveil`,
+              data: { url: "/?tab=messages", tag: `missed-${call.id}`, callId: call.id, type: "missed_call" },
+              urgent: false,
+            }).catch(() => {});
+          } catch {}
+        }
         // Thank both participants by name (Merveil AI appreciation)
         if (finalStatus === "ended") {
           try {
