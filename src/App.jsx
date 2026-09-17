@@ -3398,44 +3398,46 @@ const MerveilChatTones = (() => {
   };
 })();
 
-/** Envelope receipts under bubble — tight bottom-right of own messages.
+/** Envelope receipts under bubble — big, visible, soft wave.
  *  sent (offline) = sealed closed envelope
  *  delivered (online) = closed unsealed envelope
  *  read = open blue envelope
  */
 function ChatEnvelopeReceipt({ state }) {
   const title = state === "read" ? "Vu" : state === "delivered" ? "Distribué" : "Envoyé";
+  const wave = {
+    display: "inline-flex",
+    alignItems: "center",
+    lineHeight: 0,
+    marginLeft: 3,
+    animation: "merveilEnvelopeWave 1.8s ease-in-out infinite",
+    transformOrigin: "50% 80%",
+  };
+  if (typeof document !== "undefined" && !document.getElementById("merveil-envelope-wave-css")) {
+    try {
+      const s = document.createElement("style");
+      s.id = "merveil-envelope-wave-css";
+      s.textContent = `@keyframes merveilEnvelopeWave{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-1.5px) rotate(-4deg)}}`;
+      document.head.appendChild(s);
+    } catch {}
+  }
   if (state === "read") {
-    // Open blue envelope
     return (
-      <span className="inline-flex items-center leading-none" title={title} aria-label={title} style={{ marginLeft: 2, lineHeight: 0 }}>
-        <svg width="14" height="12" viewBox="0 0 24 20" fill="none" aria-hidden>
-          <path d="M2 7.5L12 14L22 7.5" stroke="#2563EB" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M3 4h18a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="#2563EB" strokeWidth="2" fill="rgba(37,99,235,0.12)" />
-          <path d="M2 6.5L12 1.5L22 6.5" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      <span title={title} aria-label={title} style={wave}>
+        <span style={{ fontSize: 16, lineHeight: 1, filter: "hue-rotate(200deg) saturate(1.4)" }} aria-hidden>💌</span>
       </span>
     );
   }
   if (state === "delivered") {
-    // Closed, unsealed
     return (
-      <span className="inline-flex items-center leading-none" title={title} aria-label={title} style={{ marginLeft: 2, lineHeight: 0 }}>
-        <svg width="14" height="12" viewBox="0 0 24 20" fill="none" aria-hidden>
-          <rect x="2" y="4" width="20" height="13" rx="1.5" stroke="#64748B" strokeWidth="2" fill="rgba(100,116,139,0.08)" />
-          <path d="M3 5.5L12 12L21 5.5" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      <span title={title} aria-label={title} style={wave}>
+        <span style={{ fontSize: 16, lineHeight: 1 }} aria-hidden>✉️</span>
       </span>
     );
   }
-  // Sealed / offline
   return (
-    <span className="inline-flex items-center leading-none" title={title} aria-label={title} style={{ marginLeft: 2, lineHeight: 0 }}>
-      <svg width="14" height="12" viewBox="0 0 24 20" fill="none" aria-hidden>
-        <rect x="2" y="4" width="20" height="13" rx="1.5" stroke="#94A3B8" strokeWidth="2" fill="rgba(148,163,184,0.15)" />
-        <path d="M3 5.5L12 12L21 5.5" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="12" cy="11" r="2.2" fill="#94A3B8" />
-      </svg>
+    <span title={title} aria-label={title} style={{ ...wave, opacity: 0.85 }}>
+      <span style={{ fontSize: 16, lineHeight: 1 }} aria-hidden>✉️</span>
     </span>
   );
 }
@@ -6796,6 +6798,8 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   const [status, setStatus] = useState(role === "caller" ? "calling" : "connecting");
   const [muted, setMuted] = useState(false);
   const [videoOn, setVideoOn] = useState(mode === "video");
+  // Remote camera is independent — never mirror their videoOn onto ours
+  const [remoteVideoOn, setRemoteVideoOn] = useState(mode === "video");
   const [speaker, setSpeaker] = useState(false);
   const [duration, setDuration] = useState(0);
   const [mediaError, setMediaError] = useState(null);
@@ -7017,6 +7021,13 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     pc.ontrack = (e) => {
       const stream = e.streams?.[0] || new MediaStream([e.track]);
       attachRemoteStream("primary", stream);
+      // Remote video track present → show their video; does NOT turn on our camera
+      if (e.track?.kind === "video") {
+        setRemoteVideoOn(true);
+        e.track.onmute = () => setRemoteVideoOn(false);
+        e.track.onunmute = () => setRemoteVideoOn(true);
+        e.track.onended = () => setRemoteVideoOn(false);
+      }
     };
     pc.onicecandidate = (e) => {
       if (e.candidate) sendSignal("ice_candidate", { candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate });
@@ -7195,19 +7206,22 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     });
 
     channel.on("broadcast", { event: "call_rejected" }, () => endCall("rejected", false));
-    channel.on("broadcast", { event: "call_ended" }, () => endCall("remote-ended", false));
+    channel.on("broadcast", { event: "call_ended" }, () => {
+      // Other party hung up — leave immediately (never stay in a dead call)
+      endCall("remote-ended", false);
+    });
     channel.on("broadcast", { event: "media-state" }, ({ payload }) => {
       if (cancelled || !payload) return;
-      // Remote peer muted / camera-off — UI can reflect this later; keep alive for now
       try {
-        if (payload.type === "mute") {
-          /* remote muted flag available if UI needs it */
-        }
-        if (payload.type === "video" && remoteVideoRef.current && payload.isVideoOff) {
-          // Hide remote video surface when they turn camera off
-          remoteVideoRef.current.style.opacity = "0.15";
-        } else if (payload.type === "video" && remoteVideoRef.current) {
-          remoteVideoRef.current.style.opacity = "1";
+        // Only react to the OTHER peer's media state — never force our camera
+        const from = payload.from ? String(payload.from) : null;
+        if (from && selfPeerIdRef.current && from === String(selfPeerIdRef.current)) return;
+        if (payload.type === "video") {
+          const on = !payload.isVideoOff;
+          setRemoteVideoOn(on);
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.style.opacity = on ? "1" : "0";
+          }
         }
       } catch {}
     });
@@ -7643,7 +7657,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [status]);
 
-  // Voice-level meters → avatar wave scales with speech rhythm
+  // Voice-level meters → avatar wave ONLY while speaking (still when silent)
   useEffect(() => {
     if (status !== "connected") {
       setVoiceLevels({ self: 0, peer: 0 });
@@ -7654,18 +7668,21 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     let remoteAnalyser = null;
     let localData = null;
     let remoteData = null;
+    let ac = null;
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return undefined;
-      const ac = new AC();
+      ac = new AC();
       try { if (ac.state === "suspended") ac.resume(); } catch {}
       const attach = (stream, isLocal) => {
-        if (!stream) return;
+        if (!stream || !ac) return;
         try {
+          const tracks = stream.getAudioTracks?.() || [];
+          if (!tracks.length) return;
           const src = ac.createMediaStreamSource(stream);
           const an = ac.createAnalyser();
-          an.fftSize = 256;
-          an.smoothingTimeConstant = 0.55;
+          an.fftSize = 512;
+          an.smoothingTimeConstant = 0.4;
           src.connect(an);
           const data = new Uint8Array(an.frequencyBinCount);
           if (isLocal) { localAnalyser = an; localData = data; }
@@ -7673,20 +7690,33 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         } catch {}
       };
       attach(localStreamRef.current, true);
-      // Remote stream from audio element
       try {
         const el = remoteAudioRef.current;
         if (el?.srcObject) attach(el.srcObject, false);
       } catch {}
+      // Re-attach when remote stream arrives a moment after connect
+      const reattach = setInterval(() => {
+        if (cancelled) return;
+        if (!remoteAnalyser) {
+          try {
+            const el = remoteAudioRef.current;
+            if (el?.srcObject) attach(el.srcObject, false);
+          } catch {}
+        }
+        if (!localAnalyser && localStreamRef.current) attach(localStreamRef.current, true);
+      }, 800);
       const tick = () => {
         if (cancelled) return;
         const levelOf = (an, data) => {
           if (!an || !data) return 0;
           an.getByteFrequencyData(data);
           let sum = 0;
-          for (let i = 0; i < data.length; i++) sum += data[i];
-          const avg = sum / (data.length * 255);
-          return Math.min(1, avg * 2.4);
+          // Speech lives mid-band — ignore pure noise floor
+          for (let i = 2; i < Math.min(data.length, 40); i++) sum += data[i];
+          const avg = sum / (38 * 255);
+          // Gate: silence → 0 (no movement); talking → clear pulse
+          if (avg < 0.04) return 0;
+          return Math.min(1, (avg - 0.04) * 3.2);
         };
         setVoiceLevels({
           self: muted ? 0 : levelOf(localAnalyser, localData),
@@ -7695,6 +7725,12 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         voiceRafRef.current = requestAnimationFrame(tick);
       };
       voiceRafRef.current = requestAnimationFrame(tick);
+      return () => {
+        cancelled = true;
+        clearInterval(reattach);
+        if (voiceRafRef.current) cancelAnimationFrame(voiceRafRef.current);
+        try { ac?.close?.(); } catch {}
+      };
     } catch {}
     return () => {
       cancelled = true;
@@ -7708,6 +7744,26 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     if (!el || typeof el.setSinkId !== "function") return;
     try { el.setSinkId(speaker ? "default" : "default").catch(() => {}); } catch {}
   }, [speaker]);
+
+  // If the other party ends on the server but broadcast is missed, poll status
+  useEffect(() => {
+    if (status !== "connected" && status !== "calling" && status !== "connecting") return undefined;
+    let cancelled = false;
+    const tick = () => {
+      merveilFetch(`/api/calls?action=status&callId=${encodeURIComponent(callId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (cancelled || !d?.call) return;
+          const st = String(d.call.status || "");
+          if (["ended", "rejected", "missed", "failed", "cancelled"].includes(st)) {
+            endCall("remote-ended", false);
+          }
+        })
+        .catch(() => {});
+    };
+    const id = setInterval(tick, 2500);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [status, callId, endCall]);
 
   const handleEnd = () => {
     if (endedRef.current || ending) return; // one tap only — no double-end
@@ -7918,15 +7974,21 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
   return (
     <div className="fixed inset-0 z-[150] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 18%, #FFFBF6 0%, #F3EDE4 40%, #E8E0D4 75%, #DDD4C6 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
-      {/* Remote video full-bleed when connected (video mode) */}
-      {mode === "video" && (
-        <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" style={{ display: status === "connected" && videoOn ? "block" : "none", opacity: focusMode ? 1 : 0.92 }} />
-      )}
+      {/* Remote video: driven by THEIR camera (remoteVideoOn), never by ours */}
+      <video
+        ref={remoteVideoRef}
+        autoPlay
+        playsInline
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{
+          display: status === "connected" && remoteVideoOn ? "block" : "none",
+          opacity: focusMode ? 1 : 0.92,
+        }}
+      />
       <audio ref={remoteAudioRef} autoPlay playsInline />
-      {/* Multi-peer conference audio (one element per remote citizen) */}
       <div ref={remoteAudioHostRef} className="sr-only" aria-hidden />
-      {/* Ambient field when not full video */}
-      {(mode !== "video" || status !== "connected" || !videoOn) && (
+      {/* Ambient when remote has no video */}
+      {(status !== "connected" || !remoteVideoOn) && (
         <div className="absolute inset-0 pointer-events-none" style={{
           background: "radial-gradient(circle at 50% 42%, rgba(196,165,116,0.14), transparent 55%)",
         }} />
@@ -8009,18 +8071,18 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
       {/* LIVING ORBIT — participant avatars (audio) / connection core */}
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center" onClick={() => focusMode && setFocusMode(false)}>
-        {(mode !== "video" || status !== "connected" || !videoOn || focusMode === false) && (
+        {(!remoteVideoOn || focusMode === false) && (
           <div className="relative flex flex-col items-center px-4" style={{ width: "100%", maxWidth: 340, minHeight: focusMode ? 180 : 280 }}>
-            {/* Multi-participant grid for conference / audio presentation */}
+            {/* Multi-participant grid — wave only while speaking */}
             <div className="flex flex-wrap items-center justify-center gap-4 mb-4" style={{ maxWidth: 300 }}>
               {participants.slice(0, 8).map((p) => {
                 const initials = (p.name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
                 const isSelf = p.role === "self";
                 const level = isSelf ? (voiceLevels.self || 0) : (voiceLevels.peer || 0);
                 const base = participants.length > 2 ? 96 : isSelf ? 124 : 140;
-                // Speech rhythm: quiet → almost still; speaking → scale + glow
-                const scale = 1 + Math.min(0.22, level * 0.28);
-                const glow = 8 + level * 36;
+                const speaking = level > 0.05;
+                const scale = speaking ? 1 + Math.min(0.28, level * 0.34) : 1;
+                const glow = speaking ? 10 + level * 40 : 0;
                 return (
                   <button
                     key={p.id}
@@ -8034,13 +8096,13 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                         width: base,
                         height: base,
                         transform: `scale(${scale})`,
-                        transition: "transform 80ms linear, box-shadow 80ms linear",
+                        transition: "transform 70ms linear, box-shadow 70ms linear",
                         background: isSelf ? "linear-gradient(145deg,#C4A574,#3D2E1F)" : "linear-gradient(145deg,#0E9AA7,#0A5A62)",
-                        border: `3px solid ${p.role === "pending" ? "rgba(251,191,36,0.75)" : level > 0.08 ? "rgba(14,154,167,0.85)" : "rgba(196,165,116,0.65)"}`,
-                        boxShadow: p.role !== "pending"
-                          ? `0 0 0 1px rgba(196,165,116,0.35), 0 0 0 ${6 + level * 10}px rgba(14,154,167,${0.08 + level * 0.2}), 0 16px 48px rgba(0,0,0,0.28), 0 0 ${glow}px rgba(14,154,167,${0.15 + level * 0.35})`
-                          : "0 10px 28px rgba(0,0,0,0.25)",
-                        animation: status === "calling" || status === "connecting"
+                        border: `3px solid ${p.role === "pending" ? "rgba(251,191,36,0.75)" : speaking ? "rgba(14,154,167,0.95)" : "rgba(196,165,116,0.55)"}`,
+                        boxShadow: speaking
+                          ? `0 0 0 1px rgba(196,165,116,0.35), 0 0 0 ${6 + level * 12}px rgba(14,154,167,${0.1 + level * 0.25}), 0 16px 48px rgba(0,0,0,0.28), 0 0 ${glow}px rgba(14,154,167,${0.2 + level * 0.4})`
+                          : "0 10px 28px rgba(0,0,0,0.22)",
+                        animation: (status === "calling" || status === "connecting")
                           ? (isSelf ? "merveilCallWave 3s ease-in-out infinite" : "merveilCallWave 3s ease-in-out infinite 0.35s")
                           : "none",
                       }}
@@ -8086,19 +8148,20 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
           </div>
         )}
 
-        {/* Local camera — always one element for the ref (PiP when connected, corner preview while ringing) */}
-        {mode === "video" && (
+        {/* Local camera — circular PiP (never force on when remote enables camera) */}
+        {(mode === "video" || videoOn) && (
           <video ref={localVideoRef} autoPlay muted playsInline
             className="absolute object-cover z-20"
             style={{
               display: videoOn ? "block" : "none",
               bottom: status === "connected" ? 144 : 120,
               right: 16,
-              width: status === "connected" ? 80 : 72,
-              height: status === "connected" ? 112 : 96,
-              borderRadius: 16,
-              border: "2px solid rgba(255,255,255,0.3)",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+              width: status === "connected" ? 96 : 80,
+              height: status === "connected" ? 96 : 80,
+              borderRadius: "50%",
+              border: "3px solid rgba(255,255,255,0.85)",
+              boxShadow: "0 8px 28px rgba(0,0,0,0.45), 0 0 0 1px rgba(14,154,167,0.35)",
+              background: "#0F172A",
             }} />
         )}
       </div>
@@ -12059,7 +12122,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         .catch(() => {});
     };
     load();
-    const interval = setInterval(load, 3500);
+    const interval = setInterval(load, 2000);
     // Realtime: any message INSERT bumps the list (call system lines included)
     let channel = null;
     (async () => {
@@ -12195,8 +12258,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           .subscribe();
       } catch {}
     })();
-    // Realtime INSERT is primary; 4s poll heals missed events without bubble flicker.
-    const interval = setInterval(load, 4000);
+    // Realtime INSERT is primary; 2s poll keeps pace with Citizens/Circle
+    const interval = setInterval(load, 2000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -25588,30 +25651,37 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
         account_type: "system",
       });
       setWorldPosts([]);
-      setStats({ worldPostCount: 0, totalViews: 0, totalLikes: 0 });
+      setStats({ worldPostCount: 0, totalViews: 0, totalLikes: 0, connectionsCount: 0 });
       setLoading(false);
       return;
     }
-    merveilFetch(`/api/people?action=profile&userId=${encodeURIComponent(userId)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!data) return;
-        setProfile(data.profile || null);
-        setWorldPosts(data.worldPosts || []);
-        setStats(data.stats || null);
-        const p = data.profile || {};
-        setFeeling(p.feeling || p.mood_emoji || "");
-        setThought(p.thought || p.mood_text || "");
-        try {
-          if (currentUser && String(currentUser.id) === String(userId)) {
-            const local = JSON.parse(localStorage.getItem("merveil_passport_mood") || "{}");
-            if (!p.feeling && local.feeling) setFeeling(local.feeling);
-            if (!p.thought && local.thought) setThought(local.thought);
-          }
-        } catch {}
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    const load = () => {
+      merveilFetch(`/api/people?action=profile&userId=${encodeURIComponent(userId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (cancelled || !data) return;
+          setProfile(data.profile || null);
+          setWorldPosts(data.worldPosts || []);
+          setStats(data.stats || null);
+          const p = data.profile || {};
+          setFeeling(p.feeling || p.mood_emoji || "");
+          setThought(p.thought || p.mood_text || "");
+          try {
+            if (currentUser && String(currentUser.id) === String(userId)) {
+              const local = JSON.parse(localStorage.getItem("merveil_passport_mood") || "{}");
+              if (!p.feeling && local.feeling) setFeeling(local.feeling);
+              if (!p.thought && local.thought) setThought(local.thought);
+            }
+          } catch {}
+        })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setLoading(false); });
+    };
+    load();
+    // Soft realtime — keep likes/views/supers/connections fresh
+    const id = setInterval(load, 12000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [userId, currentUser?.id]);
 
   useEffect(() => {
@@ -25822,15 +25892,22 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
       ) : (
         <div ref={pageScrollRef} className="flex-1 overflow-y-auto overscroll-contain"
           style={{ WebkitOverflowScrolling: "touch", paddingBottom: "calc(24px + var(--safe-bottom))" }}>
-          {/* Cover — shorter on mobile so name/stats stay visible */}
-          <div className="relative w-full overflow-hidden" style={{ height: coverUrl ? "min(42vw, 200px)" : 140, maxHeight: 220, minHeight: coverUrl ? 140 : 120 }}>
+          {/* Cover — large band that ends at the profile photo (TikTok-style) */}
+          <div
+            className="relative w-full overflow-hidden"
+            style={{
+              height: coverUrl ? "min(52vh, 320px)" : 160,
+              maxHeight: coverUrl ? 360 : 180,
+              minHeight: coverUrl ? 200 : 120,
+            }}
+          >
             {coverUrl ? (
               <video ref={coverVideoRef} src={coverUrl} muted playsInline loop autoPlay
                 className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#1a1a1a 0%,#0d0d0d 45%,#000 100%)" }} />
             )}
-            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.35) 0%,transparent 45%,rgba(26,11,46,0.96) 100%)" }} />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,rgba(0,0,0,.25) 0%,transparent 40%,rgba(10,10,10,0.92) 100%)" }} />
             {coverUrl && (
               <button type="button" aria-label="Toggle cover sound"
                 onClick={(e) => {
@@ -25842,12 +25919,12 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
                   e.currentTarget.textContent = el.muted ? "🔕" : "🔔";
                 }}
                 className="absolute z-20 w-9 h-9 rounded-full flex items-center justify-center text-base"
-                style={{ right: 12, bottom: 12, background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.25)" }}
+                style={{ right: 12, top: "calc(12px + var(--safe-top))", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.25)" }}
                 data-muted="1"
               >🔕</button>
             )}
             {isSelf && (
-              <div className="absolute bottom-3 right-3 z-20">
+              <div className="absolute z-20" style={{ left: 12, bottom: 56 }}>
                 <input ref={coverInputRef} type="file" accept="video/*,.mp4,.mov,.webm,.m4v" className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCoverVideo(f); e.target.value = ""; }} />
                 <button type="button" disabled={uploadingCover}
@@ -25861,10 +25938,10 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             )}
           </div>
 
-          {/* Identity — brand ring on charcoal */}
-          <div className="px-5 pb-3 flex flex-col items-center text-center -mt-12 relative z-10">
+          {/* Identity — photo sits on the bottom edge of the cover */}
+          <div className="px-5 pb-3 flex flex-col items-center text-center -mt-14 relative z-10">
             <div className="rounded-full p-1" style={{ background: CREATOR_BG, boxShadow: "0 0 0 3px #0E9AA7" }}>
-              <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={92} />
+              <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={96} />
             </div>
             <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: CREATOR_INK }}>{profile.name || "Merveil Citizen"}</div>
             {(profile.profession || profile.city) && (
