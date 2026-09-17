@@ -2729,97 +2729,150 @@ const VERIFICATION_TIERS = [
   },
 ];
 
-/** Capture ID / selfie: camera (permission) or gallery upload → private kyc-docs path */
+/** Capture ID / selfie — bright UI, torch, guides, private upload + base64 fallback */
 function DocCaptureField({ label, kind, path, previewUrl, onCaptured, disabled }) {
-  const camRef = useRef(null);
   const fileRef = useRef(null);
   const videoRef = useRef(null);
+  const streamRef = useRef(null);
   const [streaming, setStreaming] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const isSelfie = kind === "selfie";
 
   const stopCam = () => {
     try {
-      const s = videoRef.current?.srcObject;
-      if (s) s.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks?.().forEach((t) => t.stop());
+      streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
     } catch {}
     setStreaming(false);
+    setTorchOn(false);
   };
 
   useEffect(() => () => stopCam(), []);
 
+  const setTorch = async (on) => {
+    try {
+      const track = streamRef.current?.getVideoTracks?.()?.[0];
+      if (!track) return;
+      const caps = track.getCapabilities?.() || {};
+      if (!caps.torch) return;
+      await track.applyConstraints({ advanced: [{ torch: !!on }] });
+      setTorchOn(!!on);
+    } catch {}
+  };
+
   const startCam = async () => {
     setErr("");
+    stopCam();
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setErr("Camera not supported on this device — use Upload instead.");
+        setErr("Camera not supported — use Upload instead.");
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: kind === "selfie" ? "user" : "environment", width: { ideal: 1280 } },
+        video: {
+          facingMode: { ideal: isSelfie ? "user" : "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
+      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        videoRef.current.setAttribute("playsinline", "true");
+        videoRef.current.muted = true;
+        await videoRef.current.play().catch(() => {});
       }
       setStreaming(true);
+      // Auto torch for document (rear) — helps dark rooms
+      if (!isSelfie) {
+        setTimeout(() => setTorch(true), 400);
+      }
     } catch (e) {
       setErr(e.name === "NotAllowedError"
-        ? "Camera permission denied. Allow camera in browser settings, or upload a photo."
+        ? "Camera blocked. Allow camera in browser / phone settings, or Upload a photo."
         : (e.message || "Could not open camera."));
     }
   };
 
   const snap = async () => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !video.videoWidth) {
+      setErr("Camera not ready — wait a second and try again.");
+      return;
+    }
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth || 960;
+    canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
-    canvas.getContext("2d").drawImage(video, 0, 0);
+    const ctx = canvas.getContext("2d");
+    // Mirror selfie for natural preview store (optional un-mirror for match vendors)
+    if (isSelfie) {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0);
     stopCam();
     canvas.toBlob(async (blob) => {
-      if (!blob) return;
+      if (!blob) {
+        setErr("Could not capture frame.");
+        return;
+      }
       await uploadBlob(blob, `capture_${kind}.jpg`);
-    }, "image/jpeg", 0.88);
+    }, "image/jpeg", 0.9);
   };
 
   const uploadBlob = async (blob, filename) => {
     setBusy(true);
     setErr("");
+    const localPreview = URL.createObjectURL(blob);
     try {
       const urlRes = await merveilFetch("/api/kyc?action=upload-url", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename, kind }),
       });
-      const urlData = await urlRes.json();
-      if (!urlRes.ok) throw new Error(urlData.error || "Upload URL failed");
-
-      // Prefer signed upload when available
-      if (urlData.signedUrl) {
+      const urlData = await urlRes.json().catch(() => ({}));
+      if (urlRes.ok && urlData.signedUrl) {
         const put = await fetch(urlData.signedUrl, {
           method: "PUT",
           body: blob,
           headers: { "Content-Type": blob.type || "image/jpeg" },
         });
         if (!put.ok) throw new Error("Upload to storage failed");
-      } else {
-        // Fallback: multipart via people upload with kyc folder (may be public — path still recorded)
-        const form = new FormData();
-        form.append("file", blob, filename);
-        form.append("folder", "kyc");
-        const up = await fetch("/api/people?action=upload", { method: "POST", credentials: "include", body: form });
-        const upData = await up.json();
-        if (!up.ok) throw new Error(upData.error || "Upload failed");
-        onCaptured?.({ path: upData.url || urlData.path, previewUrl: upData.url || URL.createObjectURL(blob), kind });
-        setBusy(false);
+        onCaptured?.({ path: urlData.path, previewUrl: localPreview, kind, bucket: urlData.bucket });
         return;
       }
-      const localPreview = URL.createObjectURL(blob);
-      onCaptured?.({ path: urlData.path, previewUrl: localPreview, kind, bucket: urlData.bucket });
+      // Multipart fallback
+      const form = new FormData();
+      form.append("file", blob, filename);
+      form.append("folder", "kyc");
+      form.append("kind", kind);
+      const up = await merveilFetch("/api/kyc?action=upload", {
+        method: "POST", credentials: "include", body: form,
+      });
+      const upData = await up.json().catch(() => ({}));
+      if (up.ok && (upData.path || upData.url)) {
+        onCaptured?.({ path: upData.path || upData.url, previewUrl: upData.url || localPreview, kind });
+        return;
+      }
+      // Last resort: base64 to server
+      const b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result || ""));
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+      const bRes = await merveilFetch("/api/kyc?action=upload-base64", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl: b64, filename, kind }),
+      });
+      const bData = await bRes.json().catch(() => ({}));
+      if (!bRes.ok) throw new Error(bData.error || urlData.error || "Upload failed — create private bucket kyc-docs in Supabase.");
+      onCaptured?.({ path: bData.path || bData.url, previewUrl: localPreview, kind });
     } catch (e) {
       setErr(e.message || "Upload failed");
     } finally {
@@ -2832,26 +2885,60 @@ function DocCaptureField({ label, kind, path, previewUrl, onCaptured, disabled }
     e.target.value = "";
     if (!f) return;
     if (!f.type.startsWith("image/")) {
-      setErr("Please choose an image file.");
+      setErr("Please choose an image (JPG / PNG).");
+      return;
+    }
+    if (f.size > 12 * 1024 * 1024) {
+      setErr("Image too large (max 12 MB).");
       return;
     }
     uploadBlob(f, f.name || `doc_${kind}.jpg`);
   };
 
   return (
-    <div className="rounded-xl border p-3" style={{ borderColor: T.line, background: "#fff" }}>
+    <div className="rounded-xl border p-3" style={{ borderColor: T.line, background: isSelfie ? "#F8FAFC" : "#fff" }}>
       <div className="text-xs font-semibold mb-2" style={{ color: T.ink }}>{label}</div>
       {previewUrl ? (
         <div className="relative mb-2">
-          <img src={previewUrl} alt="" className="w-full h-36 object-cover rounded-lg" />
+          <img src={previewUrl} alt="" className="w-full h-40 object-cover rounded-lg" style={{ background: "#E5E7EB" }} />
+          <button type="button" onClick={() => onCaptured?.({ path: null, previewUrl: null, kind })}
+            className="absolute top-2 right-2 text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: "rgba(0,0,0,0.65)", color: "#fff" }}>
+            Retake
+          </button>
           <div className="text-[10px] mt-1 truncate" style={{ color: T.sub }}>{path || "Captured"}</div>
         </div>
       ) : streaming ? (
         <div className="relative mb-2">
-          <video ref={videoRef} playsInline muted className="w-full h-44 object-cover rounded-lg bg-black" />
+          <div className="relative rounded-xl overflow-hidden" style={{ background: isSelfie ? "#E0F2FE" : "#111" }}>
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              className="w-full h-52 object-cover"
+              style={{ transform: isSelfie ? "scaleX(-1)" : "none", background: isSelfie ? "#E0F2FE" : "#000" }}
+            />
+            {/* Guides */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              {isSelfie ? (
+                <div className="w-36 h-44 rounded-full border-2 border-white/80 shadow-lg" style={{ boxShadow: "0 0 0 9999px rgba(0,0,0,0.25)" }} />
+              ) : (
+                <div className="w-[88%] h-[58%] rounded-xl border-2 border-dashed border-white/70" style={{ boxShadow: "0 0 0 9999px rgba(0,0,0,0.35)" }} />
+              )}
+            </div>
+            <div className="absolute bottom-2 left-2 right-2 text-center text-[10px] font-semibold text-white drop-shadow">
+              {isSelfie ? "Center your face · good light" : "Fit the card inside the frame"}
+            </div>
+          </div>
           <div className="flex gap-2 mt-2">
+            {!isSelfie && (
+              <button type="button" onClick={() => setTorch(!torchOn)}
+                className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: torchOn ? "#FEF3C7" : T.paper, color: T.ink }}>
+                {torchOn ? "🔦 On" : "🔦"}
+              </button>
+            )}
             <button type="button" onClick={snap} disabled={busy}
-              className="flex-1 text-xs font-bold py-2 rounded-lg text-white" style={{ background: T.signal }}>
+              className="flex-1 text-xs font-bold py-2.5 rounded-lg text-white" style={{ background: "#0E9AA7" }}>
               Capture
             </button>
             <button type="button" onClick={stopCam} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: T.paper, color: T.sub }}>
@@ -2864,23 +2951,30 @@ function DocCaptureField({ label, kind, path, previewUrl, onCaptured, disabled }
           <button type="button" disabled={disabled || busy} onClick={startCam}
             className="flex-1 text-xs font-semibold py-2.5 rounded-lg flex items-center justify-center gap-1.5"
             style={{ background: T.ink, color: "#fff", opacity: disabled || busy ? 0.6 : 1 }}>
-            <span>📷</span> Take photo
+            📷 Take photo
           </button>
           <button type="button" disabled={disabled || busy} onClick={() => fileRef.current?.click()}
             className="flex-1 text-xs font-semibold py-2.5 rounded-lg flex items-center justify-center gap-1.5"
             style={{ background: T.paper, color: T.ink, opacity: disabled || busy ? 0.6 : 1 }}>
             <Upload size={13} /> Upload
           </button>
-          <input ref={fileRef} type="file" accept="image/*" capture={kind === "selfie" ? "user" : "environment"} className="hidden" onChange={onFile} />
+          <input ref={fileRef} type="file" accept="image/*" capture={isSelfie ? "user" : "environment"} className="hidden" onChange={onFile} />
         </div>
       )}
       {busy && <div className="text-[11px]" style={{ color: T.sub }}>Uploading securely…</div>}
       {err && <div className="text-[11px] mt-1" style={{ color: "#DC2626" }}>{err}</div>}
       <p className="text-[10px] mt-1" style={{ color: T.sub }}>
-        Photos go to private storage. Merveil stores verification status — not a permanent public document gallery.
+        Private storage only. Used for verification — never shown on your public profile.
       </p>
     </div>
   );
+}
+
+/** Emirates ID format 784-YYYY-XXXXXXX-C (checksum not enforced client-side) */
+function normalizeEmiratesId(raw) {
+  const d = String(raw || "").replace(/\D/g, "");
+  if (d.length !== 15) return null;
+  return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7, 14)}-${d.slice(14)}`;
 }
 
 
@@ -3219,7 +3313,7 @@ function PassportUpgradeSheet({ user, capability, onActivate, onClose, switching
           </ul>
         </div>
         <p className="text-[10px] mt-3" style={{ color: T.sub }}>
-          Activation requires verified identity (KYC). Payment is taken from your Merveil Wallet after verification — prices are shown only at checkout.
+          Paid Passport tiers need verified identity + wallet payment. Everyday Merveil (Connect, World, messages) works worldwide without ID.
         </p>
         <div className="flex gap-2 mt-4">
           <button type="button" onClick={onClose}
@@ -10632,21 +10726,13 @@ function PostServiceModal({ onClose, statuses, onPublish }) {
           <button onClick={onClose}><X size={18} style={{ color: T.sub }} /></button>
         </div>
 
-        {!emiratesIdOk ? (
-          <div className="p-5 flex flex-col gap-3 items-center text-center">
-            <CreditCard size={28} style={{ color: T.navy }} />
-            <div className="text-sm font-semibold" style={{ color: T.ink }}>Verify your Emirates ID first</div>
-            <p className="text-xs max-w-xs" style={{ color: T.sub }}>
-              Any tradesperson — carpenter, plumber, electrician, AC technician, and more — can list
-              their service once Emirates ID verification is complete.
-            </p>
-            <button onClick={onClose} className="text-xs font-semibold px-4 py-2 rounded-lg" style={{ background: T.ink, color: T.paper }}>
-              Got it
-            </button>
-          </div>
-        ) : (
-          <>
+        <>
           <div className="p-4 flex flex-col gap-3 overflow-y-auto" style={{ flex: "1 1 auto", minHeight: 0 }}>
+            {!emiratesIdOk && (
+              <div className="text-[11px] px-3 py-2 rounded-lg" style={{ background: "#FEF3C7", color: "#92400E" }}>
+                Optional: verify identity in Passport for a Verified badge. Anyone worldwide can list without ID.
+              </div>
+            )}
             <input
               placeholder="Your name or business name"
               value={form.name}
@@ -10721,8 +10807,7 @@ function PostServiceModal({ onClose, statuses, onPublish }) {
               Submit for review
             </button>
           </div>
-          </>
-        )}
+        </>
       </div>
     </div>
   );
@@ -21569,7 +21654,10 @@ function VerifyView({ statuses, setStatuses, currentUser, onUserUpdated }) {
 function PassportKycPanel({ statuses, setStatuses, currentUser, onUserUpdated }) {
   const [kycStatus, setKycStatus] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTier, setActiveTier] = useState(null);
+  // method: null | 'uae_pass' | 'scan' | 'passport'
+  const [method, setMethod] = useState(null);
+  // scan steps: 0 pick · 1 id · 2 selfie · 3 confirm
+  const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     fullLegalName: currentUser?.name || "",
     nationality: "",
@@ -21580,10 +21668,12 @@ function PassportKycPanel({ statuses, setStatuses, currentUser, onUserUpdated })
     idDocumentExpiresAt: "",
     level: "standard",
   });
-  const [docs, setDocs] = useState({ id_front: null, id_back: null, selfie: null, company_doc: null });
+  const [docs, setDocs] = useState({ id_front: null, id_back: null, selfie: null });
+  const [ocrHint, setOcrHint] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
+  const [providers, setProviders] = useState({ uaePass: false, vendor: false });
 
   const load = async () => {
     setLoading(true);
@@ -21592,6 +21682,7 @@ function PassportKycPanel({ statuses, setStatuses, currentUser, onUserUpdated })
       const data = await res.json();
       if (res.ok) {
         setKycStatus(data);
+        setProviders(data.providers || { uaePass: false, vendor: false });
         const p = data.profile || {};
         if (p.full_legal_name || p.kyc_status) {
           setForm((f) => ({
@@ -21602,9 +21693,9 @@ function PassportKycPanel({ statuses, setStatuses, currentUser, onUserUpdated })
             idDocumentType: p.id_document_type || f.idDocumentType,
             idDocumentNumber: p.id_document_number || f.idDocumentNumber,
             idDocumentCountry: p.id_document_country || f.idDocumentCountry,
+            idDocumentExpiresAt: p.id_document_expires_at || f.idDocumentExpiresAt,
           }));
         }
-        // Sync local statuses from server (no fake verified)
         if (p.kyc_status === "verified") {
           setStatuses?.((prev) => ({ ...prev, EMIRATES_ID: "verified", PASSPORT_DOC: "verified", SELFIE: "verified" }));
         } else if (p.kyc_status === "pending") {
@@ -21617,37 +21708,134 @@ function PassportKycPanel({ statuses, setStatuses, currentUser, onUserUpdated })
 
   useEffect(() => { load(); }, [currentUser?.id]);
 
+  // UAE Pass return: ?kyc=uae_pass&code=
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search || "");
+      const code = q.get("code") || q.get("uae_pass_code");
+      if (q.get("kyc") === "uae_pass" && code) {
+        setBusy(true);
+        merveilFetch("/api/kyc?action=uae-pass-callback", {
+          method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, state: q.get("state") }),
+        })
+          .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+          .then(({ ok, d }) => {
+            if (!ok) throw new Error(d.error || "UAE Pass failed");
+            setMsg(d.status === "verified" ? "Verified with UAE Pass." : "UAE Pass submitted.");
+            load();
+            onUserUpdated?.({ kycStatus: d.status || "pending" });
+          })
+          .catch((e) => setError(e.message))
+          .finally(() => setBusy(false));
+      }
+    } catch {}
+  }, []);
+
+  const startUaePass = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      const res = await merveilFetch("/api/kyc?action=uae-pass-start", { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "UAE Pass not configured yet");
+      if (data.authorizeUrl) {
+        window.location.href = data.authorizeUrl;
+        return;
+      }
+      throw new Error(data.hint || "Add UAE_PASS_CLIENT_ID in env to enable.");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runOcr = async (frontPath) => {
+    if (!frontPath) return;
+    try {
+      const res = await merveilFetch("/api/kyc?action=ocr", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idFrontPath: frontPath, documentType: form.idDocumentType }),
+      });
+      const data = await res.json();
+      if (res.ok && data.fields) {
+        setOcrHint(data);
+        setForm((f) => ({
+          ...f,
+          fullLegalName: data.fields.fullLegalName || f.fullLegalName,
+          idDocumentNumber: data.fields.idDocumentNumber || f.idDocumentNumber,
+          nationality: data.fields.nationality || f.nationality,
+          dateOfBirth: data.fields.dateOfBirth || f.dateOfBirth,
+          idDocumentExpiresAt: data.fields.expiry || f.idDocumentExpiresAt,
+        }));
+        if (data.autoFilled) setMsg("Details filled from your document — check and continue.");
+      }
+    } catch {}
+  };
+
+  const onFrontCaptured = async (c) => {
+    setDocs((d) => ({ ...d, id_front: c?.path ? c : null }));
+    if (c?.path) {
+      await runOcr(c.path);
+      setStep(2);
+    }
+  };
+
   const submit = async () => {
     setBusy(true);
     setError("");
     setMsg("");
     try {
-      if (!form.fullLegalName || !form.idDocumentNumber) {
+      let number = form.idDocumentNumber;
+      if (form.idDocumentType === "emirates_id") {
+        const norm = normalizeEmiratesId(number);
+        if (!norm) throw new Error("Emirates ID must be 15 digits (784-YYYY-XXXXXXX-C).");
+        number = norm;
+      }
+      if (!form.fullLegalName || !number) {
         throw new Error("Full legal name and document number are required.");
       }
-      if (!docs.id_front?.path && !docs.selfie?.path) {
-        throw new Error("Capture or upload at least your ID front (or passport) and preferably a selfie.");
+      if (!docs.id_front?.path) {
+        throw new Error("Capture or upload the front of your ID first.");
       }
+      if (!docs.selfie?.path) {
+        throw new Error("Selfie is required so we can match your face to the ID.");
+      }
+      // Vendor path when keys are wired — otherwise admin review
       const res = await merveilFetch("/api/kyc?action=submit", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          type: activeTier?.kycType || "identity",
-          level: activeTier?.kycLevel || form.level,
+          idDocumentNumber: number,
+          type: "identity",
+          level: method === "passport" ? "basic" : "standard",
+          method: method || "scan",
           idFrontPath: docs.id_front?.path || null,
           idBackPath: docs.id_back?.path || null,
           selfiePath: docs.selfie?.path || null,
-          companyDocPath: docs.company_doc?.path || null,
+          runVendor: true,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Submit failed");
-      setMsg("Submitted for review. You’ll be notified when verified.");
-      setStatuses?.((prev) => ({ ...prev, EMIRATES_ID: "pending", SELFIE: docs.selfie ? "pending" : (prev.SELFIE || "none") }));
-      setActiveTier(null);
+      if (data.status === "verified") {
+        setMsg("Identity verified.");
+        setStatuses?.((prev) => ({ ...prev, EMIRATES_ID: "verified", SELFIE: "verified" }));
+        onUserUpdated?.({ kycStatus: "verified" });
+      } else {
+        setMsg(data.vendor
+          ? "Submitted to verification provider — usually under a minute."
+          : "Submitted for review. You’ll be notified when verified.");
+        setStatuses?.((prev) => ({ ...prev, EMIRATES_ID: "pending", SELFIE: "pending" }));
+        onUserUpdated?.({ kycStatus: "pending" });
+      }
+      setMethod(null);
+      setStep(0);
       await load();
-      onUserUpdated?.({ kycStatus: "pending" });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -21672,112 +21860,166 @@ function PassportKycPanel({ statuses, setStatuses, currentUser, onUserUpdated })
         <div>
           <div className="text-sm font-semibold" style={{ color: T.ink }}>Passport identity</div>
           <div className="text-xs mt-0.5" style={{ color: T.sub }}>
-            {serverStatus === "verified" ? "Verified — paid Passports & payouts unlocked"
-              : serverStatus === "pending" ? "Under review (usually 24–48h)"
+            {serverStatus === "verified" ? "Verified — wallet payouts & paid Passports unlocked"
+              : serverStatus === "pending" ? "Under review"
               : serverStatus === "rejected" ? (kycStatus?.profile?.kyc_rejected_reason || "Rejected — resubmit")
-              : "Not verified yet"}
+              : "Optional — use Merveil worldwide without ID"}
           </div>
         </div>
         <span className="text-[10px] font-bold px-2.5 py-1 rounded-full uppercase" style={{ background: statusColor.bg, color: statusColor.fg }}>
-          {serverStatus}
+          {serverStatus === "none" ? "optional" : serverStatus}
         </span>
       </div>
 
+      {serverStatus !== "verified" && (
+        <div className="text-[11px] leading-relaxed px-3 py-2.5 rounded-xl" style={{ background: "#F0FDFA", color: "#134E4A", border: "1px solid #99F6E4" }}>
+          <strong>Open to the world.</strong> Connect, World, Pulse, messages, calls, and posting work without Emirates ID or passport.
+          Verify only if you want a badge, higher trust, wallet payouts, or paid Passport tiers. Merveil AI stays limited per day on free use.
+        </div>
+      )}
+
       {error && <div className="text-xs px-3 py-2 rounded-lg" style={{ background: "#FEE2E2", color: "#DC2626" }}>{error}</div>}
       {msg && <div className="text-xs px-3 py-2 rounded-lg" style={{ background: "#DCFCE7", color: "#16A34A" }}>{msg}</div>}
-
-      {serverStatus !== "verified" && !activeTier && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {VERIFICATION_TIERS.map((tier) => {
-            const local = statuses?.[tier.type] || "none";
-            const Icon = tier.icon;
-            return (
-              <div key={tier.type} className="rounded-xl p-4 border flex flex-col gap-2" style={{ borderColor: T.line, background: "#fff" }}>
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: T.paper }}>
-                    <Icon size={17} style={{ color: T.navy }} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold" style={{ color: T.ink }}>{tier.title}</div>
-                    <div className="text-xs" style={{ color: T.sub }}>{tier.subtitle}</div>
-                  </div>
-                </div>
-                <ul className="text-xs flex flex-col gap-0.5" style={{ color: T.sub }}>
-                  {tier.unlocks.map((u, i) => <li key={i}>• {u}</li>)}
-                </ul>
-                <button
-                  type="button"
-                  disabled={serverStatus === "pending"}
-                  onClick={() => setActiveTier(tier)}
-                  className="text-xs font-semibold px-3 py-2 rounded-lg flex items-center justify-center gap-1.5 mt-auto"
-                  style={{ background: T.ink, color: "#fff", opacity: serverStatus === "pending" ? 0.5 : 1 }}
-                >
-                  <Upload size={13} />
-                  {serverStatus === "pending" ? "Pending review" : local === "pending" ? "Resubmit" : "Verify with photo"}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {activeTier && serverStatus !== "verified" && (
-        <div className="rounded-2xl border p-4 flex flex-col gap-3" style={{ borderColor: T.line, background: "#fff" }}>
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-bold" style={{ color: T.ink }}>Submit: {activeTier.title}</div>
-            <button type="button" onClick={() => setActiveTier(null)} className="text-xs" style={{ color: T.sub }}>Close</button>
-          </div>
-          {[
-            ["fullLegalName", "Full legal name (as on document)"],
-            ["idDocumentNumber", "Document number"],
-            ["nationality", "Nationality"],
-            ["dateOfBirth", "Date of birth (YYYY-MM-DD)"],
-            ["idDocumentExpiresAt", "Expiry (YYYY-MM-DD)"],
-          ].map(([key, label]) => (
-            <div key={key}>
-              <label className="text-[11px] font-medium" style={{ color: T.sub }}>{label}</label>
-              <input value={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                className="w-full mt-0.5 px-3 py-2 rounded-lg border text-sm outline-none" style={{ borderColor: T.line }} />
-            </div>
-          ))}
-          <div>
-            <label className="text-[11px] font-medium" style={{ color: T.sub }}>Document type</label>
-            <select value={form.idDocumentType} onChange={(e) => setForm((f) => ({ ...f, idDocumentType: e.target.value }))}
-              className="w-full mt-0.5 px-3 py-2 rounded-lg border text-sm outline-none" style={{ borderColor: T.line }}>
-              <option value="emirates_id">Emirates ID</option>
-              <option value="passport">Passport</option>
-              <option value="trade_license">Trade license</option>
-              <option value="rera">RERA / broker card</option>
-            </select>
-          </div>
-          <DocCaptureField
-            label={activeTier.type === "SELFIE" ? "Selfie (liveness)" : "Document front / main page"}
-            kind={activeTier.docKind || "id_front"}
-            path={docs[activeTier.docKind || "id_front"]?.path}
-            previewUrl={docs[activeTier.docKind || "id_front"]?.previewUrl}
-            onCaptured={(c) => setDocs((d) => ({ ...d, [c.kind]: c }))}
-          />
-          {activeTier.type !== "SELFIE" && (
-            <DocCaptureField
-              label="Selfie matching ID (recommended)"
-              kind="selfie"
-              path={docs.selfie?.path}
-              previewUrl={docs.selfie?.previewUrl}
-              onCaptured={(c) => setDocs((d) => ({ ...d, selfie: c }))}
-            />
-          )}
-          <button type="button" disabled={busy} onClick={submit}
-            className="py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ background: "linear-gradient(135deg,#0E7490,#1E3A5F)", opacity: busy ? 0.7 : 1 }}>
-            {busy ? "Submitting…" : "Submit for review"}
-          </button>
-        </div>
-      )}
 
       {serverStatus === "verified" && (
         <div className="text-sm rounded-xl p-4" style={{ background: "#F0FDF4", color: "#166534" }}>
           ✓ Identity verified{kycStatus?.profile?.kyc_verified_at ? ` on ${new Date(kycStatus.profile.kyc_verified_at).toLocaleDateString()}` : ""}.
           You can activate paid Passports and request payouts from Passport → Wallet.
+        </div>
+      )}
+
+      {serverStatus !== "verified" && !method && (
+        <div className="flex flex-col gap-3">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: T.sub }}>Optional verification</div>
+
+          {/* Path A — UAE Pass */}
+          <button type="button" disabled={serverStatus === "pending" || busy}
+            onClick={() => { setMethod("uae_pass"); startUaePass(); }}
+            className="text-left rounded-2xl border p-4 flex gap-3 items-start"
+            style={{ borderColor: "#0E9AA7", background: "linear-gradient(135deg,#F0FDFA,#fff)", opacity: serverStatus === "pending" ? 0.5 : 1 }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "#0E9AA7", color: "#fff", fontWeight: 800 }}>U</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold" style={{ color: T.ink }}>UAE Pass · recommended</div>
+              <div className="text-xs mt-0.5" style={{ color: T.sub }}>One tap · government identity · no document photos</div>
+              <div className="text-[10px] mt-1 font-semibold" style={{ color: providers.uaePass ? "#16A34A" : "#B45309" }}>
+                {providers.uaePass ? "Ready" : "Wire UAE_PASS_CLIENT_ID to enable"}
+              </div>
+            </div>
+          </button>
+
+          {/* Path B — Scan */}
+          <button type="button" disabled={serverStatus === "pending"}
+            onClick={() => { setMethod("scan"); setStep(1); setForm((f) => ({ ...f, idDocumentType: "emirates_id" })); }}
+            className="text-left rounded-2xl border p-4 flex gap-3 items-start"
+            style={{ borderColor: T.line, background: "#fff" }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: T.paper }}>🪪</div>
+            <div>
+              <div className="text-sm font-bold" style={{ color: T.ink }}>Scan Emirates ID</div>
+              <div className="text-xs mt-0.5" style={{ color: T.sub }}>Photo of card → auto-fill → selfie match</div>
+            </div>
+          </button>
+
+          {/* Path C — Passport */}
+          <button type="button" disabled={serverStatus === "pending"}
+            onClick={() => { setMethod("passport"); setStep(1); setForm((f) => ({ ...f, idDocumentType: "passport", idDocumentCountry: "" })); }}
+            className="text-left rounded-2xl border p-4 flex gap-3 items-start"
+            style={{ borderColor: T.line, background: "#fff" }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: T.paper }}>🛂</div>
+            <div>
+              <div className="text-sm font-bold" style={{ color: T.ink }}>International passport</div>
+              <div className="text-xs mt-0.5" style={{ color: T.sub }}>Visitors & non-residents · photo + selfie</div>
+            </div>
+          </button>
+
+          {serverStatus === "pending" && (
+            <div className="text-xs text-center" style={{ color: T.sub }}>A submission is already under review.</div>
+          )}
+        </div>
+      )}
+
+      {/* Scan / passport flow */}
+      {method && method !== "uae_pass" && serverStatus !== "verified" && (
+        <div className="rounded-2xl border p-4 flex flex-col gap-3" style={{ borderColor: T.line, background: "#fff" }}>
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-bold" style={{ color: T.ink }}>
+              {method === "scan" ? "Emirates ID verification" : "Passport verification"}
+            </div>
+            <button type="button" onClick={() => { setMethod(null); setStep(0); setError(""); }} className="text-xs" style={{ color: T.sub }}>Close</button>
+          </div>
+
+          {/* Progress */}
+          <div className="flex gap-1.5">
+            {["ID photo", "Selfie", "Confirm"].map((label, i) => (
+              <div key={label} className="flex-1">
+                <div className="h-1 rounded-full mb-1" style={{ background: step > i ? "#0E9AA7" : step === i + 1 ? "#67E8F9" : "rgba(0,0,0,0.08)" }} />
+                <div className="text-[9px] font-semibold text-center" style={{ color: step >= i + 1 ? T.ink : T.sub }}>{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {step === 1 && (
+            <>
+              <DocCaptureField
+                label={method === "scan" ? "Emirates ID — front" : "Passport photo page"}
+                kind="id_front"
+                path={docs.id_front?.path}
+                previewUrl={docs.id_front?.previewUrl}
+                onCaptured={onFrontCaptured}
+              />
+              {docs.id_front?.path && (
+                <button type="button" onClick={() => setStep(2)} className="text-xs font-bold py-2.5 rounded-xl text-white" style={{ background: "#0E9AA7" }}>
+                  Continue to selfie
+                </button>
+              )}
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <DocCaptureField
+                label="Selfie — match the photo on your ID"
+                kind="selfie"
+                path={docs.selfie?.path}
+                previewUrl={docs.selfie?.previewUrl}
+                onCaptured={(c) => {
+                  setDocs((d) => ({ ...d, selfie: c?.path ? c : null }));
+                  if (c?.path) setStep(3);
+                }}
+              />
+              <button type="button" onClick={() => setStep(1)} className="text-xs" style={{ color: T.sub }}>← Back to ID</button>
+            </>
+          )}
+
+          {step === 3 && (
+            <>
+              <div className="text-xs" style={{ color: T.sub }}>
+                Confirm the details{ocrHint?.autoFilled ? " (filled from your document)" : ""}. Wrong number + right name will fail when the provider is wired.
+              </div>
+              {[
+                ["fullLegalName", "Full legal name (as on document)"],
+                ["idDocumentNumber", method === "scan" ? "Emirates ID number" : "Passport number"],
+                ["nationality", "Nationality"],
+                ["dateOfBirth", "Date of birth (YYYY-MM-DD)"],
+                ["idDocumentExpiresAt", "Expiry (YYYY-MM-DD)"],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <label className="text-[11px] font-medium" style={{ color: T.sub }}>{label}</label>
+                  <input value={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                    className="w-full mt-0.5 px-3 py-2.5 rounded-lg border text-sm outline-none" style={{ borderColor: T.line, background: "#F9FAFB" }} />
+                </div>
+              ))}
+              <div className="flex gap-2">
+                {docs.id_front?.previewUrl && <img src={docs.id_front.previewUrl} alt="" className="w-16 h-16 object-cover rounded-lg" />}
+                {docs.selfie?.previewUrl && <img src={docs.selfie.previewUrl} alt="" className="w-16 h-16 object-cover rounded-lg" />}
+              </div>
+              <button type="button" disabled={busy} onClick={submit}
+                className="py-3 rounded-xl text-sm font-bold text-white"
+                style={{ background: "linear-gradient(135deg,#0E9AA7,#134E4A)", opacity: busy ? 0.7 : 1 }}>
+                {busy ? "Submitting…" : providers.vendor ? "Verify with provider" : "Submit for review"}
+              </button>
+              <button type="button" onClick={() => setStep(2)} className="text-xs" style={{ color: T.sub }}>← Back to selfie</button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -21912,36 +22154,29 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
           <button onClick={onClose}><X size={18} style={{ color: T.sub }} /></button>
         </div>
 
-        {!emiratesIdOk && (
-          <div className="p-5 flex flex-col gap-3 items-center text-center overflow-y-auto">
-            <CreditCard size={28} style={{ color: T.navy }} />
-            <div className="text-sm font-semibold" style={{ color: T.ink }}>Verify your Emirates ID first</div>
-            <p className="text-xs max-w-xs" style={{ color: T.sub }}>
-              Posting requires a basic identity check. Head to "Get verified" and complete the
-              Emirates ID step in Passport.
-            </p>
-            <button onClick={onClose} className="text-xs font-semibold px-4 py-2 rounded-lg" style={{ background: T.ink, color: T.paper }}>
-              Got it
-            </button>
-          </div>
-        )}
-
-        {emiratesIdOk && step === 1 && (
+        {step === 1 && (
           <>
           <div className="p-4 flex flex-col gap-3 overflow-y-auto" style={{ flex: "1 1 auto", minHeight: 0 }}>
+            {!emiratesIdOk && (
+              <div className="text-[11px] px-3 py-2 rounded-lg" style={{ background: "#FEF3C7", color: "#92400E" }}>
+                Optional: verify in Passport for a Verified badge. You can post from anywhere without ID.
+              </div>
+            )}
             <div className="text-xs font-semibold" style={{ color: T.sub }}>STEP 1 — How are you listing this?</div>
             {listerOptions.map((opt) => {
-              const eligible = (statuses[opt.requires] || "none") === "verified";
+              // Global access: identity is optional. Verified users get a badge, not a gate.
+              const eligible = true;
+              const isVerifiedForOpt = !opt.requires || (statuses[opt.requires] || "none") === "verified";
               return (
                 <button
                   key={opt.type}
-                  disabled={!eligible}
+                  disabled={false}
                   onClick={() => setListedAs(opt.type)}
                   className="text-left p-3 rounded-lg border flex items-center justify-between"
                   style={{
                     borderColor: listedAs === opt.type ? T.navy : T.line,
                     background: listedAs === opt.type ? T.paper : "#fff",
-                    opacity: eligible ? 1 : 0.45,
+                    opacity: 1,
                   }}
                 >
                   <div>
@@ -21970,7 +22205,7 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
           </>
         )}
 
-        {emiratesIdOk && step === 2 && (
+        {step === 2 && (
           <>
           <div className="p-4 flex flex-col gap-3 overflow-y-auto" style={{ flex: "1 1 auto", minHeight: 0 }}>
             <div className="text-xs font-semibold" style={{ color: T.sub }}>STEP 2 — Property details</div>
@@ -22125,7 +22360,7 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
           </>
         )}
 
-        {emiratesIdOk && step === 3 && (
+        {step === 3 && (
           <>
           <div className="p-5 flex flex-col gap-3 items-center text-center overflow-y-auto">
             <CheckCircle2 size={32} style={{ color: "#1F7A4D" }} />
