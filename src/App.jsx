@@ -8656,12 +8656,44 @@ function useIncomingCallListener(currentUser) {
     const onPushClick = (e) => {
       const d = e?.detail || e?.data || {};
       const callId = d.callId || d.data?.callId;
-      if (callId) poll();
+      const action = d.notificationAction || d.action || "";
+      if (!callId) {
+        poll();
+        return;
+      }
+      if (action === "decline") {
+        merveilFetch("/api/calls?action=reject", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callId }),
+        }).catch(() => {});
+        setIncoming((cur) => (cur?.id === callId ? null : cur));
+        return;
+      }
+      // Answer or open → surface ringing row immediately
+      merveilFetch(`/api/calls?action=status&callId=${encodeURIComponent(callId)}`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          const row = data?.call;
+          if (row?.status === "ringing") setIncoming(row);
+          else poll();
+        })
+        .catch(() => poll());
     };
     window.addEventListener("merveil:notification-click", onPushClick);
-    navigator.serviceWorker?.addEventListener?.("message", (ev) => {
+    const onSwMsg = (ev) => {
       if (ev?.data?.type === "merveil:notification-click") onPushClick({ detail: ev.data.data || {} });
-    });
+    };
+    navigator.serviceWorker?.addEventListener?.("message", onSwMsg);
+    // Deep link from SW: /?answerCall=...
+    try {
+      const params = new URLSearchParams(window.location.search || window.location.hash.split("?")[1] || "");
+      const ac = params.get("answerCall");
+      const dc = params.get("declineCall");
+      if (ac) onPushClick({ detail: { callId: ac, notificationAction: "answer" } });
+      if (dc) onPushClick({ detail: { callId: dc, notificationAction: "decline" } });
+    } catch {}
 
     return () => {
       cancelled = true;
@@ -8669,6 +8701,7 @@ function useIncomingCallListener(currentUser) {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onVis);
       window.removeEventListener("merveil:notification-click", onPushClick);
+      try { navigator.serviceWorker?.removeEventListener?.("message", onSwMsg); } catch {}
       channel.unsubscribe();
     };
   }, [currentUser?.id]);
@@ -12112,12 +12145,23 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (cancelled || !data?.conversations) return;
-          const sorted = [...data.conversations].sort((a, b) => {
-            const ta = new Date(a.last_message_at || a.updated_at || a.created_at || 0).getTime();
-            const tb = new Date(b.last_message_at || b.updated_at || b.created_at || 0).getTime();
-            return tb - ta;
+          setThreads((prev) => {
+            const merged = stableMergeById(prev, data.conversations);
+            // Sort after merge so client bumps (ContactClock) keep thread on top
+            return [...merged].sort((a, b) => {
+              const otherA = (a.participant_ids || []).map(String).find((id) => id !== String(currentUser.id));
+              const otherB = (b.participant_ids || []).map(String).find((id) => id !== String(currentUser.id));
+              const ta = Math.max(
+                new Date(a.last_message_at || a.updated_at || 0).getTime() || 0,
+                ContactClock.get(otherA) || 0
+              );
+              const tb = Math.max(
+                new Date(b.last_message_at || b.updated_at || 0).getTime() || 0,
+                ContactClock.get(otherB) || 0
+              );
+              return tb - ta;
+            });
           });
-          setThreads((prev) => stableMergeById(prev, sorted));
         })
         .catch(() => {});
     };
@@ -12502,14 +12546,23 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     setThreadMessages((p) => [...p, optimistic]);
     try { MerveilChatTones.send(); } catch {}
     if (activeId) {
+      if (otherUserId) ContactClock.bump(otherUserId, Date.now());
       setThreads((prev) => {
         const next = prev.map((t) =>
           t.id === activeId
             ? { ...t, last_body: payload.is_e2ee ? "🔒 Secure message" : preview, last_message_at: nowIso, updated_at: nowIso }
             : t
         );
-        return [...next].sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+        // Keep newest first using max of last_message_at + ContactClock (no bounce down)
+        return [...next].sort((a, b) => {
+          const otherA = (a.participant_ids || []).map(String).find((id) => id !== String(currentUser.id));
+          const otherB = (b.participant_ids || []).map(String).find((id) => id !== String(currentUser.id));
+          const ta = Math.max(new Date(a.last_message_at || 0).getTime() || 0, ContactClock.get(otherA) || 0);
+          const tb = Math.max(new Date(b.last_message_at || 0).getTime() || 0, ContactClock.get(otherB) || 0);
+          return tb - ta;
+        });
       });
+      // Soft refresh — merge preserves newer last_message_at via stableMergeById
       try { window.dispatchEvent(new CustomEvent("merveil:conversations-refresh")); } catch {}
     }
     if (!isOnline) {
@@ -13014,11 +13067,10 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               const status = r.status || "offline";
               const isFav = favoriteIds.includes(r.userId);
               const displayName = r.name || profiles[r.userId]?.name || `Merveil User #${String(r.userId).slice(0, 8)}`;
-              // Every row here has a real thread now — the only remaining
-              // "nothing to show" case is a brand-new conversation with no
-              // messages sent yet, which gets an honest empty-state string
-              // instead of the old generic "Conversation" placeholder.
-              const subtitle = r.thread.last_body || r.thread.context_label || (r.thread.last_message_at ? "Conversation" : "Tap to open");
+              // Preview under the name — envelope under the word Message when empty
+              const rawPreview = (r.thread.last_body || r.thread.context_label || "").trim();
+              const isCallLine = /missed|video call|voice call|call ended|📞|📹/i.test(rawPreview);
+              const subtitle = rawPreview || "Message";
               const open = async () => {
                 setActiveId(r.thread.id);
                 setMobileView("chat");
@@ -13068,7 +13120,16 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                       </div>
                       <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
                         {isMissed && <Phone size={12} style={{ color: "#E0554C", flexShrink: 0 }} />}
-                        <span className="text-[13px] truncate block" style={{ color: unreadN > 0 ? CT.ink : CT.sub, fontWeight: unreadN > 0 ? 600 : 400 }}>{subtitle}</span>
+                        {!rawPreview ? (
+                          <span className="flex flex-col items-start leading-tight">
+                            <span className="text-[13px] font-medium" style={{ color: CT.sub }}>Message</span>
+                            <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1 }} aria-hidden>💌</span>
+                          </span>
+                        ) : (
+                          <span className="text-[13px] truncate block" style={{ color: unreadN > 0 ? CT.ink : CT.sub, fontWeight: unreadN > 0 ? 600 : 400 }}>
+                            {isCallLine && !isMissed ? "📞 " : ""}{subtitle}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0 pl-1" style={{ minWidth: 44 }}>
@@ -13239,9 +13300,10 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           )}
           {activeMessages.map((m, i) => {
             const mine = isAiThread ? m.from === "me" : String(m.sender_id) === String(currentUser.id);
-            const isSystem = m.from === "system";
             const type = m.type || "text";
             const text = m.text ?? m.body;
+            const isSystem = m.from === "system" || type === "system"
+              || /^(📞|📹)?\s*(Missed|Video call|Voice call|Call ended)/i.test(String(text || "").trim());
             const ts = m.created_at || m.createdAt;
             const timeLabel = ts ? new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "";
             const prev = activeMessages[i - 1];
@@ -13249,7 +13311,20 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             const daySep = ts && (!prevTs || new Date(ts).toDateString() !== new Date(prevTs).toDateString())
               ? new Date(ts).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
               : null;
-            if (isSystem) return <div key={i} className="text-center text-[11px] py-2 font-medium" style={{ color: T.sub }}>{text}</div>;
+            if (isSystem) {
+              return (
+                <React.Fragment key={m.id || i}>
+                  {daySep && (
+                    <div className="flex justify-center my-3">
+                      <span className="text-[11px] font-semibold px-3 py-1 rounded-full tracking-wide" style={{ background: "#FFFFFF", color: "#5C6570", border: "1px solid rgba(18,22,28,0.08)" }}>{daySep}</span>
+                    </div>
+                  )}
+                  <div className="text-center text-[11px] py-2 font-semibold" style={{ color: /missed/i.test(String(text || "")) ? "#E0554C" : "#5C6570" }}>
+                    {text}
+                  </div>
+                </React.Fragment>
+              );
+            }
             return (
               <React.Fragment key={m.id || i}>
                 {daySep && (
@@ -19655,16 +19730,12 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     merveilFetch("/api/world?limit=40")
       .then(r => r.ok ? r.json() : { posts: [] })
       .then(data => {
-        const list = data.posts || [];
-        // Empty live feed → hydrate with AI seeds so engagement state is mutable
+        const list = (data.posts || []).filter((p) => !p._seed && !String(p.id || "").startsWith("merveil-ai-seed"));
+        // Empty live feed → empty state (seeds removed)
         if (!list.length) {
           setPosts((prev) => {
-            // Silent refresh: never wipe a non-empty feed with seeds
-            if (silent && prev.length) return prev;
-            return rankWorldReels(MERVEIL_AI_SEED_REELS.map((s) => ({ ...s })), {
-              userId: currentUser?.id,
-              affinity: readWorldAffinity(),
-            });
+            if (silent && prev.length) return prev.filter((p) => !p._seed && !String(p.id || "").startsWith("merveil-ai-seed"));
+            return [];
           });
           if (!silent) {
             setHasMoreWorld(false);
@@ -19708,11 +19779,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         }
       })
       .catch(() => {
-        // Network failure with empty state still show seeds
-        setPosts((prev) => (prev.length ? prev : rankWorldReels(MERVEIL_AI_SEED_REELS.map((s) => ({ ...s })), {
-          userId: currentUser?.id,
-          affinity: readWorldAffinity(),
-        })));
+        setPosts((prev) => prev.filter((p) => !p._seed && !String(p.id || "").startsWith("merveil-ai-seed")));
       })
       .finally(() => { if (!silent) setLoading(false); });
   };
@@ -19857,8 +19924,13 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     return () => window.removeEventListener("merveil:world-comment", onComment);
   }, []);
 
-  // SAVE — private bookmark, no public count (unlike like/super).
+  // SAVE — private bookmark + step-by-step gallery (TikTok/IG saved)
   const [savedIds, setSavedIds] = useState([]);
+  const [showGallery, setShowGallery] = useState(false);
+  const [galleryItems, setGalleryItems] = useState([]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [galleryStep, setGalleryStep] = useState(0); // 0 list · 1 detail · 2 download
+  const [galleryFocus, setGalleryFocus] = useState(null);
   useEffect(() => {
     if (!currentUser?.id) { setSavedIds([]); return; }
     merveilFetch("/api/world?action=saves")
@@ -19867,31 +19939,98 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       .catch(() => {});
   }, [currentUser?.id]);
 
+  const openSavedGallery = () => {
+    if (!currentUser) { onSignIn?.(); return; }
+    setShowGallery(true);
+    setGalleryStep(0);
+    setGalleryFocus(null);
+    setGalleryLoading(true);
+    merveilFetch("/api/world?action=gallery", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setGalleryItems(d?.items || []))
+      .catch(() => setGalleryItems([]))
+      .finally(() => setGalleryLoading(false));
+  };
+
+  const downloadWorldToDevice = async (post) => {
+    if (!post?.id) {
+      try {
+        window.dispatchEvent(new CustomEvent("merveil:toast", {
+          detail: { type: "error", message: "No media to save to gallery." },
+        }));
+      } catch {}
+      return;
+    }
+    // Step 1: same-origin API proxy (avoids storage CORS)
+    try {
+      const res = await merveilFetch(`/api/world?action=download&postId=${encodeURIComponent(post.id)}`, {
+        credentials: "include",
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const ctype = res.headers.get("content-type") || "";
+        const ext = ctype.includes("video") ? "mp4" : ctype.includes("png") ? "png" : "jpg";
+        const name = `merveil-${String(post.id).slice(0, 12)}.${ext}`;
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = name;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+        try {
+          window.dispatchEvent(new CustomEvent("merveil:toast", {
+            detail: { type: "success", message: "Step complete — file in Downloads / Gallery." },
+          }));
+        } catch {}
+        return;
+      }
+    } catch { /* fall through */ }
+    // Step 2: direct media URL
+    const mediaUrl = post?.video_url || post?.photo_url || (post?.photo_urls && post.photo_urls[0]);
+    if (!mediaUrl) return;
+    try {
+      const res = await fetch(mediaUrl, { mode: "cors" });
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `merveil-${String(post.id).slice(0, 12)}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+    } catch {
+      // Step 3: open for long-press save
+      try {
+        window.open(mediaUrl, "_blank", "noopener,noreferrer");
+        window.dispatchEvent(new CustomEvent("merveil:toast", {
+          detail: { type: "info", message: "Long-press the video → Save to gallery." },
+        }));
+      } catch {}
+    }
+  };
+
   const toggleSave = async (post) => {
     if (!currentUser) { onSignIn?.(); return; }
     const wasSaved = savedIds.includes(post.id);
-    // Seeds: optimistic local only (no DB row for merveil-ai-seed* ids)
-    if (post?._seed || String(post?.id || "").startsWith("merveil-ai-seed")) {
-      setSavedIds((prev) => (wasSaved ? prev.filter((id) => id !== post.id) : [...prev, post.id]));
-      if (!wasSaved) {
-        bumpWorldAffinity({ topic: post.topic, creatorId: post.owner_id, weight: 2 });
-        setAffinityTick((t) => t + 1);
-      }
-      return;
-    }
-    setSavedIds(prev => wasSaved ? prev.filter(id => id !== post.id) : [...prev, post.id]);
+    setSavedIds((prev) => (wasSaved ? prev.filter((id) => id !== post.id) : [...prev, post.id]));
     if (!wasSaved) {
       bumpWorldAffinity({ topic: post.topic, creatorId: post.owner_id, weight: 2 });
       setAffinityTick((t) => t + 1);
+      // Always offer a real device download (phone gallery / Downloads)
+      downloadWorldToDevice(post);
     }
     try {
       const res = await merveilFetch("/api/world?action=save", {
-        method: "POST", credentials:"include", headers: { "Content-Type":"application/json" },
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postId: post.id }),
       });
-      if (!res.ok) setSavedIds(prev => wasSaved ? [...prev, post.id] : prev.filter(id => id !== post.id)); // roll back on failure
+      if (!res.ok) setSavedIds((prev) => (wasSaved ? [...prev, post.id] : prev.filter((id) => id !== post.id)));
     } catch {
-      setSavedIds(prev => wasSaved ? [...prev, post.id] : prev.filter(id => id !== post.id));
+      setSavedIds((prev) => (wasSaved ? [...prev, post.id] : prev.filter((id) => id !== post.id)));
     }
   };
 
@@ -20242,14 +20381,10 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
   // Order is set by rankWorldReels on load / load-more (familiarity, diversity,
   // freshness, serendipity). Preserve that order while swiping — do not re-sort
   // every render (prevents active-reel jumps).
-  // Prefer posts with a real video_url. If live feed has cards but no video,
-  // fall back to AI seeds so the citizen never sees a blank white stage.
-  const liveVideoPosts = posts.filter((p) => p.video_url && !p._seed);
-  const seedPosts = posts.some((p) => p._seed)
-    ? posts.filter((p) => p._seed)
-    : MERVEIL_AI_SEED_REELS;
-  const usingSeeds = !loading && liveVideoPosts.length === 0;
-  const reelItems = usingSeeds ? seedPosts : liveVideoPosts;
+  // Real citizen video only — seed reels removed
+  const liveVideoPosts = posts.filter((p) => p.video_url && !p._seed && !String(p.id || "").startsWith("merveil-ai-seed"));
+  const usingSeeds = false;
+  const reelItems = liveVideoPosts;
 
   const activeReel = reelItems[Math.min(worldReelIndex, Math.max(0, reelItems.length - 1))] || null;
 
@@ -20276,6 +20411,12 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
             style={{ background: "linear-gradient(135deg,#0E9AA7,#1F2937)", color: "#fff" }}
             aria-label="Post a World reel">
             <Plus size={14} /> Post
+          </button>
+          <button type="button" onClick={openSavedGallery}
+            className="pointer-events-auto flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-full shadow-lg min-h-[40px]"
+            style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.25)", color: "#fff" }}
+            aria-label="Saved gallery">
+            <Bookmark size={14} color="#FBBF24" /> Saved
           </button>
           <div className="pointer-events-auto px-2.5 py-1 rounded-full text-left"
             style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.2)" }}>
@@ -20476,6 +20617,92 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       {worldCallError && (
         <div className="fixed left-1/2 -translate-x-1/2 z-[75] px-4 py-2 rounded-full text-xs font-semibold text-white" style={{ bottom: "calc(5rem + var(--safe-bottom))", background: T.signal }}>
           {worldCallError}
+        </div>
+      )}
+
+      {/* Step-by-step Saved Gallery (bookmark → review → download to device) */}
+      {showGallery && (
+        <div className="fixed inset-0 z-[90] flex flex-col" style={{ background: "#0A0A0A", color: "#F5F5F5", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)" }}>
+          <div className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+            <button type="button" onClick={() => {
+              if (galleryStep > 0) { setGalleryStep((s) => s - 1); if (galleryStep === 1) setGalleryFocus(null); }
+              else setShowGallery(false);
+            }} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <ArrowLeft size={18} color="#fff" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold">Saved gallery</div>
+              <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+                {galleryStep === 0 ? "Step 1 · Your bookmarks" : galleryStep === 1 ? "Step 2 · Preview" : "Step 3 · Save to device"}
+              </div>
+            </div>
+            <button type="button" onClick={() => setShowGallery(false)} className="text-xs font-semibold px-2 py-1" style={{ color: "#0E9AA7" }}>Close</button>
+          </div>
+          <div className="px-4 py-2 flex gap-2">
+            {["Bookmarks", "Preview", "Download"].map((label, i) => (
+              <div key={label} className="flex-1 h-1 rounded-full" style={{ background: galleryStep >= i ? "#0E9AA7" : "rgba(255,255,255,0.12)" }} />
+            ))}
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 pb-6">
+            {galleryLoading ? (
+              <div className="py-16 text-center text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>Loading saved…</div>
+            ) : galleryStep === 0 ? (
+              galleryItems.length === 0 ? (
+                <div className="py-16 text-center px-6">
+                  <Bookmark size={28} color="#FBBF24" className="mx-auto mb-3" />
+                  <div className="text-sm font-semibold">No saved reels yet</div>
+                  <div className="text-xs mt-2" style={{ color: "rgba(255,255,255,0.5)" }}>Tap Save on any World reel — it lands here, then you can download to your gallery.</div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-1.5">
+                  {galleryItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => { setGalleryFocus(item); setGalleryStep(1); }}
+                      className="aspect-[9/16] rounded-lg overflow-hidden relative"
+                      style={{ background: "#1a1a1a" }}
+                    >
+                      {(item.photo_url || item.poster_url || item.thumbnail_url) ? (
+                        <img src={item.photo_url || item.poster_url || item.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>Video</div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 p-1.5 text-[9px] font-semibold truncate" style={{ background: "linear-gradient(transparent,rgba(0,0,0,0.8))" }}>
+                        {item.title || item.topic || "Reel"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )
+            ) : galleryFocus ? (
+              <div className="flex flex-col items-center gap-4 pt-4">
+                <div className="w-full max-w-sm aspect-[9/16] rounded-2xl overflow-hidden" style={{ background: "#111" }}>
+                  {galleryFocus.video_url ? (
+                    <video src={galleryFocus.video_url} controls playsInline className="w-full h-full object-cover" poster={galleryFocus.photo_url || undefined} />
+                  ) : galleryFocus.photo_url ? (
+                    <img src={galleryFocus.photo_url} alt="" className="w-full h-full object-cover" />
+                  ) : null}
+                </div>
+                <div className="text-center px-4">
+                  <div className="text-sm font-bold">{galleryFocus.title || "Saved reel"}</div>
+                  <div className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>{galleryFocus.owner_name || "Creator"}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setGalleryStep(2);
+                    await downloadWorldToDevice(galleryFocus);
+                  }}
+                  className="w-full max-w-sm text-sm font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2"
+                  style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff" }}
+                >
+                  <Bookmark size={16} /> Download to device gallery
+                </button>
+                <button type="button" onClick={() => setGalleryStep(0)} className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>Back to bookmarks</button>
+              </div>
+            ) : null}
+          </div>
         </div>
       )}
     </>
