@@ -3321,9 +3321,31 @@ const CallRingtone = (() => {
   };
 })();
 
-/** Merveil-owned chat tones (not Meta). Soft, short, brand teal. */
+/** Chat settings (tones + wallpaper) — local to Connect, not Passport. */
+const CHAT_BG_PRESETS = [
+  { id: "dubai-sunset", label: "Downtown · sunset", url: "/chat-bg/dubai-sunset.jpg" },
+  { id: "dubai-dawn", label: "Burj · golden hour", url: "/chat-bg/dubai-dawn.jpg" },
+  { id: "desert-caravan", label: "Desert caravan", url: "/chat-bg/desert-caravan.jpg" },
+  { id: "camel-riders", label: "Jumeirah dunes", url: "/chat-bg/camel-riders.jpg" },
+  { id: "desert-camels", label: "Open desert", url: "/chat-bg/desert-camels.jpg" },
+  { id: "pattern-light", label: "Soft pattern", url: "/chat-bg/pattern-light.jpg" },
+  { id: "pattern-dark", label: "Night pattern", url: "/chat-bg/pattern-dark.jpg" },
+];
+function loadChatSettings() {
+  try {
+    const raw = localStorage.getItem("merveil_chat_settings");
+    if (raw) return { ...{ tonesOn: true, volume: 0.7, bgId: "dubai-sunset", bgUrl: "/chat-bg/dubai-sunset.jpg", customBg: null }, ...JSON.parse(raw) };
+  } catch {}
+  return { tonesOn: true, volume: 0.7, bgId: "dubai-sunset", bgUrl: "/chat-bg/dubai-sunset.jpg", customBg: null };
+}
+function saveChatSettings(s) {
+  try { localStorage.setItem("merveil_chat_settings", JSON.stringify(s)); } catch {}
+}
+
+/** Merveil-owned chat tones (not Meta). Soft, short, brand teal. Volume from chat settings. */
 const MerveilChatTones = (() => {
   let ctx = null;
+  let lastTypingAt = 0;
   function ensure() {
     if (ctx) return ctx;
     try {
@@ -3333,8 +3355,15 @@ const MerveilChatTones = (() => {
     } catch { return null; }
     return ctx;
   }
+  function vol() {
+    const s = loadChatSettings();
+    if (!s.tonesOn) return 0;
+    return Math.max(0, Math.min(1, Number(s.volume) || 0.7));
+  }
   function tone(freqs, durations, gains) {
     try {
+      const v = vol();
+      if (v <= 0) return;
       CallRingtone.unlock?.();
       const c = ensure();
       if (!c) return;
@@ -3346,9 +3375,9 @@ const MerveilChatTones = (() => {
         o.type = "sine";
         o.frequency.setValueAtTime(f, t0);
         const dur = durations[i] ?? 0.08;
-        const gain = gains[i] ?? 0.08;
+        const gain = (gains[i] ?? 0.08) * v;
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(Math.max(0.001, gain), t0 + 0.01);
         g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         o.connect(g); g.connect(c.destination);
         o.start(t0); o.stop(t0 + dur + 0.02);
@@ -3356,14 +3385,48 @@ const MerveilChatTones = (() => {
     } catch {}
   }
   return {
-    /** Sent a message */
     send() { tone([720, 920], [0.05, 0.07], [0.07, 0.05]); },
-    /** Received a message */
     receive() { tone([520, 680], [0.06, 0.09], [0.08, 0.06]); },
-    /** Opened / viewed a thread */
     view() { tone([400], [0.05], [0.04]); },
+    /** Soft key-reflect while the other person is typing (throttled) */
+    typing() {
+      const now = Date.now();
+      if (now - lastTypingAt < 900) return;
+      lastTypingAt = now;
+      tone([610, 640], [0.04, 0.05], [0.045, 0.035]);
+    },
   };
 })();
+
+/** Circular 3D receipt dots — not Meta ticks. 1 = sent, 2 = delivered/online, 2 green = read */
+function ChatReceiptDots({ state }) {
+  // state: "sent" | "delivered" | "read"
+  const filled = state === "read" ? 2 : state === "delivered" ? 2 : 1;
+  const color = state === "read" ? "#34D399" : state === "delivered" ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.45)";
+  const glow = state === "read" ? "0 0 6px rgba(52,211,153,0.65)" : state === "delivered" ? "0 1px 3px rgba(0,0,0,0.25)" : "none";
+  return (
+    <span className="inline-flex items-center gap-[3px] ml-0.5" title={state === "read" ? "Read" : state === "delivered" ? "Delivered" : "Sent"} aria-label={state}>
+      {[0, 1].map((i) => (
+        <span
+          key={i}
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            display: i < filled ? "inline-block" : "none",
+            background: state === "read"
+              ? "radial-gradient(circle at 35% 30%, #A7F3D0 0%, #34D399 45%, #059669 100%)"
+              : state === "delivered"
+                ? "radial-gradient(circle at 35% 30%, #fff 0%, #E5E7EB 55%, #9CA3AF 100%)"
+                : "radial-gradient(circle at 35% 30%, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.35) 100%)",
+            boxShadow: glow,
+            border: "0.5px solid rgba(0,0,0,0.12)",
+          }}
+        />
+      ))}
+    </span>
+  );
+}
 
 // Professional Passport progressive completion (0–100%) — separate from
 // and additive to the paid tier system above (PASSPORT_TIERS/hasAccess
@@ -11200,6 +11263,13 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const [editText, setEditText] = useState("");
   const [msgActionError, setMsgActionError] = useState("");
   const [viewingProfileId, setViewingProfileId] = useState(null);
+  const [peerTyping, setPeerTyping] = useState(false);
+  const [chatSettings, setChatSettings] = useState(() => loadChatSettings());
+  const [showChatSettings, setShowChatSettings] = useState(false);
+  const typingChannelRef = useRef(null);
+  const typingStopTimerRef = useRef(null);
+  const lastTypedEmitRef = useRef(0);
+  const chatBgInputRef = useRef(null);
 
   // World / Creator / Pulse Message opens the exact conversation (not AI default).
   // Pending open is stored because MessagesView may not be mounted when the
@@ -11804,7 +11874,64 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     setOutbox(remaining);
   };
 
-  useEffect(() => { scrollRef.current?.scrollTo?.(0, scrollRef.current.scrollHeight); }, [threadMessages, aiMessages]);
+  useEffect(() => { scrollRef.current?.scrollTo?.(0, scrollRef.current.scrollHeight); }, [threadMessages, aiMessages, peerTyping]);
+
+  // Live typing channel (Realtime broadcast) — peer sees "typing…" + soft tone
+  useEffect(() => {
+    setPeerTyping(false);
+    if (!activeId || isAiThread || !currentUser?.id) {
+      try { typingChannelRef.current?.unsubscribe(); } catch {}
+      typingChannelRef.current = null;
+      return undefined;
+    }
+    let cancelled = false;
+    let ch = null;
+    (async () => {
+      try { await ensureRealtimeAuth(); } catch {}
+      if (cancelled) return;
+      try {
+        ch = supabaseBrowser.channel(`typing-${activeId}`, { config: { broadcast: { self: false } } });
+        ch.on("broadcast", { event: "typing" }, (payload) => {
+          const from = String(payload?.payload?.userId || "");
+          if (!from || from === String(currentUser.id)) return;
+          setPeerTyping(true);
+          try { MerveilChatTones.typing(); } catch {}
+          if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+          typingStopTimerRef.current = setTimeout(() => setPeerTyping(false), 2200);
+        });
+        ch.subscribe();
+        typingChannelRef.current = ch;
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      try { ch?.unsubscribe(); } catch {}
+      typingChannelRef.current = null;
+    };
+  }, [activeId, isAiThread, currentUser?.id]);
+
+  const emitTyping = useCallback(() => {
+    if (!activeId || isAiThread || !currentUser?.id) return;
+    const now = Date.now();
+    if (now - lastTypedEmitRef.current < 700) return;
+    lastTypedEmitRef.current = now;
+    try {
+      typingChannelRef.current?.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { userId: String(currentUser.id), at: now },
+      });
+    } catch {}
+  }, [activeId, isAiThread, currentUser?.id]);
+
+  const updateChatSettings = (patch) => {
+    setChatSettings((prev) => {
+      const next = { ...prev, ...patch };
+      saveChatSettings(next);
+      return next;
+    });
+  };
 
   const sendToAi = async () => {
     const text = draft.trim();
@@ -12581,6 +12708,9 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               <button type="button" onClick={() => startCall("video")} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.05)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Video call">
                 <Video size={16} style={{ color: CT.ink }} />
               </button>
+              <button type="button" onClick={() => setShowChatSettings(true)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(18,22,28,0.05)", border: "1px solid rgba(18,22,28,0.08)" }} aria-label="Chat settings">
+                <Settings size={16} style={{ color: CT.ink }} />
+              </button>
             </>
           ) : (
             <>
@@ -12596,7 +12726,20 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           )}
         </div>
 
-        <div ref={scrollRef} className="flex-1 min-h-0 px-3 py-4 flex flex-col gap-1 overflow-y-auto overscroll-contain" style={{ background: CT.chatBg || "linear-gradient(180deg, #E4DFD6 0%, #DDD7CD 50%, #D6D0C6 100%)", WebkitOverflowScrolling: "touch", touchAction: "pan-y", minHeight: 120 }}>
+        <div
+          ref={scrollRef}
+          className="flex-1 min-h-0 px-3 py-4 flex flex-col gap-1 overflow-y-auto overscroll-contain relative"
+          style={{
+            backgroundColor: "#D6D0C6",
+            backgroundImage: `linear-gradient(180deg, rgba(232,226,214,0.55) 0%, rgba(214,208,198,0.72) 100%), url(${chatSettings.customBg || chatSettings.bgUrl || "/chat-bg/dubai-sunset.jpg"})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundAttachment: "local",
+            WebkitOverflowScrolling: "touch",
+            touchAction: "pan-y",
+            minHeight: 120,
+          }}
+        >
           {activeMessages.length === 0 && !isAiThread && activeId && (
             <div className="text-center py-10 px-4">
               <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: "rgba(6,182,212,0.12)" }}>
@@ -12682,7 +12825,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                         {m.edited_at && <span className="text-[9px] opacity-60">edited</span>}
                         {timeLabel && <span className="text-[10px] tabular-nums font-medium" style={{ color: mine ? "rgba(255,255,255,0.72)" : T.sub }}>{timeLabel}</span>}
                         {mine && !isAiThread && (() => {
-                          // 1 tick = sent; 2 ticks = delivered (online / delivered); 2 + teal = seen
+                          // Circular 3D dots (not Meta ticks): 1 = sent, 2 white = delivered/online, 2 green = read
                           const isRead = (m.read_by || []).some((uid) => String(uid) !== String(currentUser.id))
                             || m.status === "read" || !!m.read_at;
                           const peerOnline = otherUserId && (presence[otherUserId] === "online" || presence[otherUserId] === "busy");
@@ -12690,17 +12833,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                             || m.status === "delivered"
                             || !!m.delivered_at
                             || peerOnline;
-                          return (
-                            <span className="inline-flex items-center" title={isRead ? "Seen" : isDelivered ? "Delivered" : "Sent"}>
-                              {isRead ? (
-                                <CheckCheck size={14} strokeWidth={2.6} style={{ color: "#5EEAD4" }} />
-                              ) : isDelivered ? (
-                                <CheckCheck size={14} strokeWidth={2.4} style={{ color: "rgba(255,255,255,0.72)" }} />
-                              ) : (
-                                <Check size={14} strokeWidth={2.4} style={{ color: "rgba(255,255,255,0.5)" }} />
-                              )}
-                            </span>
-                          );
+                          const state = isRead ? "read" : isDelivered ? "delivered" : "sent";
+                          return <ChatReceiptDots state={state} />;
                         })()}
                       </div>
                     </div>
@@ -12732,6 +12866,16 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             );
           })}
           {msgActionError && <div className="text-center text-xs py-1" style={{ color: "#E0554C" }}>{msgActionError}</div>}
+          {peerTyping && !isAiThread && (
+            <div className="text-sm px-3.5 py-2.5 rounded-2xl flex items-center gap-2 shadow-sm self-start" style={{ background: "rgba(255,255,255,0.92)", border: `1px solid ${T.line}`, color: T.sub, borderRadius: "18px 18px 18px 4px" }}>
+              <span className="inline-flex gap-1 items-center" aria-hidden>
+                <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: "#0E9AA7", animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: "#0E9AA7", animationDelay: "120ms" }} />
+                <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: "#0E9AA7", animationDelay: "240ms" }} />
+              </span>
+              <span className="text-[12px] font-medium" style={{ color: "#5C6570" }}>typing…</span>
+            </div>
+          )}
           {sending && isAiThread && (
             <div className="text-sm px-3.5 py-2.5 rounded-2xl flex items-center gap-1.5 shadow-sm" style={{ alignSelf: "flex-start", background: "#fff", border: `1px solid ${T.line}`, color: T.sub, borderRadius: "18px 18px 18px 4px" }}>
               <Loader2 size={13} className="animate-spin" /> Merveil AI is typing…
@@ -12814,7 +12958,10 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           )}
           <input
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              if (!isAiThread && e.target.value.trim()) emitTyping();
+            }}
             onKeyDown={(e) => e.key === "Enter" && (isAiThread ? sendToAi() : send())}
             placeholder={isOnline ? "Type a message…" : "Offline — will send when back…"}
             disabled={sending}
@@ -12833,6 +12980,97 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           </button>
         </div>
       </div>
+
+      {/* Chat settings — tones + UAE wallpapers (not Passport) */}
+      {showChatSettings && (
+        <div className="fixed inset-0 z-[180] flex items-end sm:items-center justify-center" style={{ background: "rgba(15,20,25,0.45)" }} onClick={() => setShowChatSettings(false)}>
+          <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden max-h-[88vh] overflow-y-auto" style={{ background: "#F7F5F1" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 pt-4 pb-2">
+              <div>
+                <div className="text-sm font-bold" style={{ color: "#1A1612", fontFamily: "'Space Grotesk',sans-serif" }}>Chat settings</div>
+                <div className="text-[11px]" style={{ color: "#6B6158" }}>Tones & backgrounds · Connect only</div>
+              </div>
+              <button type="button" onClick={() => setShowChatSettings(false)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.06)" }} aria-label="Close">
+                <X size={16} color="#1A1612" />
+              </button>
+            </div>
+            <div className="px-4 pb-6 flex flex-col gap-4">
+              <div className="rounded-xl p-3" style={{ background: "#fff", border: "1px solid rgba(18,22,28,0.08)" }}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold" style={{ color: "#1A1612" }}>Message tones</div>
+                  <button
+                    type="button"
+                    onClick={() => updateChatSettings({ tonesOn: !chatSettings.tonesOn })}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-full"
+                    style={{ background: chatSettings.tonesOn ? "rgba(14,154,167,0.15)" : "rgba(0,0,0,0.06)", color: chatSettings.tonesOn ? "#0E9AA7" : "#6B6158" }}
+                  >
+                    {chatSettings.tonesOn ? "On" : "Off"}
+                  </button>
+                </div>
+                <label className="block text-[11px] mb-1" style={{ color: "#6B6158" }}>Volume</label>
+                <input
+                  type="range" min={0} max={1} step={0.05}
+                  value={chatSettings.volume}
+                  disabled={!chatSettings.tonesOn}
+                  onChange={(e) => updateChatSettings({ volume: Number(e.target.value) })}
+                  className="w-full"
+                />
+                <div className="flex gap-2 mt-2">
+                  <button type="button" className="text-[10px] font-semibold px-2 py-1 rounded-lg" style={{ background: "rgba(14,154,167,0.1)", color: "#0E9AA7" }} onClick={() => MerveilChatTones.send()}>Send</button>
+                  <button type="button" className="text-[10px] font-semibold px-2 py-1 rounded-lg" style={{ background: "rgba(14,154,167,0.1)", color: "#0E9AA7" }} onClick={() => MerveilChatTones.receive()}>Receive</button>
+                  <button type="button" className="text-[10px] font-semibold px-2 py-1 rounded-lg" style={{ background: "rgba(14,154,167,0.1)", color: "#0E9AA7" }} onClick={() => MerveilChatTones.typing()}>Typing</button>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold mb-2" style={{ color: "#1A1612" }}>Wallpaper · UAE & Merveil</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {CHAT_BG_PRESETS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => updateChatSettings({ bgId: p.id, bgUrl: p.url, customBg: null })}
+                      className="rounded-xl overflow-hidden text-left"
+                      style={{ border: (chatSettings.bgId === p.id && !chatSettings.customBg) ? "2px solid #0E9AA7" : "1px solid rgba(18,22,28,0.1)" }}
+                    >
+                      <div className="h-16 bg-cover bg-center" style={{ backgroundImage: `url(${p.url})` }} />
+                      <div className="text-[10px] font-medium px-2 py-1.5" style={{ background: "#fff", color: "#1A1612" }}>{p.label}</div>
+                    </button>
+                  ))}
+                </div>
+                <input
+                  ref={chatBgInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      updateChatSettings({ customBg: reader.result, bgId: "custom" });
+                    };
+                    reader.readAsDataURL(f);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => chatBgInputRef.current?.click()}
+                  className="mt-3 w-full text-xs font-bold py-2.5 rounded-xl"
+                  style={{ background: "linear-gradient(135deg,#0E9AA7,#06B6D4)", color: "#fff" }}
+                >
+                  Upload from phone
+                </button>
+                {chatSettings.customBg && (
+                  <button type="button" className="mt-2 w-full text-[11px] font-semibold py-2 rounded-xl" style={{ color: "#6B6158" }} onClick={() => updateChatSettings({ customBg: null, bgId: "dubai-sunset", bgUrl: "/chat-bg/dubai-sunset.jpg" })}>
+                    Clear custom photo
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Desktop-only context pane — profile / presence / actions */}
       <aside className="connect-profile-pane hidden lg:flex" aria-label="Conversation context">
