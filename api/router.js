@@ -7669,6 +7669,35 @@ export default async function handler(req, res) {
       return sendJson(res, 200, { swept: stale?.length || 0 });
     }
 
+    // Lightweight status poll — client ends UI when other side already hung up
+    if (resource === "calls" && action === "status" && method === "GET") {
+      if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });
+      const callId = req.query.callId;
+      if (!callId) return sendJson(res, 400, { error: "callId required" });
+      let svc;
+      try { svc = adminClient(); } catch (e) {
+        return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+      }
+      const { data: call } = await svc.from("calls")
+        .select("id, status, caller_id, receiver_id, conference_id, type, ended_at")
+        .eq("id", callId)
+        .maybeSingle();
+      if (!call) return sendJson(res, 404, { error: "Call not found." });
+      const uid = String(citizen.id);
+      const party = [String(call.caller_id), String(call.receiver_id)];
+      if (!party.includes(uid)) {
+        // Conference invitee: allow if they have a child row
+        const { data: child } = await svc.from("calls")
+          .select("id")
+          .eq("conference_id", callId)
+          .or(`caller_id.eq.${uid},receiver_id.eq.${uid}`)
+          .limit(1)
+          .maybeSingle();
+        if (!child) return sendJson(res, 403, { error: "Not a participant." });
+      }
+      return sendJson(res, 200, { call });
+    }
+
     if (resource === "calls" && (action === "accept" || action === "reject" || action === "end") && method === "POST") {
       if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });
       const meId = citizen.id;
@@ -8032,18 +8061,27 @@ export default async function handler(req, res) {
           .order("created_at", { ascending: false })
           .limit(60);
 
-        // Connections (accepted) — Merveil says "connections", not followers
-        const { count: connectionsCount } = await anonClient()
-          .from("connections")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "accepted")
-          .or(`user_id.eq.${userId},connected_user_id.eq.${userId}`);
+        // Connections (accepted) — service role so RLS never reports 0 falsely
+        let connectionsCount = 0;
+        try {
+          const { count } = await peopleClient
+            .from("connections")
+            .select("*", { count: "exact", head: true })
+            .eq("status", "accepted")
+            .or(`user_id.eq.${userId},connected_user_id.eq.${userId}`);
+          connectionsCount = count || 0;
+        } catch {
+          connectionsCount = 0;
+        }
 
-        const listingLikes = (listings || []).reduce((sum, l) => sum + (l.likes_count || 0), 0);
-        const worldLikes = (worldPosts || []).reduce((sum, p) => sum + (p.likes_count || 0), 0);
-        const totalLikes = listingLikes + worldLikes;
-        const totalViews = (listings || []).reduce((sum, l) => sum + (l.views || 0), 0)
-          + (worldPosts || []).reduce((sum, p) => sum + (p.views || 0), 0);
+        const listingLikes = (listings || []).reduce((sum, l) => sum + (Number(l.likes_count) || 0), 0);
+        const worldLikes = (worldPosts || []).reduce((sum, p) => sum + (Number(p.likes_count) || 0), 0);
+        const worldSupers = (worldPosts || []).reduce((sum, p) => sum + (Number(p.super_count) || 0), 0);
+        // Likes tile = likes + supers (engagement people care about)
+        const totalLikes = listingLikes + worldLikes + worldSupers;
+        const totalViews = (listings || []).reduce((sum, l) => sum + (Number(l.views) || 0), 0)
+          + (worldPosts || []).reduce((sum, p) => sum + (Number(p.views) || Number(p.views_count) || 0), 0);
+        const totalSupers = worldSupers;
 
         return sendJson(res, 200, {
           profile: data,
@@ -8063,6 +8101,7 @@ export default async function handler(req, res) {
             worldPostCount: (worldPosts || []).length,
             totalLikes,
             totalViews,
+            totalSupers,
             connectionsCount: connectionsCount || 0,
           },
         });
