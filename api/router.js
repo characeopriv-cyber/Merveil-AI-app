@@ -7440,6 +7440,111 @@ export default async function handler(req, res) {
       return sendJson(res, 200, { call });
     }
 
+    // Direct conference invite — only accepted connections, max 10 in room.
+    // Creates a ringing call row with conference_id = parent call so the
+    // invitee gets a real incoming call (not a link) and joins the room.
+    if (resource === "calls" && action === "invite-conference" && method === "POST") {
+      if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });
+      const inviterId = citizen.id;
+      const body = await readBody(req);
+      const parentCallId = body?.parentCallId || body?.conferenceId;
+      const receiverId = body?.receiverId;
+      const type = ["video", "voice"].includes(body?.type) ? body.type : "voice";
+      if (!parentCallId || !receiverId) {
+        return sendJson(res, 400, { error: "parentCallId and receiverId required." });
+      }
+      if (String(receiverId) === String(inviterId)) {
+        return sendJson(res, 400, { error: "You can't invite yourself." });
+      }
+      let svc;
+      try { svc = adminClient(); } catch (e) {
+        return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+      }
+      const { data: parent } = await svc.from("calls")
+        .select("id, caller_id, receiver_id, type, status, conference_id")
+        .eq("id", parentCallId)
+        .maybeSingle();
+      if (!parent) return sendJson(res, 404, { error: "Call not found." });
+      const party = [String(parent.caller_id), String(parent.receiver_id)];
+      if (!party.includes(String(inviterId))) {
+        return sendJson(res, 403, { error: "Only call participants can invite others." });
+      }
+      // Must be accepted connection (My Circle / friends)
+      const { data: conn } = await svc.from("connections").select("id")
+        .or(`and(user_id.eq.${inviterId},connected_user_id.eq.${receiverId}),and(user_id.eq.${receiverId},connected_user_id.eq.${inviterId})`)
+        .eq("status", "accepted").maybeSingle();
+      if (!conn) {
+        return sendJson(res, 403, { error: "You can only add citizens you're connected with." });
+      }
+      const rootId = parent.conference_id || parent.id;
+      // Count people already in this conference (parent + active invites)
+      const { data: roomRows } = await svc.from("calls")
+        .select("id, caller_id, receiver_id, status")
+        .or(`id.eq.${rootId},conference_id.eq.${rootId}`)
+        .in("status", ["ringing", "accepted", "connected", "connecting"]);
+      const ids = new Set();
+      ids.add(String(parent.caller_id));
+      ids.add(String(parent.receiver_id));
+      (roomRows || []).forEach((r) => {
+        ids.add(String(r.caller_id));
+        ids.add(String(r.receiver_id));
+      });
+      if (ids.has(String(receiverId))) {
+        return sendJson(res, 409, { error: "This citizen is already in the conference.", code: "already_in_room" });
+      }
+      if (ids.size >= 10) {
+        return sendJson(res, 403, { error: "Conference is full (max 10 citizens).", code: "conference_full" });
+      }
+      const { data: names } = await svc.from("profiles").select("id, name, avatar_url").in("id", [inviterId, receiverId]);
+      const inviterName = (names || []).find((p) => String(p.id) === String(inviterId))?.name || "Merveil Citizen";
+      const receiverName = (names || []).find((p) => String(p.id) === String(receiverId))?.name || "Citizen";
+      const receiverAvatar = (names || []).find((p) => String(p.id) === String(receiverId))?.avatar_url || null;
+
+      const insertPayload = {
+        caller_id: inviterId,
+        receiver_id: receiverId,
+        type,
+        status: "ringing",
+        conference_id: rootId,
+      };
+      let call = null;
+      let error = null;
+      ({ data: call, error } = await svc.from("calls").insert(insertPayload).select("*").maybeSingle());
+      // If conference_id column missing, fall back without it (link still works via client)
+      if (error && /conference_id/i.test(error.message || "")) {
+        ({ data: call, error } = await svc.from("calls").insert({
+          caller_id: inviterId,
+          receiver_id: receiverId,
+          type,
+          status: "ringing",
+        }).select("*").maybeSingle());
+      }
+      if (error) return sendJson(res, 400, { error: error.message });
+      try {
+        notifyUser(receiverId, {
+          title: type === "video" ? "Conference video invite" : "Conference invite",
+          body: `${inviterName} is inviting you to a conference on Merveil`,
+          data: {
+            url: "/?tab=messages",
+            tag: `call-${call.id}`,
+            callId: call.id,
+            conferenceId: rootId,
+            type: "incoming_call",
+            callType: type,
+            conference: true,
+          },
+          urgent: true,
+        }).catch(() => {});
+      } catch {}
+      return sendJson(res, 200, {
+        call,
+        conferenceId: rootId,
+        invitee: { id: receiverId, name: receiverName, avatar_url: receiverAvatar },
+        roomSize: ids.size + 1,
+        maxParticipants: 10,
+      });
+    }
+
     // Report a call — real Trust & Safety flow (doc 2 §21-22), not a
     // decorative button. Feeds the exact same `reports` table and admin
     // Reports panel every other report type already uses. Optionally
@@ -7867,22 +7972,34 @@ export default async function handler(req, res) {
         const userId = req.query.userId;
         if (!userId) return sendJson(res, 400, { error: "userId required" });
         // Public card only — never expose wallet, KYC docs, or private settings.
-        // Full self profile continues to come from /api/auth/session + mapProfile.
-        const { data, error } = await anonClient()
+        // Use service role so RLS never hides a valid citizen (Pulse/World creator pages).
+        let peopleClient;
+        try { peopleClient = adminClient(); } catch { peopleClient = anonClient(); }
+        const { data, error } = await peopleClient
           .from("profiles")
           .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought, role_label")
           .eq("id", userId)
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
         if (!data) return sendJson(res, 404, { error: "Not found" });
-        // Strip anything sensitive if schema ever expands into this select
+        // Zero-trust public card: never leak wallet, KYC, contact, or admin fields
+        const PUBLIC_PROFILE_KEYS = new Set([
+          "id", "name", "avatar_url", "cover_video_url", "junction_id", "passport_tier",
+          "country", "bio", "created_at", "account_type", "company_name", "city",
+          "profession", "languages", "feeling", "thought", "role_label",
+        ]);
+        Object.keys(data).forEach((k) => {
+          if (!PUBLIC_PROFILE_KEYS.has(k)) delete data[k];
+        });
         delete data.email;
         delete data.phone;
         delete data.kyc_document_url;
         delete data.id_document_number;
         delete data.full_legal_name;
+        delete data.wallet_balance;
+        delete data.stripe_customer_id;
 
-        const { data: listings } = await anonClient()
+        const { data: listings } = await peopleClient
           .from("properties")
           .select("id, title, area, emirate, price, listing_type, category, photo_url, photo_urls, views, likes_count, created_at")
           .eq("owner_id", userId)
