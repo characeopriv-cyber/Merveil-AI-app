@@ -49,6 +49,50 @@ export async function notifyUser(userId, payload) {
   return { sent: results.filter((r) => r.ok).length, results };
 }
 
+// ================================================================
+// AUTHZ — central Actor model (Meta-style product security).
+// Prefer lib/merveilAuthz.js on new modules; inlined here so a missing
+// lib file cannot disable auth on deploy.
+// ================================================================
+function buildActor({ user = null, jwtSub = null, token = null } = {}) {
+  const id = (user && user.id) || jwtSub || null;
+  return {
+    type: id ? "citizen" : "visitor",
+    id: id ? String(id) : null,
+    jwtSub: jwtSub ? String(jwtSub) : null,
+    user: user || (id ? { id: String(id) } : null),
+    token: token || null,
+    isCitizen: !!id,
+    isVisitor: !id,
+  };
+}
+function requireCitizenActor(actor, res, message = "Sign in required.") {
+  if (!actor || !actor.id) {
+    sendJson(res, 401, { error: message, code: "AUTH_REQUIRED" });
+    return null;
+  }
+  return actor;
+}
+function requireParticipantActor(actor, participantIds, res, message = "Not a participant.") {
+  if (!requireCitizenActor(actor, res)) return null;
+  const set = (participantIds || []).map(String);
+  if (!set.includes(String(actor.id))) {
+    sendJson(res, 403, { error: message, code: "NOT_PARTICIPANT" });
+    return null;
+  }
+  return actor;
+}
+function sameActorId(a, b) {
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}
+/** Reject body-supplied userId/ownerId that does not match Actor (IDOR guard). */
+function actorOnlyId(actor, claimedId) {
+  if (!actor?.id) return null;
+  if (claimedId != null && String(claimedId) !== String(actor.id)) return null;
+  return String(actor.id);
+}
+
 // Admin client for account confirmation only — separate from the shared
 // lib so this fix doesn't depend on lib/supabaseServer.js also being
 // updated. Uses the same service-role key the rest of the backend relies
@@ -948,6 +992,8 @@ export default async function handler(req, res) {
     const citizenId = user?.id || jwtSub || null;
     const citizen = user || (citizenId ? { id: citizenId } : null);
     const sb = token ? userClient(token) : anonClient();
+    // Central Actor — all mutating routes should authorize via actor.id, never body.userId
+    const actor = buildActor({ user, jwtSub, token });
 
     // ---------------------------------------------------------- /api/share
     // Crawler-friendly OG HTML for WhatsApp / iMessage / LinkedIn previews.
@@ -1382,8 +1428,8 @@ export default async function handler(req, res) {
       const action = req.query.action;
 
       if (method === "POST" && action === "inventory-ai-parse") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
-        const usage = await checkAiUsageAllowed(sb, user.id);
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const usage = await checkAiUsageAllowed(sb, actor.id);
         if (!usage.allowed) {
           return sendJson(res, 429, { error: `Daily Merveil AI limit reached (${usage.used}/${usage.limit}) for your Passport tier. Try again tomorrow or upgrade your Passport.` });
         }
@@ -1486,8 +1532,121 @@ export default async function handler(req, res) {
         // Fill in occupancyStatus from status/tenantName the same way manual CSV rows are, so
         // downstream lease-intelligence logic (vacancy/renewal stats) works identically either way.
         units = units.map((u) => ({ ...u, occupancyStatus: u.tenantName ? "occupied" : "vacant" }));
-        await sb.rpc("increment_ai_usage", { uid: user.id }).catch(() => {});
+        await sb.rpc("increment_ai_usage", { uid: actor.id }).catch(() => {});
         return sendJson(res, 200, { units, fileName: file.originalFilename, unitCount: units.length });
+      }
+
+
+      // Paste any listing text / WhatsApp blast / PDF extract → structured property fields
+      if (method === "POST" && action === "ai-parse-listing") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const usage = await checkAiUsageAllowed(sb, actor.id);
+        if (!usage.allowed) {
+          return sendJson(res, 429, { error: `Daily Merveil AI limit reached (${usage.used}/${usage.limit}).` });
+        }
+        const body = await readBody(req);
+        const text = String(body.text || body.paste || "").trim();
+        if (!text || text.length < 12) {
+          return sendJson(res, 400, { error: "Paste a listing description (at least a few lines)." });
+        }
+        if (text.length > 12000) {
+          return sendJson(res, 400, { error: "Text is too long — paste under 12,000 characters." });
+        }
+        // Deterministic parser first (works offline / without ANTHROPIC_API_KEY)
+        const lower = text.toLowerCase();
+        let type = /\bfor\s*rent\b|\brental\b|\bper\s*year\b|\bper\s*month\b|\/year\b|\/month\b/.test(lower) ? "Rent" : "Sale";
+        if (/\bfor\s*sale\b|\bselling\b|aed\s*[\d,]+\s*(only)?\s*$/m.test(lower) && !/rent/.test(lower)) type = "Sale";
+        let category = "Apartment";
+        if (/\bvilla\b/.test(lower)) category = "Villa";
+        else if (/\btownhouse\b/.test(lower)) category = "Townhouse";
+        else if (/\boffice\b/.test(lower)) category = "Office";
+        else if (/\bshop\b|\bretail\b/.test(lower)) category = "Retail";
+        else if (/\bstudio\b/.test(lower)) category = "Apartment";
+        else if (/\bpenthouse\b/.test(lower)) category = "Apartment";
+        const emirateMatch = text.match(/\b(Dubai|Abu Dhabi|Sharjah|Ajman|Ras Al Khaimah|RAK|Fujairah|Umm Al Quwain)\b/i);
+        const emirate = emirateMatch ? emirateMatch[1].replace(/RAK/i, "Ras Al Khaimah") : "Dubai";
+        const areaMatchers = [
+          /(?:in|at|located in)\s+([A-Z][A-Za-z0-9\s']{2,40}?)(?:\s*,|\s*\|)|\b(Marina|JBR|JLT|Downtown|Business Bay|Palm Jumeirah|Arabian Ranches|Dubai Hills|Creek Harbour|MBR City|Meydan|Sports City|Motor City|Discovery Gardens|JVC|JVT|Silicon Oasis|DIFC|City Walk)\b/i
+        ];
+        let area = "";
+        for (const re of areaMatchers) {
+          const m = text.match(re);
+          if (m) { area = (m[1] || m[2] || "").trim(); break; }
+        }
+        const priceMatch = text.match(/(?:AED|Dhs|DHS|Dh)\s*([\d,]+(?:\.\d+)?)|([\d,]+)\s*(?:AED|Dhs)/i);
+        const price = priceMatch ? String(priceMatch[1] || priceMatch[2] || "").replace(/,/g, "") : "";
+        const bedsMatch = text.match(/(\d+)\s*(?:bed|br|bedroom)/i) || text.match(/\b(studio)\b/i);
+        const beds = bedsMatch ? (String(bedsMatch[1]).toLowerCase() === "studio" ? "0" : bedsMatch[1]) : "";
+        const bathsMatch = text.match(/(\d+)\s*(?:bath|ba|bathroom)/i);
+        const baths = bathsMatch ? bathsMatch[1] : "";
+        const sqftMatch = text.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft|sqm|m²)/i);
+        const sqft = sqftMatch ? String(sqftMatch[1]).replace(/,/g, "") : "";
+        let furnished = "";
+        if (/\bunfurnished\b/i.test(text)) furnished = "Unfurnished";
+        else if (/\bsemi[- ]furnished\b/i.test(text)) furnished = "Semi-furnished";
+        else if (/\bfurnished\b/i.test(text)) furnished = "Furnished";
+        const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+        let title = lines[0] ? lines[0].slice(0, 120) : `${beds || ""}BR ${category} in ${area || emirate}`.trim();
+        if (/^[\d,\s]+$/.test(title) || title.length < 8) {
+          title = `${beds === "0" ? "Studio" : (beds ? beds + "BR" : "")} ${category}${area ? " · " + area : ""}`.trim();
+        }
+        const structured = {
+          title,
+          type,
+          category,
+          price,
+          emirate,
+          area,
+          beds,
+          baths,
+          sqft,
+          furnished,
+          description: text.slice(0, 4000),
+          source: "ai-parse-listing",
+        };
+        // Optional upgrade via Claude when key present
+        if (process.env.ANTHROPIC_API_KEY && text.length > 40) {
+          try {
+            const prompt = `Extract UAE property listing fields as pure JSON (no markdown) with keys: title, type (Sale|Rent), category (Apartment|Villa|Townhouse|Office|Retail|Plot|Warehouse), price (number string no commas), emirate, area, beds, baths, sqft, furnished (Furnished|Unfurnished|Semi-furnished or empty), description (cleaned). Text:\n${text.slice(0, 6000)}`;
+            const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: {
+                "x-api-key": process.env.ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "claude-sonnet-4-6",
+                max_tokens: 800,
+                messages: [{ role: "user", content: prompt }],
+              }),
+            });
+            const aiData = await aiRes.json();
+            const raw = (aiData.content || []).find((c) => c.type === "text")?.text || "";
+            const cleaned = raw.replace(/```json|```/g, "").trim();
+            const parsed = JSON.parse(cleaned);
+            if (parsed && typeof parsed === "object") {
+              Object.assign(structured, {
+                title: parsed.title || structured.title,
+                type: parsed.type === "Rent" ? "Rent" : parsed.type === "Sale" ? "Sale" : structured.type,
+                category: parsed.category || structured.category,
+                price: parsed.price != null ? String(parsed.price).replace(/,/g, "") : structured.price,
+                emirate: parsed.emirate || structured.emirate,
+                area: parsed.area || structured.area,
+                beds: parsed.beds != null ? String(parsed.beds) : structured.beds,
+                baths: parsed.baths != null ? String(parsed.baths) : structured.baths,
+                sqft: parsed.sqft != null ? String(parsed.sqft).replace(/,/g, "") : structured.sqft,
+                furnished: parsed.furnished || structured.furnished,
+                description: parsed.description || structured.description,
+              });
+              structured.source = "ai-parse-listing+claude";
+            }
+          } catch (e) {
+            /* keep deterministic structured */
+          }
+        }
+        await sb.rpc("increment_ai_usage", { uid: actor.id }).catch(() => {});
+        return sendJson(res, 200, { listing: structured, ok: true });
       }
 
       if (method === "GET" && action === "inventory") {
@@ -1560,7 +1719,7 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && action === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like listings." });
+        if (!requireCitizenActor(actor, res, "Sign in to like listings.")) return;
         const body = await readBody(req);
         if (!body.propertyId) return sendJson(res, 400, { error: "propertyId required" });
         const { data, error } = await sb.rpc("toggle_property_like", { pid: body.propertyId }).maybeSingle();
@@ -1572,7 +1731,7 @@ export default async function handler(req, res) {
       // notes). Same shape as the like endpoints above on purpose, so the
       // frontend can treat them as parallel actions.
       if (method === "POST" && action === "super") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to SUPER a listing." });
+        if (!requireCitizenActor(actor, res, "Sign in to SUPER a listing.")) return;
         const body = await readBody(req);
         if (!body.propertyId) return sendJson(res, 400, { error: "propertyId required" });
         const { data, error } = await sb.rpc("toggle_property_super", { pid: body.propertyId }).maybeSingle();
@@ -1620,18 +1779,36 @@ export default async function handler(req, res) {
             isLive: true,
           };
         });
-        return sendJson(res, 200, { properties: mapped });
+        let rankedProps = mapped;
+        const rankedFlag = String(req.query.ranked || "1").toLowerCase();
+        if (rankedFlag !== "0" && rankedFlag !== "false" && mapped.length > 1) {
+          try {
+            let rankPulseListings;
+            try {
+              ({ rankPulseListings } = await import("./lib/merveilRanking.js"));
+            } catch {
+              try { ({ rankPulseListings } = await import("../lib/merveilRanking.js")); } catch { rankPulseListings = null; }
+            }
+            if (typeof rankPulseListings === "function") {
+              rankedProps = rankPulseListings(mapped, { userId: actor?.id || citizenId || null });
+            }
+          } catch (e) {
+            console.warn("[pulse-rank]", e?.message || e);
+          }
+        }
+        return sendJson(res, 200, { properties: rankedProps, ranked: rankedFlag !== "0" });
       }
 
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to post a property." });
-        const okRate = await checkRateLimit(anonClient(), `property_post_${user.id}`, 20);
+        if (!requireCitizenActor(actor, res, "Sign in to post a property.")) return;
+        const okRate = await checkRateLimit(anonClient(), `property_post_${actor.id}`, 20);
         if (!okRate) return sendJson(res, 429, { error: "Too many property posts — wait a few minutes." });
         const body = await readBody(req);
+        // owner_id always from Actor — never from body (IDOR)
         const { data, error } = await sb
           .from("properties")
           .insert({
-            owner_id: user.id,
+            owner_id: actor.id,
             title: body.title,
             area: body.area,
             emirate: body.emirate,
@@ -1668,8 +1845,8 @@ export default async function handler(req, res) {
       }
 
       if (method === "PATCH") {
-        const editorId = user?.id || citizen?.id || jwtSub;
-        if (!editorId) return sendJson(res, 401, { error: "Sign in to edit this listing." });
+        if (!requireCitizenActor(actor, res, "Sign in to edit this listing.")) return;
+        const editorId = actor.id;
         const body = await readBody(req);
         const { id, ...fields } = body;
         if (!id) return sendJson(res, 400, { error: "id required" });
@@ -1705,8 +1882,8 @@ export default async function handler(req, res) {
       }
 
       if (method === "DELETE") {
-        const delId = user?.id || citizen?.id || jwtSub;
-        if (!delId) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const delId = actor.id;
         const body = await readBody(req);
         if (!body?.id) return sendJson(res, 400, { error: "id required" });
         let delClient = sb;
@@ -1737,7 +1914,7 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && action === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like services." });
+        if (!requireCitizenActor(actor, res, "Sign in to like services.")) return;
         const body = await readBody(req);
         if (!body.serviceId) return sendJson(res, 400, { error: "serviceId required" });
         const { data, error } = await sb.rpc("toggle_service_like", { sid: body.serviceId }).maybeSingle();
@@ -1757,12 +1934,12 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { services: (data || []).map((s) => ({ ...s, ownerId: s.owner_id, isLive: true })) });
       }
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to publish a service." });
+        if (!requireCitizenActor(actor, res, "Sign in to publish a service.")) return;
         const body = await readBody(req);
         const { data, error } = await sb
           .from("services")
           .insert({
-            owner_id: user.id,
+            owner_id: actor.id,
             title: body.title,
             category: body.category,
             area: body.area,
@@ -1790,29 +1967,27 @@ export default async function handler(req, res) {
       // /api/conversations/:id/messages
       if (convId && segments[2] === "messages") {
         if (method === "GET") {
-          const msgUserId = user?.id || citizen?.id || jwtSub;
-          if (!msgUserId) return sendJson(res, 401, { error: "Sign in required." });
+          if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+          const msgUserId = actor.id;
           let msgReader = sb;
           try { msgReader = adminClient(); } catch { /* user client */ }
           const { data: convo } = await msgReader.from("conversations").select("participant_ids").eq("id", convId).maybeSingle();
-          if (!convo || !(convo.participant_ids || []).map(String).includes(String(msgUserId))) {
-            return sendJson(res, 403, { error: "Not a participant in this conversation." });
-          }
+          if (!requireParticipantActor(actor, convo?.participant_ids, res)) return;
           const { data, error } = await msgReader.from("messages").select("*").eq("conversation_id", convId).order("created_at", { ascending: true }).limit(500);
           if (error) return sendJson(res, 400, { error: error.message });
           return sendJson(res, 200, { messages: data || [] });
         }
         if (method === "POST") {
-          const msgUserId = user?.id || citizen?.id || jwtSub;
-          if (!msgUserId) return sendJson(res, 401, { error: "Sign in to send messages." });
+          if (!requireCitizenActor(actor, res, "Sign in to send messages.")) return;
+          const msgUserId = actor.id;
+          // Ignore any client-claimed senderId (IDOR)
+          if (actorOnlyId(actor, null) == null) return sendJson(res, 401, { error: "Sign in to send messages." });
           const okRate = await checkRateLimit(anonClient(), `msg_${msgUserId}`, 60);
           if (!okRate) return sendJson(res, 429, { error: "You're sending messages too fast — wait a moment." });
           let msgWriter = sb;
           try { msgWriter = adminClient(); } catch { /* user client */ }
           const { data: convo } = await msgWriter.from("conversations").select("participant_ids").eq("id", convId).maybeSingle();
-          if (!convo || !(convo.participant_ids || []).map(String).includes(String(msgUserId))) {
-            return sendJson(res, 403, { error: "Not a participant in this conversation." });
-          }
+          if (!requireParticipantActor(actor, convo?.participant_ids, res)) return;
           const body = await readBody(req);
           // Load conversation E2EE flag (fail-closed when enabled)
           let e2eeEnabled = false;
@@ -1906,14 +2081,16 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { message: data });
         }
         if (method === "PATCH" && req.query.action === "edit") {
-          if (!user) return sendJson(res, 401, { error: "Sign in required." });
+          if (!requireCitizenActor(actor, res, "Sign in required.")) return;
           const body = await readBody(req);
           if (!body.messageId || !body.body?.trim()) return sendJson(res, 400, { error: "messageId and body required" });
-          const { data, error } = await sb
+          let msgEditor = sb;
+          try { msgEditor = adminClient(); } catch { /* user client */ }
+          const { data, error } = await msgEditor
             .from("messages")
             .update({ body: body.body.trim(), edited_at: new Date().toISOString() })
             .eq("id", body.messageId)
-            .eq("sender_id", user.id) // can only edit your own messages
+            .eq("sender_id", actor.id) // Actor only — can only edit own messages
             .select()
             .maybeSingle();
           if (error) return sendJson(res, 400, { error: error.message });
@@ -1922,42 +2099,43 @@ export default async function handler(req, res) {
         }
         if (method === "PATCH") {
           // Mark conversation as read for the current user (clears badge / unread).
-          if (!user) return sendJson(res, 401, { error: "Sign in required." });
-          const { data: convo } = await sb.from("conversations").select("participant_ids").eq("id", convId).maybeSingle();
-          if (!convo || !(convo.participant_ids || []).map(String).includes(String(user.id))) {
-            return sendJson(res, 403, { error: "Not a participant in this conversation." });
-          }
+          if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+          let reader = sb;
+          try { reader = adminClient(); } catch { /* user client */ }
+          const { data: convo } = await reader.from("conversations").select("participant_ids").eq("id", convId).maybeSingle();
+          if (!requireParticipantActor(actor, convo?.participant_ids, res)) return;
           // Prefer service role so RLS never blocks read_by updates
-          let writer = sb;
-          try { writer = adminClient(); } catch { /* fall back to user client */ }
+          let writer = reader;
           const { data: rows } = await writer
             .from("messages")
             .select("id, sender_id, read_by")
             .eq("conversation_id", convId)
-            .neq("sender_id", user.id)
+            .neq("sender_id", actor.id)
             .limit(500);
-          const me = String(user.id);
+          const me = String(actor.id);
           let marked = 0;
           for (const row of rows || []) {
             const readBy = (row.read_by || []).map(String);
             if (readBy.includes(me)) continue;
             const { error } = await writer
               .from("messages")
-              .update({ read_by: [...readBy, user.id], read_at: new Date().toISOString() })
+              .update({ read_by: [...readBy, actor.id], read_at: new Date().toISOString() })
               .eq("id", row.id);
             if (!error) marked += 1;
           }
           return sendJson(res, 200, { ok: true, marked });
         }
         if (method === "DELETE") {
-          if (!user) return sendJson(res, 401, { error: "Sign in required." });
+          if (!requireCitizenActor(actor, res, "Sign in required.")) return;
           const body = await readBody(req);
           if (!body.messageId) return sendJson(res, 400, { error: "messageId required" });
-          const { error, count } = await sb
+          let msgDel = sb;
+          try { msgDel = adminClient(); } catch { /* user client */ }
+          const { error, count } = await msgDel
             .from("messages")
             .delete({ count: "exact" })
             .eq("id", body.messageId)
-            .eq("sender_id", user.id); // can only delete your own messages
+            .eq("sender_id", actor.id); // Actor only
           if (error) return sendJson(res, 400, { error: error.message });
           if (!count) return sendJson(res, 403, { error: "You can only delete your own messages." });
           return sendJson(res, 200, { ok: true });
@@ -1967,13 +2145,13 @@ export default async function handler(req, res) {
 
       // /api/conversations/:id — delete a whole conversation (must be a participant)
       if (convId && !segments[2] && method === "DELETE") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
-        const { data: convo } = await sb.from("conversations").select("participant_ids").eq("id", convId).maybeSingle();
-        if (!convo || !(convo.participant_ids || []).includes(user.id)) {
-          return sendJson(res, 403, { error: "Not a participant in this conversation." });
-        }
-        await sb.from("messages").delete().eq("conversation_id", convId);
-        const { error } = await sb.from("conversations").delete().eq("id", convId);
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        let cdel = sb;
+        try { cdel = adminClient(); } catch { /* user client */ }
+        const { data: convo } = await cdel.from("conversations").select("participant_ids").eq("id", convId).maybeSingle();
+        if (!requireParticipantActor(actor, convo?.participant_ids, res)) return;
+        await cdel.from("messages").delete().eq("conversation_id", convId);
+        const { error } = await cdel.from("conversations").delete().eq("id", convId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
       }
@@ -2164,18 +2342,30 @@ export default async function handler(req, res) {
           }
         } catch { /* ranking is best-effort */ }
         if (q) list = list.filter((p) => (p.name || "").toLowerCase().includes(q));
+        const NEW_MS = 5 * 24 * 3600 * 1000;
+        const nowMs = Date.now();
         list.sort((a, b) => {
-          // 1) people you already messaged/called (most recent first), 2) online/busy, 3) name
+          // Meta-style Connect rank:
+          // 1) people you messaged/called (recency)
+          // 2) brand-new citizens (5d) so directory is never a frozen old list
+          // 3) online / busy
+          // 4) name
           if ((b.contactRank || 0) !== (a.contactRank || 0)) return (b.contactRank || 0) - (a.contactRank || 0);
           if ((a.contactRank || 0) > 0 && (b.lastContactAt || 0) !== (a.lastContactAt || 0)) {
             return (b.lastContactAt || 0) - (a.lastContactAt || 0);
+          }
+          const aNew = a.created_at && (nowMs - new Date(a.created_at).getTime()) < NEW_MS ? 1 : 0;
+          const bNew = b.created_at && (nowMs - new Date(b.created_at).getTime()) < NEW_MS ? 1 : 0;
+          if (bNew !== aNew) return bNew - aNew;
+          if (aNew && bNew) {
+            return (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0);
           }
           const rank = { online: 0, busy: 1, away: 2, offline: 3 };
           const r = (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
           if (r !== 0) return r;
           return (a.name || "").localeCompare(b.name || "");
         });
-        return sendJson(res, 200, { users: list });
+        return sendJson(res, 200, { users: list, serverTime: new Date().toISOString() });
       }
 
       if (method === "GET") {
@@ -2187,12 +2377,30 @@ export default async function handler(req, res) {
         try { listClient = adminClient(); } catch {
           if (!token) return sendJson(res, 200, { conversations: [] });
         }
-        const { data: convos, error } = await listClient
-          .from("conversations")
-          .select("*")
-          .contains("participant_ids", [listId])
-          .order("created_at", { ascending: false })
-          .limit(100);
+        // Prefer last activity order (Meta-style inbox). Fall back handled by in-memory sort.
+        let convos = null;
+        let error = null;
+        {
+          const q1 = await listClient
+            .from("conversations")
+            .select("*")
+            .contains("participant_ids", [listId])
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+            .limit(100);
+          if (q1.error) {
+            const q2 = await listClient
+              .from("conversations")
+              .select("*")
+              .contains("participant_ids", [listId])
+              .order("created_at", { ascending: false })
+              .limit(100);
+            convos = q2.data;
+            error = q2.error;
+          } else {
+            convos = q1.data;
+            error = q1.error;
+          }
+        }
         if (error) return sendJson(res, 400, { error: error.message });
         // SCALE FIX: batch last-message + unread in 2 queries instead of
         // 2N. Critical for 50–100 concurrent Connect users.
@@ -2326,13 +2534,13 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { posts: posts || [] });
         }
         if (method === "POST") {
-          if (!user) return sendJson(res, 401, { error: "Sign in to post in this circle." });
+          if (!requireCitizenActor(actor, res, "Sign in to post in this circle.")) return;
           const body = await readBody(req);
           let { data: circle } = await sb.from("circles").select("id").eq("code", code).maybeSingle();
           if (!circle) return sendJson(res, 404, { error: "Circle not found." });
           const { data, error } = await sb
             .from("circle_posts")
-            .insert({ circle_id: circle.id, title: body.title, type: body.type || "announcement", author_id: user.id })
+            .insert({ circle_id: circle.id, title: body.title, type: body.type || "announcement", author_id: actor.id })
             .select()
             .maybeSingle();
           if (error) return sendJson(res, 400, { error: error.message });
@@ -2363,26 +2571,26 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && req.query.action === "join") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to join a circle." });
+        if (!requireCitizenActor(actor, res, "Sign in to join a circle.")) return;
         const body = await readBody(req);
         const { data: circle } = await sb.from("circles").select("id").eq("code", body.code).maybeSingle();
         if (!circle) return sendJson(res, 404, { error: "Circle not found." });
-        const { error } = await sb.from("circle_members").upsert({ circle_id: circle.id, user_id: user.id });
+        const { error } = await sb.from("circle_members").upsert({ circle_id: circle.id, user_id: actor.id });
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
       }
 
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to create a circle." });
+        if (!requireCitizenActor(actor, res, "Sign in to create a circle.")) return;
         const body = await readBody(req);
         const code = randomCircleCode(body.name || "CIR");
         const { data, error } = await sb
           .from("circles")
-          .insert({ code, name: body.name, flag: body.flag || null, created_by: user.id })
+          .insert({ code, name: body.name, flag: body.flag || null, created_by: actor.id })
           .select()
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
-        await sb.from("circle_members").insert({ circle_id: data.id, user_id: user.id }).catch(() => {});
+        await sb.from("circle_members").insert({ circle_id: data.id, user_id: actor.id }).catch(() => {});
         return sendJson(res, 200, { circle: data });
       }
 
@@ -2399,12 +2607,12 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to create an event." });
+        if (!requireCitizenActor(actor, res, "Sign in to create an event.")) return;
         const body = await readBody(req);
         const { data, error } = await sb
           .from("events")
           .insert({
-            organizer_id: user.id,
+            organizer_id: actor.id,
             title: body.title,
             category: body.category,
             description: body.description,
@@ -2428,9 +2636,9 @@ export default async function handler(req, res) {
       if (method === "PATCH") {
         const body = await readBody(req);
         if (body.action === "rsvp") {
-          if (!user) return sendJson(res, 401, { error: "Sign in to RSVP." });
+          if (!requireCitizenActor(actor, res, "Sign in to RSVP.")) return;
           const code = ticketCode();
-          const { error } = await sb.from("event_rsvps").insert({ event_id: body.eventId, user_id: user.id, ticket_code: code });
+          const { error } = await sb.from("event_rsvps").insert({ event_id: body.eventId, user_id: actor.id, ticket_code: code });
           if (error) {
             if (error.code === "23505") return sendJson(res, 200, { ticket: { ticket_code: code, already: true } });
             return sendJson(res, 400, { error: error.message });
@@ -2449,7 +2657,7 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && req.query.action === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like events." });
+        if (!requireCitizenActor(actor, res, "Sign in to like events.")) return;
         const body = await readBody(req);
         if (!body.eventId) return sendJson(res, 400, { error: "eventId required" });
         const { data, error } = await sb.rpc("toggle_event_like", { eid: body.eventId }).maybeSingle();
@@ -2486,8 +2694,8 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { publicKey: pub, enabled: !!pub });
       }
       if (pushAction === "subscribe" && method === "POST") {
-        const pushUserId = user?.id || citizen?.id || jwtSub;
-        if (!pushUserId) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const pushUserId = actor.id;
         // App Check: APP_CHECK_ENFORCE=1 rejects missing/invalid X-Firebase-AppCheck
         try {
           const mod = await getPushSend();
@@ -2551,16 +2759,16 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { ok: true, platform: row.platform });
       }
       if (pushAction === "unsubscribe" && method === "POST") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
         const body = await readBody(req);
         let svcPush;
         try { svcPush = adminClient(); } catch (e) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         if (body?.endpoint) {
-          await svcPush.from("push_subscriptions").delete().eq("user_id", user.id).eq("endpoint", body.endpoint);
+          await svcPush.from("push_subscriptions").delete().eq("user_id", actor.id).eq("endpoint", body.endpoint);
         } else {
-          await svcPush.from("push_subscriptions").delete().eq("user_id", user.id);
+          await svcPush.from("push_subscriptions").delete().eq("user_id", actor.id);
         }
         return sendJson(res, 200, { ok: true });
       }
@@ -2638,12 +2846,12 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && invAction === "like") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to like." });
+        if (!requireCitizenActor(actor, res, "Sign in to like.")) return;
         const body = await readBody(req);
         if (!body.postId) return sendJson(res, 400, { error: "postId required" });
-        const { data: existing } = await sb.from("invest_likes").select("id").eq("invest_post_id", body.postId).eq("user_id", user.id).maybeSingle();
         let svcL;
         try { svcL = adminClient(); } catch { svcL = sb; }
+        const { data: existing } = await svcL.from("invest_likes").select("id").eq("invest_post_id", body.postId).eq("user_id", actor.id).maybeSingle();
         if (existing) {
           await svcL.from("invest_likes").delete().eq("id", existing.id);
           const { data: post } = await svcL.from("invest_posts").select("likes_count").eq("id", body.postId).maybeSingle();
@@ -2651,7 +2859,7 @@ export default async function handler(req, res) {
           await svcL.from("invest_posts").update({ likes_count: next }).eq("id", body.postId);
           return sendJson(res, 200, { liked: false, likesCount: next });
         }
-        await svcL.from("invest_likes").insert({ invest_post_id: body.postId, user_id: user.id });
+        await svcL.from("invest_likes").insert({ invest_post_id: body.postId, user_id: actor.id });
         const { data: post } = await svcL.from("invest_posts").select("likes_count").eq("id", body.postId).maybeSingle();
         const next = (post?.likes_count || 0) + 1;
         await svcL.from("invest_posts").update({ likes_count: next }).eq("id", body.postId);
@@ -2659,7 +2867,7 @@ export default async function handler(req, res) {
       }
 
       if (method === "DELETE") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
         const body = await readBody(req);
         if (!body.postId) return sendJson(res, 400, { error: "postId required" });
         let svcD;
@@ -2667,15 +2875,15 @@ export default async function handler(req, res) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         const { data: existing } = await svcD.from("invest_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
-        if (!existing || existing.owner_id !== user.id) return sendJson(res, 404, { error: "Post not found." });
+        if (!existing || !sameActorId(existing.owner_id, actor.id)) return sendJson(res, 404, { error: "Post not found." });
         const { error } = await svcD.from("invest_posts").delete().eq("id", body.postId);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
       }
 
       if (method === "POST" && (!invAction || invAction === "create")) {
-        const investorId = user?.id || citizen?.id || jwtSub;
-        if (!investorId) return sendJson(res, 401, { error: "Sign in to post on Invest." });
+        if (!requireCitizenActor(actor, res, "Sign in to post on Invest.")) return;
+        const investorId = actor.id;
         const okRate = await checkRateLimit(anonClient(), `invest_post_${investorId}`, 30);
         if (!okRate) return sendJson(res, 429, { error: "Too many Invest posts — wait a few minutes." });
         const body = await readBody(req);
@@ -5096,9 +5304,50 @@ export default async function handler(req, res) {
             owner_avatar: ow?.avatar_url || p.owner_avatar || null,
           };
         });
+        // Server-side ranking (default on). Client may send affinity as base64 JSON in ?affinity=
+        // or skip with ?ranked=0 for raw recency.
+        let rankedPosts = enriched;
+        const rankedFlag = String(req.query.ranked || "1").toLowerCase();
+        if (rankedFlag !== "0" && rankedFlag !== "false" && enriched.length > 1) {
+          try {
+            let rankWorldReels;
+            try {
+              ({ rankWorldReels } = await import("./lib/merveilRanking.js"));
+            } catch {
+              try {
+                ({ rankWorldReels } = await import("../lib/merveilRanking.js"));
+              } catch {
+                rankWorldReels = null;
+              }
+            }
+            if (typeof rankWorldReels === "function") {
+              let affinity = null;
+              const affRaw = req.query.affinity || "";
+              if (affRaw) {
+                try {
+                  affinity = JSON.parse(Buffer.from(String(affRaw), "base64url").toString("utf8"));
+                } catch {
+                  try { affinity = JSON.parse(decodeURIComponent(String(affRaw))); } catch { /* ignore */ }
+                }
+              }
+              rankedPosts = rankWorldReels(enriched, {
+                userId: actor?.id || citizenId || null,
+                affinity: affinity || undefined,
+              });
+            }
+          } catch (rankErr) {
+            console.warn("[world-rank]", rankErr?.message || rankErr);
+            rankedPosts = enriched;
+          }
+        }
         const hasMore = posts.length >= pageSize;
         const nextBefore = posts.length ? posts[posts.length - 1].created_at : null;
-        return sendJson(res, 200, { posts: enriched, hasMore, nextBefore });
+        return sendJson(res, 200, {
+          posts: rankedPosts,
+          hasMore,
+          nextBefore,
+          ranked: rankedPosts !== enriched || rankedFlag !== "0",
+        });
       }
 
       if (method === "POST" && action === "view") {
@@ -5416,12 +5665,12 @@ export default async function handler(req, res) {
 
       // Wipe every World post owned by the signed-in citizen (reels + feed)
       if (method === "POST" && action === "delete-mine") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
         let svcDel;
         try { svcDel = adminClient(); } catch (e) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
-        const { data: mine } = await svcDel.from("world_posts").select("id").eq("owner_id", user.id);
+        const { data: mine } = await svcDel.from("world_posts").select("id").eq("owner_id", actor.id);
         const ids = (mine || []).map((r) => r.id);
         if (!ids.length) return sendJson(res, 200, { ok: true, deleted: 0 });
         await Promise.all([
@@ -5431,13 +5680,13 @@ export default async function handler(req, res) {
           svcDel.from("world_reactions").delete().in("world_post_id", ids),
           svcDel.from("world_post_views").delete().in("world_post_id", ids),
         ]).catch(() => {});
-        const { error } = await svcDel.from("world_posts").delete().eq("owner_id", user.id);
+        const { error } = await svcDel.from("world_posts").delete().eq("owner_id", actor.id);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true, deleted: ids.length });
       }
 
       if (method === "POST" && action === "update") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
         const body = await readBody(req);
         if (!body.postId) return sendJson(res, 400, { error: "postId required" });
         let svcUp;
@@ -5445,7 +5694,7 @@ export default async function handler(req, res) {
           return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
         }
         const { data: existing } = await svcUp.from("world_posts").select("id, owner_id").eq("id", body.postId).maybeSingle();
-        if (!existing || String(existing.owner_id) !== String(user.id)) return sendJson(res, 404, { error: "Post not found or not yours." });
+        if (!existing || !sameActorId(existing.owner_id, actor.id)) return sendJson(res, 404, { error: "Post not found or not yours." });
         const fields = { updated_at: new Date().toISOString() };
         if (body.title !== undefined) fields.title = String(body.title).slice(0, 200);
         if (body.topic !== undefined) fields.topic = body.topic || "Innovation";
@@ -5466,9 +5715,9 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST") {
-        // citizen (jwtSub fallback) — do not 401 a signed-in user during token rotation
-        const posterId = user?.id || citizen?.id || jwtSub;
-        if (!posterId) return sendJson(res, 401, { error: "Sign in to post on World." });
+        // Actor only — never body.owner_id (IDOR). jwtSub inside actor covers token rotation.
+        if (!requireCitizenActor(actor, res, "Sign in to post on World.")) return;
+        const posterId = actor.id;
         const okRate = await checkRateLimit(anonClient(), `world_post_${posterId}`, 20);
         if (!okRate) return sendJson(res, 429, { error: "Too many World posts — wait a few minutes." });
         const body = await readBody(req);
@@ -5511,16 +5760,18 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST" && action === "react") {
-        if (!user) return sendJson(res, 401, { error: "Sign in to react." });
+        if (!requireCitizenActor(actor, res, "Sign in to react.")) return;
         const body = await readBody(req);
         const validTypes = ["support", "invest", "collaborate", "hire", "meeting"];
         if (!body.postId || !validTypes.includes(body.reactionType)) return sendJson(res, 400, { error: "postId and a valid reactionType required" });
-        const { data: existing } = await sb.from("world_reactions").select("id").eq("world_post_id", body.postId).eq("user_id", user.id).eq("reaction_type", body.reactionType).maybeSingle();
+        let wr = sb;
+        try { wr = adminClient(); } catch { /* user client */ }
+        const { data: existing } = await wr.from("world_reactions").select("id").eq("world_post_id", body.postId).eq("user_id", actor.id).eq("reaction_type", body.reactionType).maybeSingle();
         if (existing) {
-          await sb.from("world_reactions").delete().eq("id", existing.id);
+          await wr.from("world_reactions").delete().eq("id", existing.id);
           return sendJson(res, 200, { active: false });
         }
-        const { error } = await sb.from("world_reactions").insert({ world_post_id: body.postId, user_id: user.id, reaction_type: body.reactionType });
+        const { error } = await wr.from("world_reactions").insert({ world_post_id: body.postId, user_id: actor.id, reaction_type: body.reactionType });
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { active: true });
       }
@@ -5842,7 +6093,9 @@ export default async function handler(req, res) {
     // Daily check-in claim — once per calendar day (UTC date).
     // First 100 citizens (by profile created_at) get a founding multiplier.
     if (resource === "rewards" && req.query.action === "daily-claim" && method === "POST") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
+      // Actor (jwtSub) — never 401 a signed-in citizen during token refresh
+      if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+      const claimUserId = actor.id;
       let svc;
       try { svc = adminClient(); } catch (e) {
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
@@ -5850,14 +6103,14 @@ export default async function handler(req, res) {
       const today = new Date().toISOString().slice(0, 10);
       const { data: existing } = await svc.from("daily_rewards")
         .select("id, points")
-        .eq("user_id", user.id)
+        .eq("user_id", claimUserId)
         .eq("claim_date", today)
         .maybeSingle();
       if (existing) {
         return sendJson(res, 200, { alreadyClaimed: true, points: existing.points, claimDate: today });
       }
 
-      const { data: profile } = await svc.from("profiles").select("created_at").eq("id", user.id).maybeSingle();
+      const { data: profile } = await svc.from("profiles").select("created_at").eq("id", claimUserId).maybeSingle();
       let isFounding = false;
       let rank = null;
       if (profile?.created_at) {
@@ -5874,7 +6127,7 @@ export default async function handler(req, res) {
       try {
         const { data: recent } = await svc.from("daily_rewards")
           .select("claim_date")
-          .eq("user_id", user.id)
+          .eq("user_id", claimUserId)
           .order("claim_date", { ascending: false })
           .limit(14);
         const days = new Set((recent || []).map((c) => String(c.claim_date).slice(0, 10)));
@@ -5889,7 +6142,7 @@ export default async function handler(req, res) {
       points += streakBonus;
 
       const { data: row, error } = await svc.from("daily_rewards").insert({
-        user_id: user.id,
+        user_id: claimUserId,
         claim_date: today,
         points,
         is_founding: isFounding,
@@ -5921,8 +6174,8 @@ export default async function handler(req, res) {
     // posts), not a black-box "hundreds of signals" model. Honest scope:
     // a working recommendation feed, not the full Opportunity DNA vision.
     if (resource === "opportunities" && method === "GET") {
-      if (!user) return sendJson(res, 401, { error: "Sign in required." });
-      const { data: profile } = await anonClient().from("profiles").select("profession, skills, languages, city, country").eq("id", user.id).maybeSingle();
+      if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+      const { data: profile } = await anonClient().from("profiles").select("profession, skills, languages, city, country").eq("id", actor.id).maybeSingle();
       const signals = [
         profile?.profession,
         ...(profile?.skills || []),
@@ -6893,9 +7146,9 @@ export default async function handler(req, res) {
     // Writes use service role after auth checks so RLS never silently drops
     // inserts (common cause of "Connect does nothing").
     if (resource === "connections") {
-      // Use citizen (jwtSub fallback) so refresh races never 401 a signed-in user.
-      if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });
-      const cid = citizen.id;
+      // Actor (jwtSub inside) so refresh races never 401 a signed-in user.
+      if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+      const cid = actor.id;
       let svc;
       try {
         svc = adminClient();
@@ -7421,9 +7674,9 @@ export default async function handler(req, res) {
     // message downstream is checked against this row, not trusted from
     // either client.
     if (resource === "calls" && action === "create" && method === "POST") {
-      // citizen (jwtSub fallback) so refresh races never 401 a signed-in caller.
-      if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });
-      const callerId = citizen.id;
+      // Actor so refresh races never 401 a signed-in caller.
+      if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+      const callerId = actor.id;
       const body = await readBody(req);
       const receiverId = body?.receiverId;
       const type = body?.type;
@@ -7796,8 +8049,8 @@ export default async function handler(req, res) {
     }
 
     if (resource === "calls" && (action === "accept" || action === "reject" || action === "end") && method === "POST") {
-      if (!citizen?.id) return sendJson(res, 401, { error: "Sign in required." });
-      const meId = citizen.id;
+      if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+      const meId = actor.id;
       const body = await readBody(req);
       if (!body?.callId) return sendJson(res, 400, { error: "callId required" });
 
@@ -7961,8 +8214,8 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST") {
-        const commenterId = user?.id || citizen?.id || jwtSub;
-        if (!commenterId) return sendJson(res, 401, { error: "Sign in to comment." });
+        if (!requireCitizenActor(actor, res, "Sign in to comment.")) return;
+        const commenterId = actor.id;
         const body = await readBody(req);
         if (!body.targetType || !body.targetId) return sendJson(res, 400, { error: "targetType and targetId required" });
         if (String(body.targetId).startsWith("merveil-ai-seed")) {
@@ -8008,10 +8261,12 @@ export default async function handler(req, res) {
       }
 
       if (method === "DELETE") {
-        if (!user) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
         const body = await readBody(req);
         if (!body.id) return sendJson(res, 400, { error: "id required" });
-        const { error } = await sb.from("comments").delete().eq("id", body.id).eq("user_id", user.id);
+        let cdel = sb;
+        try { cdel = adminClient(); } catch { /* user client */ }
+        const { error } = await cdel.from("comments").delete().eq("id", body.id).eq("user_id", actor.id);
         if (error) return sendJson(res, 400, { error: error.message });
         return sendJson(res, 200, { ok: true });
       }
@@ -9115,15 +9370,25 @@ export default async function handler(req, res) {
     }
 
     if (resource === "kyc") {
-      const actorId = user?.id || citizen?.id || jwtSub;
-      if (!actorId) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+      const actorId = actor.id; // never body.userId
       let svc;
       try { svc = adminClient(); } catch (e) {
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
       }
       const kycAction = req.query.action || action;
 
-      // GET status — profile summary + latest submissions
+      const uaePassConfigured = !!(process.env.UAE_PASS_CLIENT_ID && process.env.UAE_PASS_CLIENT_SECRET);
+      const vendorConfigured = !!(
+        process.env.SUMSUB_APP_TOKEN ||
+        process.env.VERIFF_API_KEY ||
+        process.env.SHUFTI_CLIENT_ID ||
+        process.env.ONFIDO_API_TOKEN ||
+        process.env.UQUDO_API_KEY ||
+        process.env.KYC_VENDOR_URL
+      );
+
+      // GET status — profile + providers readiness
       if (method === "GET" && (kycAction === "status" || !kycAction)) {
         const { data: prof } = await svc.from("profiles")
           .select("id, name, full_legal_name, nationality, date_of_birth, id_document_type, id_document_number, id_document_country, id_document_expires_at, kyc_level, kyc_status, kyc_verified_at, kyc_rejected_reason")
@@ -9136,6 +9401,7 @@ export default async function handler(req, res) {
         return sendJson(res, 200, {
           profile: prof || { id: actorId, kyc_level: "none", kyc_status: "none" },
           submissions: subs || [],
+          providers: { uaePass: uaePassConfigured, vendor: vendorConfigured },
           requirements: {
             basic: ["Phone or email verified (already via auth)"],
             standard: ["Government ID (Emirates ID or passport)", "Selfie matching ID"],
@@ -9144,17 +9410,169 @@ export default async function handler(req, res) {
         });
       }
 
-      // POST submit — create / update pending verification
+      // UAE Pass OAuth start
+      if (method === "GET" && kycAction === "uae-pass-start") {
+        if (!uaePassConfigured) {
+          return sendJson(res, 501, {
+            error: "UAE Pass not configured",
+            hint: "Set UAE_PASS_CLIENT_ID, UAE_PASS_CLIENT_SECRET, UAE_PASS_REDIRECT_URI in Vercel env.",
+          });
+        }
+        const redirectUri = process.env.UAE_PASS_REDIRECT_URI
+          || `${process.env.APP_ORIGIN || "https://www.junction.technology"}/?kyc=uae_pass`;
+        const state = crypto.randomBytes(16).toString("hex");
+        try {
+          await svc.from("profiles").update({
+            kyc_uae_pass_state: state,
+            updated_at: new Date().toISOString(),
+          }).eq("id", actorId);
+        } catch {}
+        const authBase = process.env.UAE_PASS_AUTH_URL || "https://id.uaepass.ae/idshub/authorize";
+        const scope = process.env.UAE_PASS_SCOPE || "urn:uae:digitalid:profile:general";
+        const authorizeUrl =
+          `${authBase}?response_type=code&client_id=${encodeURIComponent(process.env.UAE_PASS_CLIENT_ID)}` +
+          `&scope=${encodeURIComponent(scope)}&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}` +
+          `&acr_values=${encodeURIComponent(process.env.UAE_PASS_ACR || "urn:safelayer:tws:policies:authentication:level:low")}`;
+        return sendJson(res, 200, { authorizeUrl, state });
+      }
+
+      // UAE Pass callback — exchange code → profile → verified when gov data present
+      if (method === "POST" && kycAction === "uae-pass-callback") {
+        if (!uaePassConfigured) return sendJson(res, 501, { error: "UAE Pass not configured" });
+        const body = await readBody(req);
+        const code = body.code;
+        if (!code) return sendJson(res, 400, { error: "code required" });
+        const redirectUri = process.env.UAE_PASS_REDIRECT_URI
+          || `${process.env.APP_ORIGIN || "https://www.junction.technology"}/?kyc=uae_pass`;
+        const tokenUrl = process.env.UAE_PASS_TOKEN_URL || "https://id.uaepass.ae/idshub/token";
+        const basic = Buffer.from(`${process.env.UAE_PASS_CLIENT_ID}:${process.env.UAE_PASS_CLIENT_SECRET}`).toString("base64");
+        let tokenJson;
+        try {
+          const tr = await fetch(tokenUrl, {
+            method: "POST",
+            headers: {
+              Authorization: `Basic ${basic}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              grant_type: "authorization_code",
+              code: String(code),
+              redirect_uri: redirectUri,
+            }).toString(),
+          });
+          tokenJson = await tr.json();
+          if (!tr.ok || !tokenJson.access_token) {
+            return sendJson(res, 400, { error: tokenJson.error_description || tokenJson.error || "Token exchange failed" });
+          }
+        } catch (e) {
+          return sendJson(res, 502, { error: e.message || "UAE Pass token error" });
+        }
+        const userInfoUrl = process.env.UAE_PASS_USERINFO_URL || "https://id.uaepass.ae/idshub/userinfo";
+        let profile;
+        try {
+          const ur = await fetch(userInfoUrl, {
+            headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+          });
+          profile = await ur.json();
+          if (!ur.ok) return sendJson(res, 400, { error: "Could not load UAE Pass profile" });
+        } catch (e) {
+          return sendJson(res, 502, { error: e.message || "userinfo failed" });
+        }
+        const fullName = profile.fullnamenameEN || profile.name || [profile.firstnameEN, profile.lastnameEN].filter(Boolean).join(" ");
+        const eid = profile.idn || profile.emiratesId || profile.sub;
+        const dob = profile.dob || profile.dateOfBirth || null;
+        const nationality = profile.nationalityEN || profile.nationality || null;
+        await svc.from("profiles").update({
+          kyc_status: "verified",
+          kyc_level: "standard",
+          kyc_verified_at: new Date().toISOString(),
+          kyc_method: "uae_pass",
+          full_legal_name: fullName || null,
+          id_document_type: "emirates_id",
+          id_document_number: eid ? String(eid).slice(0, 60) : null,
+          id_document_country: "AE",
+          date_of_birth: dob,
+          nationality,
+        }).eq("id", actorId);
+        await svc.from("verifications").insert({
+          user_id: actorId,
+          type: "identity",
+          level: "standard",
+          status: "verified",
+          full_legal_name: fullName || null,
+          id_document_type: "emirates_id",
+          id_document_number: eid ? String(eid).slice(0, 60) : null,
+          note: "uae_pass",
+          reviewed_at: new Date().toISOString(),
+        }).catch(() => {});
+        return sendJson(res, 200, { status: "verified", profile: { fullLegalName: fullName, idDocumentNumber: eid } });
+      }
+
+      // OCR hook — vendor when configured, else format-only helper
+      if (method === "POST" && kycAction === "ocr") {
+        const body = await readBody(req);
+        const vendorUrl = process.env.KYC_OCR_URL || process.env.KYC_VENDOR_URL;
+        if (vendorUrl && body.idFrontPath) {
+          try {
+            const vr = await fetch(vendorUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: process.env.KYC_VENDOR_KEY ? `Bearer ${process.env.KYC_VENDOR_KEY}` : undefined,
+              },
+              body: JSON.stringify({
+                type: "ocr",
+                documentType: body.documentType || "emirates_id",
+                idFrontPath: body.idFrontPath,
+                userId: actorId,
+              }),
+            });
+            const vj = await vr.json().catch(() => ({}));
+            if (vr.ok && (vj.fields || vj.data)) {
+              const f = vj.fields || vj.data;
+              return sendJson(res, 200, {
+                autoFilled: true,
+                provider: vj.provider || "vendor",
+                fields: {
+                  fullLegalName: f.fullLegalName || f.name_en || f.name || null,
+                  idDocumentNumber: f.idDocumentNumber || f.id_number || f.emiratesId || null,
+                  nationality: f.nationality || null,
+                  dateOfBirth: f.dateOfBirth || f.dob || null,
+                  expiry: f.expiry || f.dateOfExpiry || null,
+                },
+              });
+            }
+          } catch {}
+        }
+        // No vendor: return empty fields — client keeps manual entry
+        return sendJson(res, 200, {
+          autoFilled: false,
+          provider: null,
+          fields: {},
+          hint: "Wire KYC_OCR_URL or Sumsub/Veriff keys for auto-fill from card photo.",
+        });
+      }
+
+      // POST submit — optional vendor verify then pending/verified
       if (method === "POST" && (kycAction === "submit" || kycAction === "upsert")) {
         const body = await readBody(req);
         const level = ["basic", "standard", "enhanced"].includes(body.level) ? body.level : "standard";
         const type = ["identity", "address", "selfie", "company", "enhanced"].includes(body.type) ? body.type : "identity";
 
-        // Block spam: only one pending at a time
         const { data: existingPending } = await svc.from("verifications")
           .select("id").eq("user_id", actorId).eq("status", "pending").limit(1).maybeSingle();
         if (existingPending && !body.force) {
           return sendJson(res, 409, { error: "You already have a pending verification. Wait for review or contact support." });
+        }
+
+        let idNumber = body.idDocumentNumber ? String(body.idDocumentNumber).slice(0, 60) : null;
+        if (body.idDocumentType === "emirates_id" && idNumber) {
+          const digits = idNumber.replace(/\D/g, "");
+          if (digits.length === 15) {
+            idNumber = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 14)}-${digits.slice(14)}`;
+          } else if (digits.length > 0 && digits.length !== 15) {
+            return sendJson(res, 400, { error: "Emirates ID must be 15 digits (784-YYYY-XXXXXXX-C)." });
+          }
         }
 
         const row = {
@@ -9166,7 +9584,7 @@ export default async function handler(req, res) {
           nationality: body.nationality ? String(body.nationality).slice(0, 60) : null,
           date_of_birth: body.dateOfBirth || null,
           id_document_type: body.idDocumentType ? String(body.idDocumentType).slice(0, 40) : null,
-          id_document_number: body.idDocumentNumber ? String(body.idDocumentNumber).slice(0, 60) : null,
+          id_document_number: idNumber,
           id_document_country: body.idDocumentCountry ? String(body.idDocumentCountry).slice(0, 60) : null,
           id_document_expires_at: body.idDocumentExpiresAt || null,
           address_line: body.addressLine ? String(body.addressLine).slice(0, 200) : null,
@@ -9177,11 +9595,51 @@ export default async function handler(req, res) {
           selfie_path: body.selfiePath || null,
           address_proof_path: body.addressProofPath || null,
           company_doc_path: body.companyDocPath || null,
+          note: body.method ? String(body.method).slice(0, 40) : null,
           updated_at: new Date().toISOString(),
         };
 
         if (!row.full_legal_name || !row.id_document_type || !row.id_document_number) {
           return sendJson(res, 400, { error: "Full legal name, document type, and document number are required." });
+        }
+        if (!row.id_front_path || !row.selfie_path) {
+          return sendJson(res, 400, { error: "ID front photo and selfie are required." });
+        }
+
+        // Vendor verification when configured + runVendor
+        let vendorResult = null;
+        if (body.runVendor && vendorConfigured) {
+          const vendorUrl = process.env.KYC_VENDOR_URL || process.env.KYC_OCR_URL;
+          if (vendorUrl) {
+            try {
+              const vr = await fetch(vendorUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: process.env.KYC_VENDOR_KEY ? `Bearer ${process.env.KYC_VENDOR_KEY}` : undefined,
+                },
+                body: JSON.stringify({
+                  type: "verify",
+                  userId: actorId,
+                  fullLegalName: row.full_legal_name,
+                  idDocumentNumber: row.id_document_number,
+                  idDocumentType: row.id_document_type,
+                  idFrontPath: row.id_front_path,
+                  selfiePath: row.selfie_path,
+                  dateOfBirth: row.date_of_birth,
+                }),
+              });
+              vendorResult = await vr.json().catch(() => ({}));
+              if (vr.ok && (vendorResult.status === "verified" || vendorResult.verified === true)) {
+                row.status = "verified";
+              } else if (vr.ok && vendorResult.status === "rejected") {
+                row.status = "rejected";
+                row.rejection_reason = vendorResult.reason || "Provider rejected";
+              }
+            } catch (e) {
+              vendorResult = { error: e.message };
+            }
+          }
         }
 
         const { data: inserted, error } = await svc.from("verifications")
@@ -9190,9 +9648,8 @@ export default async function handler(req, res) {
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
 
-        // Mark profile pending
-        await svc.from("profiles").update({
-          kyc_status: "pending",
+        const profilePatch = {
+          kyc_status: row.status,
           kyc_level: level,
           full_legal_name: row.full_legal_name,
           nationality: row.nationality,
@@ -9201,20 +9658,32 @@ export default async function handler(req, res) {
           id_document_number: row.id_document_number,
           id_document_country: row.id_document_country,
           id_document_expires_at: row.id_document_expires_at,
-        }).eq("id", actorId);
+        };
+        if (row.status === "verified") {
+          profilePatch.kyc_verified_at = new Date().toISOString();
+          profilePatch.kyc_method = body.method || "scan";
+        }
+        await svc.from("profiles").update(profilePatch).eq("id", actorId);
 
-        try {
-          await notifyAdmins({
-            title: "New KYC submission",
-            body: `${row.full_legal_name || "Citizen"} submitted ${level} verification`,
-            url: "/merveil-admin-x9k2",
-          });
-        } catch {}
+        if (row.status === "pending") {
+          try {
+            await notifyAdmins({
+              title: "New KYC submission",
+              body: `${row.full_legal_name || "Citizen"} submitted ${level} verification`,
+              url: "/merveil-admin-x9k2",
+            });
+          } catch {}
+        }
 
-        return sendJson(res, 200, { submission: inserted, status: "pending" });
+        return sendJson(res, 200, {
+          submission: inserted,
+          status: row.status,
+          vendor: !!vendorResult && !vendorResult.error,
+          vendorResult: vendorResult || null,
+        });
       }
 
-      // POST signed-upload URL for KYC docs (private bucket)
+      // Signed upload URL
       if (method === "POST" && kycAction === "upload-url") {
         const body = await readBody(req);
         const filename = String(body.filename || "doc.jpg").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
@@ -9224,10 +9693,9 @@ export default async function handler(req, res) {
         try {
           const { data, error } = await svc.storage.from(bucket).createSignedUploadUrl(path);
           if (error) {
-            // Fallback: try public world-style bucket with private path prefix
             return sendJson(res, 400, {
-              error: error.message || "Could not create upload URL. Create private bucket 'kyc-docs' in Supabase Storage.",
-              hint: "Dashboard → Storage → New bucket → kyc-docs (private)",
+              error: error.message || "Could not create upload URL.",
+              hint: "Supabase → Storage → New bucket → name: kyc-docs → Private",
             });
           }
           return sendJson(res, 200, { path, bucket, signedUrl: data?.signedUrl || data?.url, token: data?.token });
@@ -9236,13 +9704,59 @@ export default async function handler(req, res) {
         }
       }
 
+      // Multipart upload fallback
+      if (method === "POST" && kycAction === "upload") {
+        try {
+          const form = await new Promise((resolve, reject) => {
+            const f = formidable({ maxFileSize: 12 * 1024 * 1024 });
+            f.parse(req, (err, fields, files) => (err ? reject(err) : resolve({ fields, files })));
+          });
+          const file = form.files?.file?.[0] || form.files?.file;
+          if (!file) return sendJson(res, 400, { error: "file required" });
+          const kind = String(form.fields?.kind?.[0] || form.fields?.kind || "id_front").slice(0, 40);
+          const filename = (file.originalFilename || "doc.jpg").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+          const path = `${actorId}/${Date.now()}_${kind}_${filename}`;
+          const fs = await import("fs");
+          const buf = fs.readFileSync(file.filepath);
+          const bucket = "kyc-docs";
+          const { error } = await svc.storage.from(bucket).upload(path, buf, {
+            contentType: file.mimetype || "image/jpeg",
+            upsert: false,
+          });
+          if (error) return sendJson(res, 400, { error: error.message, hint: "Create private bucket kyc-docs" });
+          return sendJson(res, 200, { path, bucket });
+        } catch (e) {
+          return sendJson(res, 400, { error: e.message || "Upload failed" });
+        }
+      }
+
+      // Base64 upload fallback
+      if (method === "POST" && kycAction === "upload-base64") {
+        const body = await readBody(req);
+        const dataUrl = String(body.dataUrl || "");
+        const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+        if (!m) return sendJson(res, 400, { error: "Invalid dataUrl" });
+        const buf = Buffer.from(m[2], "base64");
+        if (buf.length > 12 * 1024 * 1024) return sendJson(res, 400, { error: "Image too large" });
+        const kind = String(body.kind || "id_front").slice(0, 40);
+        const filename = String(body.filename || "doc.jpg").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80);
+        const path = `${actorId}/${Date.now()}_${kind}_${filename}`;
+        const bucket = "kyc-docs";
+        const { error } = await svc.storage.from(bucket).upload(path, buf, {
+          contentType: m[1],
+          upsert: false,
+        });
+        if (error) return sendJson(res, 400, { error: error.message, hint: "Create private bucket kyc-docs" });
+        return sendJson(res, 200, { path, bucket });
+      }
+
       return sendJson(res, 404, { error: "Unknown kyc action." });
     }
 
     // ------------------------------------------------------- /api/wallet
     if (resource === "wallet") {
-      const actorId = user?.id || citizen?.id || jwtSub;
-      if (!actorId) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+      const actorId = actor.id; // never body.userId
       let svc;
       try { svc = adminClient(); } catch (e) {
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
@@ -10622,8 +11136,8 @@ export default async function handler(req, res) {
     // ------------------------------------------------------- /api/passport
     // Activate paid Passport types: requires KYC verified + wallet payment
     if (resource === "passport") {
-      const actorId = user?.id || citizen?.id || jwtSub;
-      if (!actorId) return sendJson(res, 401, { error: "Sign in required." });
+      if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+      const actorId = actor.id; // never body.userId / body.profileId
       let svc;
       try { svc = adminClient(); } catch (e) {
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
