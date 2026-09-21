@@ -2588,14 +2588,22 @@ export default async function handler(req, res) {
             unread_count: unreadByGroup[g.id] || 0,
           });
         }
-        const emirates = Object.keys(byEm).sort().map((em) => ({
-          emirate: em,
-          areas: Object.keys(byEm[em]).sort().map((area) => ({
-            area,
-            groups: byEm[em][area],
-            unread_count: byEm[em][area].reduce((n, g) => n + (g.unread_count || 0), 0),
-          })),
-        }));
+        // Emirates ordered by area count (Dubai first), then name
+        const emirates = Object.keys(byEm)
+          .sort((a, b) => {
+            const ca = Object.keys(byEm[a]).length;
+            const cb = Object.keys(byEm[b]).length;
+            if (cb !== ca) return cb - ca;
+            return a.localeCompare(b);
+          })
+          .map((em) => ({
+            emirate: em,
+            areas: Object.keys(byEm[em]).sort().map((area) => ({
+              area,
+              groups: byEm[em][area],
+              unread_count: byEm[em][area].reduce((n, g) => n + (g.unread_count || 0), 0),
+            })),
+          }));
         return sendJson(res, 200, { emirates, totalGroups: (rows || []).length });
       }
 
@@ -2697,13 +2705,19 @@ export default async function handler(req, res) {
         const { data: g } = await svcG.from("area_groups").select("id, emirate, area, intent").eq("id", groupId).maybeSingle();
         if (!g) return sendJson(res, 404, { error: "Group not found." });
 
-        const now = new Date().toISOString();
-        await svcG.from("area_group_members").upsert({
-          group_id: groupId,
-          user_id: actor.id,
-          joined_at: now,
-          last_read_at: now,
-        }, { onConflict: "group_id,user_id" }).catch(() => {});
+        // Must already be a member — no silent auto-join (Explore vs Enter)
+        const { data: mem } = await svcG.from("area_group_members")
+          .select("user_id")
+          .eq("group_id", groupId)
+          .eq("user_id", actor.id)
+          .maybeSingle();
+        if (!mem) {
+          return sendJson(res, 403, { error: "Enter this group before posting.", code: "ENTER_REQUIRED" });
+        }
+        try {
+          await svcG.from("area_group_members").update({ last_read_at: new Date().toISOString() })
+            .eq("group_id", groupId).eq("user_id", actor.id);
+        } catch (_) {}
 
         let mediaType = "text";
         if (mediaUrls.length && text) mediaType = "mixed";
