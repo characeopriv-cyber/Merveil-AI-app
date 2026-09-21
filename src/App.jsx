@@ -198,6 +198,42 @@ async function merveilFetch(url, options = {}, { retryOn401 = true } = {}) {
   return res;
 }
 
+// Offline IndexedDB bridge (threads / messages / directory). Fails soft.
+const MerveilOfflineIdb = {
+  async cacheThreads(threads) {
+    try {
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      if (m?.MerveilOffline) await m.MerveilOffline.cacheThreads(threads);
+    } catch {}
+  },
+  async readThreads() {
+    try {
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      if (m?.MerveilOffline) return await m.MerveilOffline.readThreads();
+    } catch {}
+    return [];
+  },
+  async cacheMessages(cid, msgs) {
+    try {
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      if (m?.MerveilOffline) await m.MerveilOffline.cacheMessages(cid, msgs);
+    } catch {}
+  },
+  async readMessages(cid) {
+    try {
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      if (m?.MerveilOffline) return await m.MerveilOffline.readMessages(cid);
+    } catch {}
+    return [];
+  },
+  async cacheDirectory(users) {
+    try {
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      if (m?.MerveilOffline) await m.MerveilOffline.cacheDirectory(users);
+    } catch {}
+  },
+};
+
 
 // ============================================================
 // MERVEIL E2EE V1 — client crypto (Web Crypto). Private keys never leave device.
@@ -11947,6 +11983,18 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   };
   // CONNECT V1: which of the three sections is showing.
   const [connectTab, setConnectTab] = useState("messages"); // "citizens" | "circle" | "messages" | "ai-call"
+  // Offline hydrate: show last cached threads immediately
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    if (typeof navigator !== "undefined" && navigator.onLine) return;
+    (async () => {
+      const cached = await MerveilOfflineIdb.readThreads();
+      if (cached?.length) {
+        setThreads((prev) => (prev.length ? prev : cached));
+      }
+    })();
+  }, [currentUser?.id]);
+
   const presence = useUnfilteredPresence(currentUser); // unfiltered — feeds Citizens, My Circle, and Messages alike
   const [profiles, setProfiles] = useState({});
   const [myStatus, setMyStatus] = useState(() => {
@@ -12230,6 +12278,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (cancelled || !data?.conversations) return;
+          try { MerveilOfflineIdb.cacheThreads(data.conversations); } catch {}
           setThreads((prev) => {
             const merged = stableMergeById(prev, data.conversations);
             // Sort after merge so client bumps (ContactClock) keep thread on top
@@ -12671,6 +12720,35 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           } catch {}
           return;
         }
+        // Session race: restore + retry once so messages do not vanish
+        if (res.status === 401 || data?.code === "AUTH_REQUIRED") {
+          try {
+            const sess = await fetch("/api/auth/session", { credentials: "include" });
+            if (sess.ok) {
+              const b = await sess.json().catch(() => null);
+              if (b?.user?.id) {
+                try { window.dispatchEvent(new CustomEvent("merveil:session-user", { detail: b.user })); } catch {}
+              }
+            }
+          } catch {}
+          try {
+            const res2 = await merveilFetch(`/api/conversations/${activeId}/messages`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            const data2 = await res2.json().catch(() => null);
+            if (res2.ok && data2?.message?.id) {
+              const row = data2.message.is_e2ee
+                ? { ...data2.message, body: text, read_by: data2.message.read_by || [] }
+                : { ...data2.message, read_by: data2.message.read_by || [] };
+              setThreadMessages((p) => p.map((m) => (m.id === localId ? row : m)));
+              try { window.dispatchEvent(new CustomEvent("merveil:conversations-refresh")); } catch {}
+              return;
+            }
+          } catch {}
+        }
+        // Keep optimistic bubble; queue for outbox flush (do not delete local message)
         setOutbox((p) => [...p, { conversationId: activeId, payload, queuedAt: Date.now() }]);
         return;
       }
@@ -12679,6 +12757,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           ? { ...data.message, body: text, read_by: data.message.read_by || [] }
           : { ...data.message, read_by: data.message.read_by || [] };
         setThreadMessages((p) => p.map((m) => (m.id === localId ? row : m)));
+        try { window.dispatchEvent(new CustomEvent("merveil:conversations-refresh")); } catch {}
       }
     } catch {
       setOutbox((p) => [...p, { conversationId: activeId, payload, queuedAt: Date.now() }]);
@@ -19812,7 +19891,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
 
   const loadPosts = (silent = false) => {
     if (!silent) setLoading(true);
-    merveilFetch("/api/world?limit=40")
+    merveilFetch("/api/world?limit=40&ranked=1")
       .then(r => r.ok ? r.json() : { posts: [] })
       .then(data => {
         const list = (data.posts || []).filter((p) => !p._seed && !String(p.id || "").startsWith("merveil-ai-seed"));
@@ -19853,12 +19932,16 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           setHasMoreWorld(!!data.hasMore);
           worldNextBeforeRef.current = data.nextBefore || worldNextBeforeRef.current;
         } else {
-          // Rank once on batch load — avoids mid-swipe reshuffle
+          // Server ranks by default (data.ranked). Client only applies local affinity mutes / soft boost.
           publishWorldBadge(list);
-        setPosts(rankWorldReels(list, {
-            userId: currentUser?.id,
-            affinity: readWorldAffinity(),
-          }));
+          let ordered = list;
+          if (data.ranked) {
+            // Preserve server order; still run client rank for mutes + local affinity without fighting server when affinity empty
+            ordered = rankWorldReels(list, { userId: currentUser?.id, affinity: readWorldAffinity() });
+          } else {
+            ordered = rankWorldReels(list, { userId: currentUser?.id, affinity: readWorldAffinity() });
+          }
+          setPosts(ordered);
           setHasMoreWorld(!!data.hasMore);
           worldNextBeforeRef.current = data.nextBefore || null;
         }
@@ -19873,7 +19956,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     if (!hasMoreWorld || loadingMoreWorld || !worldNextBeforeRef.current) return;
     setLoadingMoreWorld(true);
     const before = encodeURIComponent(worldNextBeforeRef.current);
-    fetch(`/api/world?limit=40&before=${before}`, { credentials: "include" })
+    fetch(`/api/world?limit=40&ranked=1&before=${before}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data?.posts?.length) { setHasMoreWorld(false); return; }
@@ -22028,9 +22111,14 @@ function PassportKycPanel({ statuses, setStatuses, currentUser, onUserUpdated })
 
 
 function PostPropertyModal({ onClose, statuses, onPublish }) {
-  const [step, setStep] = useState(1);
-  const [listedAs, setListedAs] = useState(null);
+  // Advanced UAE listing composer: Manual | Paste → AI | fast media
+  const [mode, setMode] = useState("manual"); // manual | paste
+  const [pasteText, setPasteText] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiNote, setAiNote] = useState("");
+  const [listedAs, setListedAs] = useState("AGENT");
   const [reach, setReach] = useState("uae");
+  const [showMore, setShowMore] = useState(false);
   const [form, setForm] = useState({
     title: "",
     type: "Sale",
@@ -22045,8 +22133,6 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
     serviceCharge: "",
     description: "",
   });
-
-  const emiratesIdOk = (statuses.EMIRATES_ID || "none") === "verified";
   const [mediaType, setMediaType] = useState("photo");
   const [photoUrls, setPhotoUrls] = useState([]);
   const [videoUrl, setVideoUrl] = useState("");
@@ -22054,15 +22140,80 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
   const [photoError, setPhotoError] = useState("");
   const [musicTracks, setMusicTracks] = useState([]);
   const [musicTrackId, setMusicTrackId] = useState("");
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     fetch("/api/music").then((r) => (r.ok ? r.json() : null)).then((d) => d && setMusicTracks(d.tracks || [])).catch(() => {});
   }, []);
 
+  const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const runAiParse = async () => {
+    const text = pasteText.trim();
+    if (text.length < 12) {
+      setAiNote("Paste a full listing (WhatsApp text, brochure copy, or notes).");
+      return;
+    }
+    setAiBusy(true);
+    setAiNote("Merveil AI is reading your listing…");
+    try {
+      const res = await merveilFetch("/api/properties?action=ai-parse-listing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAiNote(data.error || "Could not parse listing.");
+        return;
+      }
+      const L = data.listing || {};
+      setForm((f) => ({
+        ...f,
+        title: L.title || f.title,
+        type: L.type === "Rent" ? "Rent" : "Sale",
+        category: L.category || f.category,
+        price: L.price != null ? String(L.price) : f.price,
+        emirate: L.emirate || f.emirate,
+        area: L.area || f.area,
+        beds: L.beds != null ? String(L.beds) : f.beds,
+        baths: L.baths != null ? String(L.baths) : f.baths,
+        sqft: L.sqft != null ? String(L.sqft) : f.sqft,
+        furnished: L.furnished || f.furnished,
+        description: L.description || text,
+      }));
+      setMode("manual");
+      setShowMore(true);
+      setAiNote("Filled from your text — review price & photos, then publish.");
+    } catch {
+      setAiNote("Network error — try again.");
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const uploadPhoto = async (file) => {
+    if (!file) return;
+    setPhotoError("");
+    setPhotoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("folder", "listings");
+      const res = await fetch("/api/people?action=upload", { method: "POST", credentials: "include", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      if (data.url) setPhotoUrls((u) => [...u, data.url].slice(0, 12));
+    } catch (e) {
+      setPhotoError(e.message || "Photo upload failed");
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
   const handleVideoFile = async (file) => {
     if (!file) return;
     setPhotoError("");
-    // Check duration client-side before uploading anything — 60s max.
     const duration = await new Promise((resolve) => {
       const v = document.createElement("video");
       v.preload = "metadata";
@@ -22071,379 +22222,253 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
       v.src = URL.createObjectURL(file);
     });
     if (duration && duration > 60) {
-      setPhotoError(`This video is ${Math.round(duration)}s — Merveil reels are 60 seconds max. Trim it and try again.`);
+      setPhotoError(`Video is ${Math.round(duration)}s — max 60s for listing reels.`);
       return;
     }
     setPhotoUploading(true);
-    let step = "preparing the upload";
     try {
       const urlRes = await fetch("/api/people?action=video-upload-url", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName: file.name }),
       });
       const urlData = await urlRes.json();
-      if (!urlRes.ok) { setPhotoError(urlData.error || "Couldn't prepare the upload."); return; }
-      step = "uploading to storage";
+      if (!urlRes.ok) { setPhotoError(urlData.error || "Couldn't prepare upload."); return; }
       const putRes = await fetch(urlData.signedUrl, {
-        method: "PUT",
-        body: file,
+        method: "PUT", body: file,
         headers: { "Content-Type": file.type || "video/mp4", "x-upsert": "true" },
       });
-      if (!putRes.ok) {
-        setPhotoError(`Video upload failed (storage returned ${putRes.status}) — try a smaller file or a different network.`);
-        return;
-      }
-      setVideoUrl(urlData.publicUrl);
+      if (!putRes.ok) { setPhotoError(`Upload failed (${putRes.status})`); return; }
+      setVideoUrl(urlData.publicUrl || urlData.url || "");
+      setMediaType("video");
     } catch (e) {
-      // "Failed to fetch" at the upload step almost always means the browser couldn't
-      // reach Supabase's storage domain directly — a network/firewall/VPN issue on
-      // that specific connection, not the Merveil server itself (which is why
-      // everything else in the app keeps working). Switching wifi/mobile data or
-      // disabling a VPN/ad-blocker is the fastest way to confirm this.
-      setPhotoError(
-        step === "uploading to storage"
-          ? "Couldn't reach the video storage server. This is usually a network/VPN issue on this connection, not a Merveil outage — try switching wifi/mobile data and try again."
-          : `Couldn't reach the Merveil server while ${step} — ${e.message}`
-      );
+      setPhotoError(e.message || "Video upload failed");
     } finally {
       setPhotoUploading(false);
     }
   };
 
-  const handlePhotoFiles = async (files) => {
-    const list = Array.from(files || []).slice(0, 10 - photoUrls.length);
-    if (!list.length) return;
-    setPhotoUploading(true);
-    setPhotoError("");
+  const publish = () => {
+    if (publishing) return;
+    if (!form.title.trim() && !form.area.trim()) {
+      setAiNote("Add a title or area before publishing.");
+      return;
+    }
+    setPublishing(true);
+    const newProperty = {
+      id: `p${Date.now()}`,
+      title: form.title || `${form.beds || ""} ${form.category} · ${form.area || form.emirate}`.trim(),
+      type: form.type,
+      category: form.category,
+      price: toNumber(form.price) || 0,
+      priceFreq: form.type === "Rent" ? "yr" : undefined,
+      area: form.area || "—",
+      emirate: form.emirate,
+      beds: form.beds !== "" ? Number(form.beds) : null,
+      baths: form.baths !== "" ? Number(form.baths) : null,
+      sqft: form.sqft !== "" ? Number(form.sqft) : null,
+      furnished: form.furnished || null,
+      serviceCharge: form.serviceCharge || null,
+      description: form.description || null,
+      photoUrls,
+      videoUrl: mediaType === "video" ? videoUrl : null,
+      mediaType,
+      musicTrackId: musicTrackId || null,
+      views: 0,
+      trending: false,
+      promoted: false,
+      visibility: "public",
+      listedAs,
+      reach,
+      isNew: true,
+      grad: ["#0E9AA7", "#1F2937"],
+    };
     try {
-      for (const file of list) {
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("folder", "properties");
-        const res = await fetch("/api/people?action=upload", { method: "POST", credentials: "include", body: fd });
-        const data = await res.json();
-        if (!res.ok) { setPhotoError(data.error || "Upload failed."); continue; }
-        setPhotoUrls((prev) => [...prev, data.url]);
-      }
-    } catch (e) {
-      setPhotoError(`Couldn't reach the server — ${e.message}`);
+      onPublish(newProperty);
     } finally {
-      setPhotoUploading(false);
+      setPublishing(false);
     }
   };
 
-  const listerOptions = [
-    { type: "OWNER_LISTING", label: "I own this property", requires: "EMIRATES_ID" },
-    { type: "REFERRAL_PARTNER", label: "I'm referring a lead (finder's fee)", requires: "EMIRATES_ID" },
-    { type: "LICENSED_BROKER", label: "I'm a licensed broker", requires: "RERA_BROKER" },
-    { type: "DEVELOPER", label: "I represent a developer", requires: "TRADE_LICENSE" },
-  ];
-
-  const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const chip = (active) => ({
+    borderColor: active ? T.signal : T.line,
+    background: active ? `${T.signal}14` : "#fff",
+    color: T.ink,
+  });
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center" style={{ background: "rgba(20,25,31,0.5)" }}>
+    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center" style={{ background: "rgba(15,18,22,0.45)" }} onClick={onClose}>
       <div
-        className="w-full sm:w-[480px] sm:rounded-2xl rounded-t-2xl flex flex-col"
-        style={{ background: "#fff", height: "min(85vh, 600px)", minHeight: 0 }}
+        className="w-full max-w-lg max-h-[92vh] overflow-hidden rounded-t-2xl sm:rounded-2xl flex flex-col"
+        style={{ background: T.paper || "#F7F5F1", border: `1px solid ${T.line}` }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-4 border-b shrink-0" style={{ borderColor: T.line, background: "#fff" }}>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", color: T.ink }} className="text-base font-semibold">
-            Post a property
+        <div className="px-4 pt-3 pb-2 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${T.line}` }}>
+          <div>
+            <div className="text-sm font-bold" style={{ color: T.ink }}>List a property</div>
+            <div className="text-[10px]" style={{ color: T.sub }}>Faster than portals — AI fill or manual · live on Pulse</div>
           </div>
-          <button onClick={onClose}><X size={18} style={{ color: T.sub }} /></button>
+          <button type="button" onClick={onClose} className="p-2 rounded-full" style={{ color: T.sub }} aria-label="Close"><X size={18} /></button>
         </div>
 
-        {step === 1 && (
-          <>
-          <div className="p-4 flex flex-col gap-3 overflow-y-auto" style={{ flex: "1 1 auto", minHeight: 0 }}>
-            {!emiratesIdOk && (
-              <div className="text-[11px] px-3 py-2 rounded-lg" style={{ background: "#FEF3C7", color: "#92400E" }}>
-                Optional: verify in Passport for a Verified badge. You can post from anywhere without ID.
-              </div>
-            )}
-            <div className="text-xs font-semibold" style={{ color: T.sub }}>STEP 1 — How are you listing this?</div>
-            {listerOptions.map((opt) => {
-              // Global access: identity is optional. Verified users get a badge, not a gate.
-              const eligible = true;
-              const isVerifiedForOpt = !opt.requires || (statuses[opt.requires] || "none") === "verified";
-              return (
-                <button
-                  key={opt.type}
-                  disabled={false}
-                  onClick={() => setListedAs(opt.type)}
-                  className="text-left p-3 rounded-lg border flex items-center justify-between"
-                  style={{
-                    borderColor: listedAs === opt.type ? T.navy : T.line,
-                    background: listedAs === opt.type ? T.paper : "#fff",
-                    opacity: 1,
-                  }}
-                >
-                  <div>
-                    <div className="text-sm font-medium" style={{ color: T.ink }}>{opt.label}</div>
-                    {!eligible && (
-                      <div className="text-[11px] mt-0.5" style={{ color: T.sub }}>
-                        Requires {VERIFICATION_TIERS.find((t) => t.type === opt.requires)?.title} — verify first
-                      </div>
-                    )}
-                  </div>
-                  {listedAs === opt.type && <CheckCircle2 size={16} style={{ color: T.navy }} />}
-                </button>
-              );
-            })}
-          </div>
-          <div className="p-4 border-t shrink-0" style={{ borderColor: T.line, background: "#fff" }}>
-            <button
-              disabled={!listedAs}
-              onClick={() => setStep(2)}
-              className="w-full text-sm font-semibold px-4 py-3 rounded-lg flex items-center justify-center gap-1.5"
-              style={{ background: listedAs ? T.ink : T.line, color: listedAs ? T.paper : T.sub }}
-            >
-              Continue <ArrowRight size={15} />
-            </button>
-          </div>
-          </>
-        )}
+        <div className="px-4 py-2 flex gap-2 shrink-0">
+          {[
+            { id: "manual", label: "Quick form" },
+            { id: "paste", label: "Paste → AI" },
+          ].map((m) => (
+            <button key={m.id} type="button" onClick={() => setMode(m.id)}
+              className="flex-1 text-xs font-semibold py-2 rounded-xl border"
+              style={chip(mode === m.id)}>{m.label}</button>
+          ))}
+        </div>
 
-        {step === 2 && (
-          <>
-          <div className="p-4 flex flex-col gap-3 overflow-y-auto" style={{ flex: "1 1 auto", minHeight: 0 }}>
-            <div className="text-xs font-semibold" style={{ color: T.sub }}>STEP 2 — Property details</div>
-            <input placeholder="Title, e.g. Sea-view 1BR in JBR" value={form.title} onChange={(e) => update("title", e.target.value)}
-              className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }} />
-            <div className="grid grid-cols-2 gap-2">
-              <select value={form.type} onChange={(e) => update("type", e.target.value)} className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }}>
-                <option>Sale</option><option>Rent</option>
-              </select>
-              <select value={form.category} onChange={(e) => update("category", e.target.value)} className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }}>
-                {PROPERTY_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-              </select>
+        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">
+          {mode === "paste" && (
+            <div className="space-y-2">
+              <p className="text-[11px] leading-relaxed" style={{ color: T.sub }}>
+                Paste a WhatsApp blast, Bayut/Property Finder copy, or notes. Merveil AI extracts title, price, beds, area, and description.
+              </p>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={8}
+                placeholder={"Example:\n2BR Marina View · Dubai Marina\nFor rent AED 145,000 / year\nFully furnished · Chiller free\n..."}
+                className="w-full text-sm rounded-xl border p-3 outline-none"
+                style={{ borderColor: T.line, background: "#fff", color: T.ink }}
+              />
+              <button type="button" disabled={aiBusy} onClick={runAiParse}
+                className="w-full py-2.5 rounded-xl text-sm font-bold"
+                style={{ background: T.signal, color: "#fff", opacity: aiBusy ? 0.7 : 1 }}>
+                {aiBusy ? "Reading listing…" : "Fill with Merveil AI"}
+              </button>
+              {aiNote && <div className="text-[11px]" style={{ color: T.sub }}>{aiNote}</div>}
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <select value={form.emirate} onChange={(e) => update("emirate", e.target.value)} className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }}>
-                <option>Dubai</option><option>Abu Dhabi</option><option>Sharjah</option><option>Ajman</option><option>Ras Al Khaimah</option>
-              </select>
-              <input placeholder="Area, e.g. Dubai Marina" value={form.area} onChange={(e) => update("area", e.target.value)}
-                className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }} />
-            </div>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold" style={{ color: T.sub, fontFamily: "'IBM Plex Mono', monospace" }}>AED</span>
-              <input placeholder="0" value={form.price ? Number(String(form.price).replace(/[^0-9]/g, "")).toLocaleString() : ""}
-                onChange={(e) => update("price", e.target.value.replace(/[^0-9]/g, ""))}
-                inputMode="numeric"
-                className="text-sm pl-11 pr-3 py-2 rounded-lg border outline-none w-full" style={{ borderColor: T.line, fontFamily: "'IBM Plex Mono', monospace" }} />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {["Apartment", "Studio", "Villa", "Townhouse", "Penthouse"].includes(form.category) && (
-                <input placeholder={form.category === "Studio" ? "Beds (0)" : "Beds"} type="number" min="0"
-                  value={form.category === "Studio" ? 0 : form.beds} disabled={form.category === "Studio"}
-                  onChange={(e) => update("beds", e.target.value)}
-                  className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line, opacity: form.category === "Studio" ? 0.6 : 1 }} />
-              )}
-              {!["Land"].includes(form.category) && (
-                <input placeholder="Baths" type="number" min="0" value={form.baths} onChange={(e) => update("baths", e.target.value)}
-                  className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }} />
-              )}
-              <input placeholder={form.category === "Land" ? "Plot size (sqft)" : "Sqft"} type="number" min="0" value={form.sqft} onChange={(e) => update("sqft", e.target.value)}
-                className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }} />
-            </div>
-            {["Office", "Retail", "Warehouse", "Commercial", "Hotel", "Building"].includes(form.category) && (
-              <input placeholder="Floor / level (optional)" value={form.floor || ""} onChange={(e) => update("floor", e.target.value)}
-                className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }} />
-            )}
-            {form.category === "Land" && (
-              <div>
-                <input placeholder="Zoning / permitted use (optional) — e.g. Residential G+4" value={form.zoning || ""} onChange={(e) => update("zoning", e.target.value)}
-                  className="text-sm px-3 py-2 rounded-lg border outline-none w-full mb-2" style={{ borderColor: T.line }} />
-                <label className="flex items-center gap-2 text-sm px-3 py-2.5 rounded-lg border cursor-pointer" style={{ borderColor: T.line, color: T.ink }}>
-                  <input type="checkbox" checked={!!form.jvOpen} onChange={(e) => update("jvOpen", e.target.checked)} />
-                  Open to joint-venture / development partnership
-                </label>
-                {form.jvOpen && (
-                  <textarea placeholder="JV terms or what you're looking for in a partner (optional)" value={form.jvTerms || ""}
-                    onChange={(e) => update("jvTerms", e.target.value)} rows={2}
-                    className="text-sm px-3 py-2 rounded-lg border outline-none resize-none w-full mt-2" style={{ borderColor: T.line }} />
-                )}
-              </div>
-            )}
-            {["Apartment", "Studio", "Villa", "Townhouse", "Penthouse"].includes(form.category) && (
-              <div className="grid grid-cols-2 gap-2">
-                <select value={form.furnished} onChange={(e) => update("furnished", e.target.value)}
-                  className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }}>
-                  <option value="">Furnishing</option>
-                  <option value="Furnished">Furnished</option>
-                  <option value="Unfurnished">Unfurnished</option>
-                  <option value="Semi-furnished">Semi-furnished</option>
-                </select>
-                <input placeholder="Service charge (AED/yr, optional)" value={form.serviceCharge} onChange={(e) => update("serviceCharge", e.target.value)}
-                  className="text-sm px-3 py-2 rounded-lg border outline-none" style={{ borderColor: T.line }} />
-              </div>
-            )}
-            <textarea placeholder="Description (optional) — layout, view, VAT/DLD fee notes, etc." value={form.description}
-              onChange={(e) => update("description", e.target.value)} rows={3}
-              className="text-sm px-3 py-2 rounded-lg border outline-none resize-none" style={{ borderColor: T.line }} />
-            <div className="flex gap-1.5">
-              {[["photo","Photo"],["video","Video (60s max)"]].map(([id,label]) => (
-                <button key={id} type="button" onClick={() => setMediaType(id)}
-                  className="flex-1 text-xs font-semibold py-2 rounded-lg"
-                  style={{ background: mediaType === id ? T.ink : T.panel, color: mediaType === id ? "#fff" : T.sub }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {mediaType === "video" ? (
-              <label className="border-2 border-dashed rounded-lg p-4 text-center text-xs block cursor-pointer" style={{ borderColor: T.line, color: T.sub }}>
-                <input type="file" accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v,.mkv,.3gp" className="hidden" onChange={(e) => handleVideoFile(e.target.files?.[0])} />
-                {photoUploading ? "Uploading video…" : videoUrl ? (
-                  <div className="flex flex-col items-center gap-1">
-                    <video src={videoUrl} className="h-24 rounded-lg" muted />
-                    <span style={{ color: T.signal }}>Video attached — tap to replace from gallery</span>
-                  </div>
-                ) : (
-                  <><Upload size={16} className="mx-auto mb-1" /> Choose video from gallery — 60s max, all folders</>
-                )}
-                {photoError && <div className="mt-1" style={{ color: "#E0554C" }}>{photoError}</div>}
-              </label>
-            ) : (
-            <label className="border-2 border-dashed rounded-lg p-4 text-center text-xs block cursor-pointer" style={{ borderColor: T.line, color: T.sub }}>
-              <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handlePhotoFiles(e.target.files)} disabled={photoUrls.length >= 10} />
-              {photoUploading ? (
-                "Uploading…"
-              ) : photoUrls.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5 justify-center">
-                  {photoUrls.map((url, i) => (
-                    <div key={url} className="relative">
-                      <img src={url} alt="" className="h-16 w-16 rounded-lg object-cover" />
-                      <button type="button" onClick={(e) => { e.preventDefault(); setPhotoUrls((prev) => prev.filter((_, idx) => idx !== i)); }}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "#E0554C" }}>
-                        <X size={10} color="#fff" />
-                      </button>
-                    </div>
-                  ))}
-                  {photoUrls.length < 10 && <div className="h-16 w-16 rounded-lg border-2 border-dashed flex items-center justify-center" style={{ borderColor: T.line }}><Upload size={14} style={{ color: T.sub }} /></div>}
-                </div>
-              ) : (
-                <><Upload size={16} className="mx-auto mb-1" /> Tap to add up to 10 photos — high resolution (HD) recommended</>
-              )}
-              {photoError && <div className="mt-1" style={{ color: "#E0554C" }}>{photoError}</div>}
-            </label>
-            )}
-            {mediaType === "video" && (
-              <div>
-                <div className="text-xs font-semibold mb-1.5" style={{ color: T.sub }}>Background music (optional)</div>
-                <div className="flex flex-wrap gap-1.5">
-                  <button type="button" onClick={() => setMusicTrackId("")}
-                    className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full"
-                    style={{ background: !musicTrackId ? T.ink : T.panel, color: !musicTrackId ? "#fff" : T.sub }}>
-                    None
-                  </button>
-                  {musicTracks.map((t) => (
-                    <button key={t.id} type="button" onClick={() => setMusicTrackId(t.id)} disabled={!t.audio_url}
-                      title={!t.audio_url ? "Track not available yet" : t.title}
-                      className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full capitalize"
-                      style={{ background: musicTrackId === t.id ? T.ink : T.panel, color: musicTrackId === t.id ? "#fff" : (t.audio_url ? T.sub : "#B8C2D0") }}>
-                      {t.genre} {!t.audio_url && "· unavailable"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="p-4 border-t shrink-0 flex gap-2" style={{ borderColor: T.line, background: "#fff" }}>
-            <button onClick={() => setStep(1)} className="text-sm font-semibold px-4 py-3 rounded-lg flex items-center gap-1.5" style={{ background: T.paper, color: T.ink }}>
-              <ArrowLeft size={15} /> Back
-            </button>
-            <button onClick={() => setStep(3)} className="flex-1 text-sm font-semibold px-4 py-3 rounded-lg flex items-center justify-center gap-1.5" style={{ background: T.ink, color: T.paper }}>
-              Review <ArrowRight size={15} />
-            </button>
-          </div>
-          </>
-        )}
+          )}
 
-        {step === 3 && (
-          <>
-          <div className="p-5 flex flex-col gap-3 items-center text-center overflow-y-auto">
-            <CheckCircle2 size={32} style={{ color: "#1F7A4D" }} />
-            <div className="text-base font-semibold" style={{ color: T.ink }}>Ready to publish</div>
-            <p className="text-xs" style={{ color: T.sub }}>
-              This listing will go live tagged as
-              <span className="font-semibold" style={{ color: LISTER_TYPE_STYLE[listedAs]?.color }}> {LISTER_TYPE_STYLE[listedAs]?.label}</span>,
-              and will start tracking views immediately for the engagement leaderboard.
-            </p>
-            <div className="w-full rounded-lg border p-3 text-left text-sm" style={{ borderColor: T.line }}>
-              <div className="font-semibold" style={{ color: T.ink }}>{form.title || "Untitled listing"}</div>
-              <div style={{ color: T.sub }} className="text-xs mt-1">{form.type} · {form.category} · {form.area || "—"}, {form.emirate}</div>
-              <div style={{ fontFamily: "'IBM Plex Mono', monospace", color: T.ink }} className="text-sm mt-1">AED {form.price || "—"}</div>
-            </div>
-
-            <div className="w-full text-left">
-              <div className="text-xs font-semibold mb-2" style={{ color: T.sub }}>Who should this reach?</div>
-              <div className="flex flex-col gap-2">
-                {REACH_OPTIONS.map((r) => (
-                  <button
-                    key={r.id}
-                    onClick={() => setReach(r.id)}
-                    className="text-left p-2.5 rounded-lg border flex items-center justify-between"
-                    style={{
-                      borderColor: reach === r.id ? T.navy : T.line,
-                      background: reach === r.id ? T.paper : "#fff",
-                    }}
-                  >
-                    <div>
-                      <div className="text-xs font-medium" style={{ color: T.ink }}>{r.label}</div>
-                      <div className="text-[10px]" style={{ color: T.sub }}>{r.sub}</div>
-                    </div>
-                    {reach === r.id && <CheckCircle2 size={14} style={{ color: T.navy }} />}
-                  </button>
+          {mode === "manual" && (
+            <>
+              <div className="flex gap-2">
+                {["Sale", "Rent"].map((t) => (
+                  <button key={t} type="button" onClick={() => setField("type", t)}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold border" style={chip(form.type === t)}>{t}</button>
                 ))}
               </div>
-            </div>
-          </div>
-          <div className="p-4 border-t shrink-0" style={{ borderColor: T.line, background: "#fff" }}>
-            <button
-              onClick={() => {
-                const newProperty = {
-                  id: `p${Date.now()}`,
-                  title: form.title || "Untitled listing",
-                  type: form.type,
-                  category: form.category,
-                  price: toNumber(form.price) || 0,
-                  priceFreq: form.type === "Rent" ? "yr" : undefined,
-                  area: form.area || "—",
-                  emirate: form.emirate,
-                  beds: form.beds !== "" ? Number(form.beds) : null,
-                  baths: form.baths !== "" ? Number(form.baths) : null,
-                  sqft: form.sqft !== "" ? Number(form.sqft) : null,
-                  furnished: form.furnished || null,
-                  serviceCharge: form.serviceCharge || null,
-                  description: form.description || null,
-                  photoUrls: photoUrls,
-                  videoUrl: mediaType === "video" ? videoUrl : null,
-                  mediaType,
-                  musicTrackId: musicTrackId || null,
-                  views: 0,
-                  trending: false,
-                  promoted: false,
-                  visibility: listedAs === "DEVELOPER" ? "public" : "public",
-                  listedAs,
-                  reach,
-                  isNew: true,
-                  grad: ["#3A6FA0", "#1F2937"],
-                };
-                onPublish(newProperty);
-              }}
-              className="text-sm font-semibold px-4 py-3 rounded-lg w-full"
-              style={{ background: T.ink, color: T.paper }}
-            >
-              Publish listing
-            </button>
-          </div>
-          </>
-        )}
+              <input
+                value={form.title}
+                onChange={(e) => setField("title", e.target.value)}
+                placeholder="Title (e.g. Bright 2BR · Marina View)"
+                className="w-full text-sm rounded-xl border px-3 py-2.5 outline-none"
+                style={{ borderColor: T.line, background: "#fff", color: T.ink }}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <select value={form.category} onChange={(e) => setField("category", e.target.value)}
+                  className="text-sm rounded-xl border px-3 py-2.5" style={{ borderColor: T.line, background: "#fff" }}>
+                  {["Apartment", "Villa", "Townhouse", "Penthouse", "Office", "Retail", "Plot", "Warehouse"].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <input value={form.price} onChange={(e) => setField("price", e.target.value)} placeholder="Price AED"
+                  className="text-sm rounded-xl border px-3 py-2.5 outline-none" style={{ borderColor: T.line, background: "#fff" }} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select value={form.emirate} onChange={(e) => setField("emirate", e.target.value)}
+                  className="text-sm rounded-xl border px-3 py-2.5" style={{ borderColor: T.line, background: "#fff" }}>
+                  {["Dubai", "Abu Dhabi", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain"].map((e) => (
+                    <option key={e} value={e}>{e}</option>
+                  ))}
+                </select>
+                <input value={form.area} onChange={(e) => setField("area", e.target.value)} placeholder="Area (Marina, JVC…)"
+                  className="text-sm rounded-xl border px-3 py-2.5 outline-none" style={{ borderColor: T.line, background: "#fff" }} />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <input value={form.beds} onChange={(e) => setField("beds", e.target.value)} placeholder="Beds"
+                  className="text-sm rounded-xl border px-3 py-2.5 outline-none" style={{ borderColor: T.line, background: "#fff" }} />
+                <input value={form.baths} onChange={(e) => setField("baths", e.target.value)} placeholder="Baths"
+                  className="text-sm rounded-xl border px-3 py-2.5 outline-none" style={{ borderColor: T.line, background: "#fff" }} />
+                <input value={form.sqft} onChange={(e) => setField("sqft", e.target.value)} placeholder="Sqft"
+                  className="text-sm rounded-xl border px-3 py-2.5 outline-none" style={{ borderColor: T.line, background: "#fff" }} />
+              </div>
+
+              {/* Media tools */}
+              <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: T.line, background: "#fff" }}>
+                <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: T.sub }}>Photos & reel</div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setMediaType("photo")} className="flex-1 text-[11px] font-semibold py-1.5 rounded-lg border" style={chip(mediaType === "photo")}>Photos</button>
+                  <button type="button" onClick={() => setMediaType("video")} className="flex-1 text-[11px] font-semibold py-1.5 rounded-lg border" style={chip(mediaType === "video")}>60s reel</button>
+                </div>
+                {mediaType === "photo" ? (
+                  <label className="block text-center text-xs font-semibold py-3 rounded-xl border border-dashed cursor-pointer" style={{ borderColor: T.line, color: T.signal }}>
+                    {photoUploading ? "Uploading…" : photoUrls.length ? `+ Add photo (${photoUrls.length}/12)` : "+ Add photos"}
+                    <input type="file" accept="image/*" className="hidden" multiple
+                      onChange={(e) => { const files = [...(e.target.files || [])]; files.slice(0, 6).forEach(uploadPhoto); e.target.value = ""; }} />
+                  </label>
+                ) : (
+                  <label className="block text-center text-xs font-semibold py-3 rounded-xl border border-dashed cursor-pointer" style={{ borderColor: T.line, color: T.signal }}>
+                    {photoUploading ? "Uploading video…" : videoUrl ? "Replace reel" : "+ Upload reel (≤60s)"}
+                    <input type="file" accept="video/*" className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVideoFile(f); e.target.value = ""; }} />
+                  </label>
+                )}
+                {photoUrls.length > 0 && (
+                  <div className="flex gap-1.5 overflow-x-auto">
+                    {photoUrls.map((u) => (
+                      <img key={u} src={u} alt="" className="h-14 w-14 rounded-lg object-cover shrink-0" />
+                    ))}
+                  </div>
+                )}
+                {photoError && <div className="text-[11px]" style={{ color: "#B91C1C" }}>{photoError}</div>}
+                {musicTracks.length > 0 && mediaType === "video" && (
+                  <select value={musicTrackId} onChange={(e) => setMusicTrackId(e.target.value)}
+                    className="w-full text-xs rounded-lg border px-2 py-2" style={{ borderColor: T.line }}>
+                    <option value="">No music</option>
+                    {musicTracks.slice(0, 30).map((t) => (
+                      <option key={t.id} value={t.id}>{t.title || t.name || "Track"}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <button type="button" onClick={() => setShowMore((v) => !v)} className="text-[11px] font-semibold" style={{ color: T.signal }}>
+                {showMore ? "Hide details" : "More details (furnished, service charge, description)"}
+              </button>
+              {showMore && (
+                <div className="space-y-2">
+                  <select value={form.furnished} onChange={(e) => setField("furnished", e.target.value)}
+                    className="w-full text-sm rounded-xl border px-3 py-2.5" style={{ borderColor: T.line, background: "#fff" }}>
+                    <option value="">Furnished?</option>
+                    <option value="Furnished">Furnished</option>
+                    <option value="Semi-furnished">Semi-furnished</option>
+                    <option value="Unfurnished">Unfurnished</option>
+                  </select>
+                  <input value={form.serviceCharge} onChange={(e) => setField("serviceCharge", e.target.value)} placeholder="Service charge (optional)"
+                    className="w-full text-sm rounded-xl border px-3 py-2.5 outline-none" style={{ borderColor: T.line, background: "#fff" }} />
+                  <textarea value={form.description} onChange={(e) => setField("description", e.target.value)} rows={4} placeholder="Description"
+                    className="w-full text-sm rounded-xl border p-3 outline-none" style={{ borderColor: T.line, background: "#fff" }} />
+                  <div className="flex gap-2 flex-wrap">
+                    {["AGENT", "OWNER", "DEVELOPER"].map((r) => (
+                      <button key={r} type="button" onClick={() => setListedAs(r)}
+                        className="text-[10px] font-bold px-2.5 py-1 rounded-full border" style={chip(listedAs === r)}>{r}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {aiNote && mode === "manual" && <div className="text-[11px]" style={{ color: T.sub }}>{aiNote}</div>}
+            </>
+          )}
+        </div>
+
+        <div className="p-4 border-t shrink-0" style={{ borderColor: T.line, background: "#fff" }}>
+          <button type="button" onClick={publish} disabled={publishing || mode === "paste"}
+            className="text-sm font-semibold px-4 py-3 rounded-xl w-full"
+            style={{ background: T.ink, color: "#fff", opacity: mode === "paste" ? 0.5 : 1 }}>
+            {publishing ? "Publishing…" : mode === "paste" ? "Fill with AI first" : "Publish on Pulse"}
+          </button>
+          <p className="text-[10px] text-center mt-2" style={{ color: T.sub }}>Goes live for citizens · ranked on Discover</p>
+        </div>
       </div>
     </div>
   );
 }
+
 
 
 // ---------------------------------------------------------------
@@ -28508,12 +28533,36 @@ function CitizenScorePanel({ currentUser }) {
     if (claiming || data?.daily?.claimedToday) return;
     setClaiming(true);
     try {
-      const res = await merveilFetch("/api/rewards?action=daily-claim", {
+      // Soft session restore before claim — avoids false "Sign in required" during token refresh
+      try {
+        const sess = await fetch("/api/auth/session", { credentials: "include" });
+        if (sess.ok) {
+          const b = await sess.json().catch(() => null);
+          if (b?.user?.id) {
+            try { window.dispatchEvent(new CustomEvent("merveil:session-user", { detail: b.user })); } catch {}
+          }
+        }
+      } catch {}
+      let res = await merveilFetch("/api/rewards?action=daily-claim", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: "{}",
       });
-      const body = await res.json().catch(() => ({}));
+      let body = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        // One hard retry after session endpoint
+        try { await fetch("/api/auth/session", { credentials: "include" }); } catch {}
+        res = await merveilFetch("/api/rewards?action=daily-claim", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: "{}",
+        });
+        body = await res.json().catch(() => ({}));
+      }
       if (!res.ok) {
-        alert(body.error || "Couldn't claim daily reward.");
+        try {
+          window.dispatchEvent(new CustomEvent("merveil:toast", {
+            detail: { type: "error", message: body.error || "Couldn't claim daily reward." },
+          }));
+        } catch {
+          alert(body.error || "Couldn't claim daily reward.");
+        }
         return;
       }
       if (body.alreadyClaimed) {
