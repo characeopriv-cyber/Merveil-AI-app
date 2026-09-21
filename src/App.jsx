@@ -11877,48 +11877,79 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
   const [posts, setPosts] = useState([]);
   const [postLoading, setPostLoading] = useState(false);
   const [draft, setDraft] = useState("");
-  const [priceHint, setPriceHint] = useState("");
   const [posting, setPosting] = useState(false);
   const [mediaUrls, setMediaUrls] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const fileRef = useRef(null);
+  const textareaRef = useRef(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadCatalog = useCallback(() => {
     setLoading(true);
     merveilFetch("/api/groups?action=catalog")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (cancelled) return;
         setCatalog(d?.emirates || []);
         if (d?.note) setNote(d.note);
       })
       .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .finally(() => setLoading(false));
   }, []);
 
-  const openGroup = async (g) => {
+  useEffect(() => { loadCatalog(); }, [loadCatalog]);
+
+  const openGroup = async (g, { forceJoin = false } = {}) => {
     if (!currentUser?.id) { onSignIn?.(); return; }
-    setGroup(g);
+    setGroup({ ...g, i_member: g.i_member });
     setPostLoading(true);
     setPosts([]);
+    setNote("");
     try {
-      await merveilFetch(`/api/groups/${g.id}?action=join`, { method: "POST", body: "{}" });
+      if (forceJoin || !g.i_member) {
+        const j = await merveilFetch(`/api/groups/${g.id}?action=join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (!j.ok) {
+          const err = await j.json().catch(() => ({}));
+          throw new Error(err.error || "Could not enter group");
+        }
+      }
       const res = await merveilFetch(`/api/groups/${g.id}?action=posts`);
       const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not load posts");
       setPosts(data.posts || []);
       if (data.group) setGroup(data.group);
-    } catch {
-      setNote("Couldn't load this group.");
+    } catch (e) {
+      setNote(e.message || "Couldn't open group");
     } finally {
       setPostLoading(false);
+    }
+  };
+
+  const leaveGroup = async () => {
+    if (!group?.id) return;
+    try {
+      await merveilFetch(`/api/groups/${group.id}?action=leave`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      setGroup(null);
+      setPosts([]);
+      loadCatalog();
+    } catch {
+      setNote("Could not leave group");
     }
   };
 
   const uploadMedia = async (file) => {
     if (!file) return;
     setUploading(true);
+    setNote("");
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -11936,27 +11967,44 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
 
   const publishLead = async () => {
     if (!group?.id || posting) return;
-    if (!draft.trim() && !mediaUrls.length) return;
+    const text = draft.trim();
+    if (!text && !mediaUrls.length) return;
     if (!currentUser?.id) { onSignIn?.(); return; }
     setPosting(true);
+    setNote("");
     try {
+      // Ensure membership before post
+      if (!group.i_member) {
+        await merveilFetch(`/api/groups/${group.id}?action=join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+      }
       const res = await merveilFetch(`/api/groups/${group.id}?action=post`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          body: draft.trim(),
-          mediaUrls,
-          priceHint: priceHint.trim() || undefined,
-        }),
+        body: JSON.stringify({ body: text, mediaUrls }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Couldn't post");
+      if (!res.ok) throw new Error(data.error || "Couldn't post — try again");
       setDraft("");
-      setPriceHint("");
       setMediaUrls([]);
-      const reload = await merveilFetch(`/api/groups/${group.id}?action=posts`);
-      const rd = await reload.json().catch(() => ({}));
-      setPosts(rd.posts || []);
+      // Optimistic prepend
+      if (data.post) {
+        setPosts((prev) => [{
+          ...data.post,
+          author: { id: currentUser.id, name: currentUser.name, avatar_url: currentUser.avatar_url },
+          author_status: "online",
+          is_mine: true,
+          i_supered: false,
+        }, ...prev]);
+      } else {
+        const reload = await merveilFetch(`/api/groups/${group.id}?action=posts`);
+        const rd = await reload.json().catch(() => ({}));
+        setPosts(rd.posts || []);
+      }
+      setGroup((g) => g ? { ...g, i_member: true } : g);
     } catch (e) {
       setNote(e.message || "Post failed");
     } finally {
@@ -11985,8 +12033,58 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
     } catch {}
   };
 
+  const deletePost = async (post) => {
+    if (!window.confirm("Delete this lead?")) return;
+    try {
+      const res = await merveilFetch(`/api/groups/${group.id}?action=delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Delete failed");
+      }
+      setPosts((prev) => prev.filter((p) => p.id !== post.id));
+    } catch (e) {
+      setNote(e.message || "Delete failed");
+    }
+  };
+
+  const saveEdit = async (post) => {
+    const body = editText.trim();
+    if (!body) return;
+    try {
+      const res = await merveilFetch(`/api/groups/${group.id}?action=edit`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id, body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Edit failed");
+      setPosts((prev) => prev.map((p) => p.id === post.id ? { ...p, body } : p));
+      setEditingId(null);
+    } catch (e) {
+      setNote(e.message || "Edit failed");
+    }
+  };
+
+  const sharePost = async (post) => {
+    const url = `${window.location.origin}/?tab=connect&group=${encodeURIComponent(group?.id || "")}&post=${encodeURIComponent(post.id)}`;
+    const text = (post.body || "Lead on Merveil").slice(0, 120);
+    try {
+      if (navigator.share) await navigator.share({ title: group?.title || "Merveil lead", text, url });
+      else {
+        await navigator.clipboard?.writeText(`${text}\n${url}`);
+        setNote("Link copied");
+        setTimeout(() => setNote(""), 2000);
+      }
+    } catch {}
+  };
+
   const recordView = async (post) => {
-    if (!currentUser?.id || !group?.id) return;
+    if (!currentUser?.id || !group?.id || post._viewed) return;
+    post._viewed = true;
     try {
       const res = await merveilFetch(`/api/groups/${group.id}?action=view`, {
         method: "POST",
@@ -12000,12 +12098,13 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
     } catch {}
   };
 
-  // Drill-down: emirates → areas → groups → feed
+  // —— Feed (joined group) ——
   if (group) {
+    const inGroup = !!group.i_member;
     return (
-      <div className="flex flex-col h-full min-h-0">
-        <div className="px-3 py-2.5 flex items-center gap-2 border-b shrink-0" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
-          <button type="button" onClick={() => { setGroup(null); setPosts([]); }} className="p-1.5 rounded-full" style={{ color: "#5C5346" }}>
+      <div className="flex flex-col h-full min-h-0" style={{ background: "#F5F0E8" }}>
+        <div className="px-2 py-2 flex items-center gap-1.5 border-b shrink-0" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#FFFFFF" }}>
+          <button type="button" onClick={() => { setGroup(null); setPosts([]); loadCatalog(); }} className="p-2 rounded-full" style={{ color: "#5C5346" }}>
             <ChevronLeft size={18} />
           </button>
           <div className="min-w-0 flex-1">
@@ -12014,117 +12113,176 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
               {group.emirate} · Public · {(group.member_count || 0)} in group
             </div>
           </div>
-        </div>
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-          {postLoading && <div className="text-xs text-center py-8" style={{ color: "#8A7B6C" }}>Loading leads…</div>}
-          {!postLoading && posts.length === 0 && (
-            <div className="text-center py-10 px-4">
-              <div className="text-sm font-bold" style={{ color: "#1A1612" }}>No leads yet</div>
-              <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Be the first to post a sell, buy, or rent lead in {group.area}.</p>
-            </div>
+          {inGroup ? (
+            <button type="button" onClick={leaveGroup} className="text-[11px] font-bold px-2.5 py-1.5 rounded-full"
+              style={{ background: "rgba(224,85,76,0.12)", color: "#C0392B" }}>Leave</button>
+          ) : (
+            <button type="button" onClick={() => openGroup(group, { forceJoin: true })} className="text-[11px] font-bold px-2.5 py-1.5 rounded-full text-white"
+              style={{ background: "#0E9AA7" }}>Enter</button>
           )}
-          {posts.map((post) => {
-            const author = post.author || {};
-            const name = author.name || "Citizen";
-            return (
-              <div
-                key={post.id}
-                className="rounded-2xl border p-3"
-                style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff", boxShadow: "0 2px 12px rgba(26,22,18,0.04)" }}
-                onMouseEnter={() => recordView(post)}
-                ref={(el) => {
-                  if (!el || post._viewed) return;
-                  const io = new IntersectionObserver((entries) => {
-                    if (entries.some((e) => e.isIntersecting)) {
-                      post._viewed = true;
-                      recordView(post);
-                      io.disconnect();
-                    }
-                  }, { threshold: 0.4 });
-                  io.observe(el);
-                }}
-              >
-                <div className="flex items-center gap-2.5 mb-2">
-                  <button type="button" className="shrink-0" onClick={() => {}}>
-                    <Avatar name={name} src={author.avatar_url} size={40} />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
-                      <PresenceDot status={post.author_status || "offline"} size={10} />
-                    </div>
-                    <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
-                      {post.created_at ? timeAgo(post.created_at) : ""} · {post.author_status === "online" ? "Online" : "Offline"}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" onClick={() => onCall?.({ id: post.author_id, name, avatar_url: author.avatar_url }, "voice")}
-                      className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
-                      <Phone size={14} color="#0E9AA7" />
-                    </button>
-                    <button type="button" onClick={() => onMessage?.({ id: post.author_id, name, avatar_url: author.avatar_url })}
-                      className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
-                      <MessageCircle size={14} color="#1FA64A" />
-                    </button>
-                  </div>
-                </div>
-                {post.price_hint && (
-                  <div className="text-[11px] font-bold mb-1" style={{ color: "#0E9AA7" }}>{post.price_hint}</div>
-                )}
-                {post.body && <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "#2A241C" }}>{post.body}</p>}
-                {Array.isArray(post.media_urls) && post.media_urls.length > 0 && (
-                  <div className="mt-2 flex gap-1.5 overflow-x-auto">
-                    {post.media_urls.map((url) => (
-                      String(url).match(/\.(mp4|webm|mov)(\?|$)/i)
-                        ? <video key={url} src={url} controls className="h-36 rounded-xl object-cover max-w-[220px]" />
-                        : <img key={url} src={url} alt="" className="h-36 rounded-xl object-cover max-w-[220px]" />
-                    ))}
-                  </div>
-                )}
-                <div className="mt-2.5 flex items-center gap-3">
-                  <span className="text-[11px] font-semibold" style={{ color: "#8A7B6C" }}>👁 {post.views_count || 0}</span>
-                  <button type="button" onClick={() => superPost(post)}
-                    className="text-[11px] font-bold px-2.5 py-1 rounded-full"
-                    style={{
-                      background: post.i_supered ? "rgba(14,154,167,0.15)" : "rgba(0,0,0,0.04)",
-                      color: post.i_supered ? "#0E9AA7" : "#5C5346",
-                    }}>
-                    ★ Super {post.super_count || 0}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
         </div>
-        <div className="shrink-0 border-t p-3 space-y-2" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
-          <input
-            value={priceHint}
-            onChange={(e) => setPriceHint(e.target.value)}
-            placeholder="Price hint (optional) e.g. AED 1.2M"
-            className="w-full text-xs rounded-xl border px-3 py-2 outline-none"
-            style={{ borderColor: "rgba(0,0,0,0.08)" }}
-          />
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={2}
-            placeholder={`Post a ${group.intent || "lead"} in ${group.area}…`}
-            className="w-full text-sm rounded-xl border px-3 py-2 outline-none resize-none"
-            style={{ borderColor: "rgba(0,0,0,0.08)" }}
-          />
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full cursor-pointer" style={{ background: "rgba(14,154,167,0.1)", color: "#0E9AA7" }}>
-              {uploading ? "…" : "+ Photo/Video"}
-              <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMedia(f); e.target.value = ""; }} />
-            </label>
-            {mediaUrls.length > 0 && <span className="text-[10px]" style={{ color: "#8A7B6C" }}>{mediaUrls.length} attached</span>}
-            <button type="button" disabled={posting} onClick={publishLead}
-              className="ml-auto text-xs font-bold px-4 py-2 rounded-full text-white"
-              style={{ background: "#0E9AA7", opacity: posting ? 0.7 : 1 }}>
-              {posting ? "Posting…" : "Post lead"}
+
+        {!inGroup && (
+          <div className="px-4 py-8 text-center">
+            <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Public group</div>
+            <p className="text-xs mt-1 mb-4" style={{ color: "#8A7B6C" }}>Enter to read leads and post in {group.area} only — no request needed.</p>
+            <button type="button" onClick={() => openGroup(group, { forceJoin: true })}
+              className="text-sm font-bold px-5 py-2.5 rounded-full text-white" style={{ background: "#0E9AA7" }}>
+              Enter group
             </button>
           </div>
-        </div>
+        )}
+
+        {inGroup && (
+          <>
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+              {note && <div className="text-[11px] text-center font-semibold" style={{ color: "#B45309" }}>{note}</div>}
+              {postLoading && <div className="text-xs text-center py-8" style={{ color: "#8A7B6C" }}>Loading leads…</div>}
+              {!postLoading && posts.length === 0 && (
+                <div className="text-center py-10 px-4">
+                  <div className="text-sm font-bold" style={{ color: "#1A1612" }}>No leads yet</div>
+                  <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Be the first in {group.area}.</p>
+                </div>
+              )}
+              {posts.map((post) => {
+                const author = post.author || {};
+                const name = author.name || "Citizen";
+                const mine = post.is_mine || String(post.author_id) === String(currentUser?.id);
+                return (
+                  <div
+                    key={post.id}
+                    className="rounded-2xl border p-3"
+                    style={{ borderColor: "rgba(0,0,0,0.06)", background: "#FFFFFF", boxShadow: "0 2px 12px rgba(26,22,18,0.04)" }}
+                    ref={(el) => {
+                      if (!el || post._viewed) return;
+                      const io = new IntersectionObserver((entries) => {
+                        if (entries.some((e) => e.isIntersecting)) {
+                          recordView(post);
+                          io.disconnect();
+                        }
+                      }, { threshold: 0.35 });
+                      io.observe(el);
+                    }}
+                  >
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <Avatar name={name} src={author.avatar_url} size={40} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
+                          <PresenceDot status={post.author_status || "offline"} size={10} />
+                        </div>
+                        <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
+                          {post.created_at ? timeAgo(post.created_at) : ""}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button type="button" onClick={() => onCall?.({ id: post.author_id, name, avatar_url: author.avatar_url }, "voice")}
+                          className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
+                          <Phone size={14} color="#0E9AA7" />
+                        </button>
+                        <button type="button" onClick={() => onMessage?.({ id: post.author_id, name, avatar_url: author.avatar_url })}
+                          className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
+                          <MessageCircle size={14} color="#1FA64A" />
+                        </button>
+                      </div>
+                    </div>
+                    {editingId === post.id ? (
+                      <div className="space-y-2">
+                        <textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3}
+                          className="w-full text-sm rounded-xl border px-3 py-2 outline-none resize-none"
+                          style={{ borderColor: "rgba(0,0,0,0.1)", background: "#FFF", color: "#1A1612" }} />
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => saveEdit(post)} className="text-[11px] font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "#0E9AA7" }}>Save</button>
+                          <button type="button" onClick={() => setEditingId(null)} className="text-[11px] font-bold px-3 py-1.5 rounded-full" style={{ color: "#5C5346" }}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      post.body && <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "#2A241C" }}>{post.body}</p>
+                    )}
+                    {Array.isArray(post.media_urls) && post.media_urls.length > 0 && (
+                      <div className="mt-2 flex gap-1.5 overflow-x-auto">
+                        {post.media_urls.map((url) => (
+                          String(url).match(/\.(mp4|webm|mov)(\?|$)/i)
+                            ? <video key={url} src={url} controls className="h-36 rounded-xl object-cover max-w-[220px]" />
+                            : <img key={url} src={url} alt="" className="h-36 rounded-xl object-cover max-w-[220px]" />
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] font-semibold" style={{ color: "#8A7B6C" }}>👁 {post.views_count || 0}</span>
+                      <button type="button" onClick={() => superPost(post)}
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-full"
+                        style={{
+                          background: post.i_supered ? "rgba(14,154,167,0.15)" : "rgba(0,0,0,0.04)",
+                          color: post.i_supered ? "#0E9AA7" : "#5C5346",
+                        }}>
+                        ★ Super {post.super_count || 0}
+                      </button>
+                      <button type="button" onClick={() => sharePost(post)} className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#5C5346" }}>Share</button>
+                      {mine && (
+                        <>
+                          <button type="button" onClick={() => { setEditingId(post.id); setEditText(post.body || ""); }}
+                            className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#0E9AA7" }}>Edit</button>
+                          <button type="button" onClick={() => deletePost(post)}
+                            className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#C0392B" }}>Delete</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* WhatsApp-style composer — light, expandable, media inside */}
+            <div className="shrink-0 border-t px-2 py-2" style={{ borderColor: "rgba(0,0,0,0.08)", background: "#ECE5DD" }}>
+              {mediaUrls.length > 0 && (
+                <div className="flex gap-1.5 px-1 pb-2 overflow-x-auto">
+                  {mediaUrls.map((url) => (
+                    <div key={url} className="relative shrink-0">
+                      <img src={url} alt="" className="h-14 w-14 rounded-lg object-cover" />
+                      <button type="button" onClick={() => setMediaUrls((u) => u.filter((x) => x !== url))}
+                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-white text-[10px] font-bold"
+                        style={{ background: "#C0392B" }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-end gap-1.5">
+                <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()}
+                  className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: "#FFFFFF", color: "#0E9AA7", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }}
+                  aria-label="Attach">
+                  {uploading ? "…" : "+"}
+                </button>
+                <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMedia(f); e.target.value = ""; }} />
+                <div className="flex-1 min-w-0 rounded-2xl px-3 py-2" style={{ background: "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06)" }}>
+                  <textarea
+                    ref={textareaRef}
+                    value={draft}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      const el = e.target;
+                      el.style.height = "auto";
+                      el.style.height = Math.min(el.scrollHeight, 120) + "px";
+                    }}
+                    rows={1}
+                    placeholder={`Message ${group.area}…`}
+                    className="w-full text-[15px] outline-none resize-none border-0 bg-transparent leading-snug"
+                    style={{ color: "#1A1612", maxHeight: 120, caretColor: "#0E9AA7" }}
+                  />
+                </div>
+                <button type="button" disabled={posting || (!draft.trim() && !mediaUrls.length)} onClick={publishLead}
+                  className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white font-bold"
+                  style={{ background: (posting || (!draft.trim() && !mediaUrls.length)) ? "#A8C5C9" : "#0E9AA7", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}
+                  aria-label="Send">
+                  {posting ? "…" : "➤"}
+                </button>
+              </div>
+              {note && <div className="text-[10px] mt-1 px-1 font-semibold" style={{ color: "#B45309" }}>{note}</div>}
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -12134,7 +12292,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
     const ar = em?.areas?.find((a) => a.area === area);
     const groups = ar?.groups || [];
     return (
-      <div className="flex flex-col h-full min-h-0">
+      <div className="flex flex-col h-full min-h-0" style={{ background: "#F5F0E8" }}>
         <div className="px-3 py-2.5 flex items-center gap-2 border-b" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
           <button type="button" onClick={() => setArea(null)} className="p-1.5"><ChevronLeft size={18} color="#5C5346" /></button>
           <div>
@@ -12152,9 +12310,17 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
                 {g.intent === "sell" ? "S" : g.intent === "buy" ? "B" : "R"}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{g.title}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{g.title}</div>
+                  {(g.unread_count || 0) > 0 && (
+                    <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-white" style={{ background: "#0E9AA7" }}>
+                      {g.unread_count > 99 ? "99+" : g.unread_count}
+                    </span>
+                  )}
+                </div>
                 <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
-                  {(g.member_count || 0)} members · {(g.post_count || 0)} leads · Public
+                  {(g.member_count || 0)} members · {(g.post_count || 0)} leads
+                  {g.i_member ? " · Joined" : " · Public"}
                 </div>
               </div>
               <ChevronRight size={16} color="#C4B8A8" />
@@ -12169,7 +12335,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
     const em = catalog.find((e) => e.emirate === emirate);
     const areas = em?.areas || [];
     return (
-      <div className="flex flex-col h-full min-h-0">
+      <div className="flex flex-col h-full min-h-0" style={{ background: "#F5F0E8" }}>
         <div className="px-3 py-2.5 flex items-center gap-2 border-b" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
           <button type="button" onClick={() => setEmirate(null)} className="p-1.5"><ChevronLeft size={18} color="#5C5346" /></button>
           <div className="text-sm font-bold" style={{ color: "#1A1612" }}>{emirate}</div>
@@ -12180,7 +12346,14 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
               className="w-full text-left rounded-2xl border p-3.5 flex items-center justify-between"
               style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
               <div>
-                <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{a.area}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{a.area}</div>
+                  {(a.unread_count || 0) > 0 && (
+                    <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-white" style={{ background: "#0E9AA7" }}>
+                      {a.unread_count > 99 ? "99+" : a.unread_count}
+                    </span>
+                  )}
+                </div>
                 <div className="text-[10px]" style={{ color: "#8A7B6C" }}>{(a.groups || []).length} groups · Sell / Buy / Rent</div>
               </div>
               <ChevronRight size={16} color="#C4B8A8" />
@@ -12192,11 +12365,11 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0" style={{ background: "#F5F0E8" }}>
       <div className="px-4 pt-3 pb-2">
         <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Area Groups</div>
         <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: "#8A7B6C" }}>
-          Public real-estate lead channels by emirate & area — WhatsApp-group style. Open to every citizen. No request needed.
+          Public RE lead channels by emirate & area. Enter a group to post — leads stay in that area only.
         </p>
         {note && <p className="text-[10px] mt-1" style={{ color: "#B45309" }}>{note}</p>}
       </div>
@@ -12205,20 +12378,30 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
         {!loading && catalog.length === 0 && (
           <div className="rounded-2xl border p-4 text-center" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
             <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Groups not seeded yet</div>
-            <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Run <code>supabase-area-groups-v1.sql</code> in Supabase, then refresh.</p>
+            <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Run <code>supabase-area-groups-v1.sql</code> then <code>v1b</code>.</p>
           </div>
         )}
-        {catalog.map((em) => (
-          <button key={em.emirate} type="button" onClick={() => setEmirate(em.emirate)}
-            className="w-full text-left rounded-2xl border p-3.5 flex items-center justify-between"
-            style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
-            <div>
-              <div className="text-[14px] font-bold" style={{ color: "#1A1612" }}>{em.emirate}</div>
-              <div className="text-[10px]" style={{ color: "#8A7B6C" }}>{(em.areas || []).length} areas</div>
-            </div>
-            <ChevronRight size={16} color="#C4B8A8" />
-          </button>
-        ))}
+        {catalog.map((em) => {
+          const unread = (em.areas || []).reduce((n, a) => n + (a.unread_count || 0), 0);
+          return (
+            <button key={em.emirate} type="button" onClick={() => setEmirate(em.emirate)}
+              className="w-full text-left rounded-2xl border p-3.5 flex items-center justify-between"
+              style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[14px] font-bold" style={{ color: "#1A1612" }}>{em.emirate}</div>
+                  {unread > 0 && (
+                    <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-white" style={{ background: "#0E9AA7" }}>
+                      {unread > 99 ? "99+" : unread}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px]" style={{ color: "#8A7B6C" }}>{(em.areas || []).length} areas</div>
+              </div>
+              <ChevronRight size={16} color="#C4B8A8" />
+            </button>
+          );
+        })}
       </div>
     </div>
   );
