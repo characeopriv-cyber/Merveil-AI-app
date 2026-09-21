@@ -2536,7 +2536,7 @@ export default async function handler(req, res) {
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
       }
 
-      // Catalog: emirates → areas → groups
+      // Catalog: emirates → areas → groups (+ membership + unread for actor)
       if (method === "GET" && !groupId && (groupAction === "catalog" || !groupAction)) {
         const { data: rows, error } = await svcG
           .from("area_groups")
@@ -2550,45 +2550,100 @@ export default async function handler(req, res) {
             error: error.message,
           });
         }
+        let memberMap = {}; // group_id -> { joined_at, last_read_at }
+        if (actor?.id) {
+          const { data: mems } = await svcG
+            .from("area_group_members")
+            .select("group_id, joined_at, last_read_at")
+            .eq("user_id", actor.id);
+          for (const m of mems || []) memberMap[m.group_id] = m;
+        }
+        // Unread = posts after last_read_at (or joined_at) for memberships only
+        let unreadByGroup = {};
+        const joinedIds = Object.keys(memberMap);
+        if (joinedIds.length) {
+          const { data: recent } = await svcG
+            .from("area_group_posts")
+            .select("id, group_id, author_id, created_at")
+            .in("group_id", joinedIds)
+            .order("created_at", { ascending: false })
+            .limit(Math.min(joinedIds.length * 30, 3000));
+          for (const post of recent || []) {
+            if (String(post.author_id) === String(actor.id)) continue;
+            const mem = memberMap[post.group_id];
+            if (!mem) continue;
+            const since = new Date(mem.last_read_at || mem.joined_at || 0).getTime() || 0;
+            const ts = new Date(post.created_at).getTime() || 0;
+            if (ts > since) unreadByGroup[post.group_id] = (unreadByGroup[post.group_id] || 0) + 1;
+          }
+        }
         const byEm = {};
         for (const g of rows || []) {
           if (!byEm[g.emirate]) byEm[g.emirate] = {};
           if (!byEm[g.emirate][g.area]) byEm[g.emirate][g.area] = [];
-          byEm[g.emirate][g.area].push(g);
+          const mem = memberMap[g.id];
+          byEm[g.emirate][g.area].push({
+            ...g,
+            i_member: !!mem,
+            unread_count: unreadByGroup[g.id] || 0,
+          });
         }
         const emirates = Object.keys(byEm).sort().map((em) => ({
           emirate: em,
           areas: Object.keys(byEm[em]).sort().map((area) => ({
             area,
             groups: byEm[em][area],
+            unread_count: byEm[em][area].reduce((n, g) => n + (g.unread_count || 0), 0),
           })),
         }));
         return sendJson(res, 200, { emirates, totalGroups: (rows || []).length });
       }
 
-      // Join public group (no request — instant)
-      if (method === "POST" && groupId && (groupAction === "join" || !groupAction)) {
+      // Join public group
+      if (method === "POST" && groupId && groupAction === "join") {
         if (!requireCitizenActor(actor, res, "Sign in to enter a group.")) return;
         const { data: g } = await svcG.from("area_groups").select("id, member_count").eq("id", groupId).maybeSingle();
         if (!g) return sendJson(res, 404, { error: "Group not found." });
+        const now = new Date().toISOString();
         const { error } = await svcG.from("area_group_members").upsert({
           group_id: groupId,
           user_id: actor.id,
-          joined_at: new Date().toISOString(),
+          joined_at: now,
+          last_read_at: now,
         }, { onConflict: "group_id,user_id" });
         if (error) return sendJson(res, 400, { error: error.message });
         try {
           const { count } = await svcG.from("area_group_members").select("*", { count: "exact", head: true }).eq("group_id", groupId);
           await svcG.from("area_groups").update({ member_count: count || 0 }).eq("id", groupId);
         } catch {}
-        return sendJson(res, 200, { ok: true, groupId });
+        return sendJson(res, 200, { ok: true, groupId, joined: true });
       }
 
-      // List posts in a group
+      // Leave group
+      if (method === "POST" && groupId && groupAction === "leave") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        await svcG.from("area_group_members").delete().eq("group_id", groupId).eq("user_id", actor.id);
+        try {
+          const { count } = await svcG.from("area_group_members").select("*", { count: "exact", head: true }).eq("group_id", groupId);
+          await svcG.from("area_groups").update({ member_count: count || 0 }).eq("id", groupId);
+        } catch {}
+        return sendJson(res, 200, { ok: true, left: true });
+      }
+
+      // List posts + mark read
       if (method === "GET" && groupId && (groupAction === "posts" || !groupAction)) {
         const limit = Math.min(Number(req.query.limit) || 40, 80);
         const { data: g } = await svcG.from("area_groups").select("*").eq("id", groupId).maybeSingle();
         if (!g) return sendJson(res, 404, { error: "Group not found." });
+        let iMember = false;
+        if (actor?.id) {
+          const { data: mem } = await svcG.from("area_group_members").select("user_id").eq("group_id", groupId).eq("user_id", actor.id).maybeSingle();
+          iMember = !!mem;
+          if (iMember) {
+            await svcG.from("area_group_members").update({ last_read_at: new Date().toISOString() })
+              .eq("group_id", groupId).eq("user_id", actor.id);
+          }
+        }
         const { data: posts, error } = await svcG
           .from("area_group_posts")
           .select("*")
@@ -2602,7 +2657,6 @@ export default async function handler(req, res) {
           const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier").in("id", authorIds);
           for (const pr of profs || []) profiles[pr.id] = pr;
         }
-        // Presence for authors
         let presenceMap = {};
         if (authorIds.length) {
           const cutoff = Date.now() - 300 * 1000;
@@ -2625,24 +2679,30 @@ export default async function handler(req, res) {
           author: profiles[p.author_id] || null,
           author_status: presenceMap[p.author_id] || "offline",
           i_supered: mySupers.has(p.id),
+          is_mine: actor?.id ? String(p.author_id) === String(actor.id) : false,
         }));
-        return sendJson(res, 200, { group: g, posts: enriched });
+        return sendJson(res, 200, { group: { ...g, i_member: iMember }, posts: enriched });
       }
 
-      // Create lead post
+      // Create lead post — must be member; auto-join if not
       if (method === "POST" && groupId && groupAction === "post") {
         if (!requireCitizenActor(actor, res, "Sign in to post a lead.")) return;
-        const body = await readBody(req);
+        const body = await readBody(req) || {};
         const text = String(body.body || body.text || "").trim();
-        const mediaUrls = Array.isArray(body.mediaUrls) ? body.mediaUrls.slice(0, 8) : [];
+        const mediaUrls = Array.isArray(body.mediaUrls) ? body.mediaUrls.filter(Boolean).slice(0, 8) : [];
         if (!text && !mediaUrls.length) {
-          return sendJson(res, 400, { error: "Write a lead or attach a photo/video." });
+          return sendJson(res, 400, { error: "Write a message or attach a photo/video." });
         }
-        // Auto-join on post
+        // Enforce group exists (area lock — cannot post cross-area)
+        const { data: g } = await svcG.from("area_groups").select("id, emirate, area, intent").eq("id", groupId).maybeSingle();
+        if (!g) return sendJson(res, 404, { error: "Group not found." });
+
+        const now = new Date().toISOString();
         await svcG.from("area_group_members").upsert({
           group_id: groupId,
           user_id: actor.id,
-          joined_at: new Date().toISOString(),
+          joined_at: now,
+          last_read_at: now,
         }, { onConflict: "group_id,user_id" }).catch(() => {});
 
         let mediaType = "text";
@@ -2658,18 +2718,64 @@ export default async function handler(req, res) {
           price_hint: body.priceHint || body.price || null,
           property_type: body.propertyType || null,
         }).select().maybeSingle();
+        if (error) {
+          console.error("[groups/post]", error.message);
+          return sendJson(res, 400, { error: error.message || "Could not publish lead." });
+        }
+        try {
+          const { count } = await svcG.from("area_group_posts").select("*", { count: "exact", head: true }).eq("group_id", groupId);
+          const { count: mc } = await svcG.from("area_group_members").select("*", { count: "exact", head: true }).eq("group_id", groupId);
+          await svcG.from("area_groups").update({ post_count: count || 0, member_count: mc || 0 }).eq("id", groupId);
+        } catch {}
+        return sendJson(res, 200, { post, group: g });
+      }
+
+      // Edit own post
+      if (method === "PATCH" && groupId && groupAction === "edit") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const body = await readBody(req) || {};
+        const postId = body.postId || body.id;
+        if (!postId) return sendJson(res, 400, { error: "postId required." });
+        const { data: existing } = await svcG.from("area_group_posts").select("id, author_id, group_id").eq("id", postId).maybeSingle();
+        if (!existing || String(existing.group_id) !== String(groupId)) {
+          return sendJson(res, 404, { error: "Post not found in this group." });
+        }
+        if (String(existing.author_id) !== String(actor.id)) {
+          return sendJson(res, 403, { error: "Only the poster can edit." });
+        }
+        const patch = { updated_at: new Date().toISOString() };
+        if (body.body !== undefined) patch.body = String(body.body || "").trim() || null;
+        if (body.priceHint !== undefined) patch.price_hint = body.priceHint || null;
+        const { data: post, error } = await svcG.from("area_group_posts").update(patch).eq("id", postId).select().maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { post });
+      }
+
+      // Delete own post
+      if ((method === "DELETE" || method === "POST") && groupId && groupAction === "delete") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const body = method === "POST" ? (await readBody(req) || {}) : {};
+        const postId = body.postId || body.id || req.query.postId;
+        if (!postId) return sendJson(res, 400, { error: "postId required." });
+        const { data: existing } = await svcG.from("area_group_posts").select("id, author_id, group_id").eq("id", postId).maybeSingle();
+        if (!existing || String(existing.group_id) !== String(groupId)) {
+          return sendJson(res, 404, { error: "Post not found in this group." });
+        }
+        if (String(existing.author_id) !== String(actor.id)) {
+          return sendJson(res, 403, { error: "Only the poster can delete." });
+        }
+        await svcG.from("area_group_posts").delete().eq("id", postId);
         try {
           const { count } = await svcG.from("area_group_posts").select("*", { count: "exact", head: true }).eq("group_id", groupId);
           await svcG.from("area_groups").update({ post_count: count || 0 }).eq("id", groupId);
         } catch {}
-        return sendJson(res, 200, { post });
+        return sendJson(res, 200, { ok: true, deleted: postId });
       }
 
-      // Super a lead
+      // Super
       if (method === "POST" && groupId && groupAction === "super") {
         if (!requireCitizenActor(actor, res, "Sign in required.")) return;
-        const body = await readBody(req);
+        const body = await readBody(req) || {};
         const postId = body.postId || body.id;
         if (!postId) return sendJson(res, 400, { error: "postId required." });
         const { data: existing } = await svcG.from("area_group_supers")
@@ -2686,10 +2792,10 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { supered: true, super_count: count || 0 });
       }
 
-      // Record view (once per user)
+      // View
       if (method === "POST" && groupId && groupAction === "view") {
         if (!requireCitizenActor(actor, res, "Sign in required.")) return;
-        const body = await readBody(req);
+        const body = await readBody(req) || {};
         const postId = body.postId || body.id;
         if (!postId) return sendJson(res, 400, { error: "postId required." });
         const { data: existing } = await svcG.from("area_group_post_views")
