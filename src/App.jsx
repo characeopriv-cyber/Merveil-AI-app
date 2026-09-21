@@ -11883,8 +11883,50 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
   const [note, setNote] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [showEmoji, setShowEmoji] = useState(false);
   const fileRef = useRef(null);
   const textareaRef = useRef(null);
+
+  const insertEmoji = (emoji) => {
+    const el = textareaRef.current;
+    const sym = typeof emoji === "string" ? emoji : (emoji?.e || "");
+    if (!sym) return;
+    if (el && typeof el.selectionStart === "number") {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const next = draft.slice(0, start) + sym + draft.slice(end);
+      setDraft(next);
+      requestAnimationFrame(() => {
+        try {
+          el.focus();
+          const pos = start + sym.length;
+          el.setSelectionRange(pos, pos);
+          el.style.height = "auto";
+          el.style.height = Math.min(el.scrollHeight, 120) + "px";
+        } catch {}
+      });
+    } else {
+      setDraft((d) => d + sym);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (document.getElementById("merveil-uae-flag-css")) return;
+    const st = document.createElement("style");
+    st.id = "merveil-uae-flag-css";
+    st.textContent = `
+      @keyframes merveilUaeWave {
+        0% { background-position: 0% 0; }
+        100% { background-position: 200% 0; }
+      }
+      @keyframes merveilFlagFloat {
+        0%, 100% { transform: translateY(0) rotate(-4deg); opacity: 0.3; }
+        50% { transform: translateY(-14px) rotate(5deg); opacity: 0.75; }
+      }
+    `;
+    document.head.appendChild(st);
+  }, []);
 
   const loadCatalog = useCallback(() => {
     setLoading(true);
@@ -11900,14 +11942,15 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
 
   useEffect(() => { loadCatalog(); }, [loadCatalog]);
 
+  // Explore = open + load posts without join. Enter = join then member mode.
   const openGroup = async (g, { forceJoin = false } = {}) => {
     if (!currentUser?.id) { onSignIn?.(); return; }
-    setGroup({ ...g, i_member: g.i_member });
+    setGroup({ ...g, i_member: !!g.i_member });
     setPostLoading(true);
     setPosts([]);
     setNote("");
     try {
-      if (forceJoin || !g.i_member) {
+      if (forceJoin) {
         const j = await merveilFetch(`/api/groups/${g.id}?action=join`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -11922,7 +11965,11 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not load posts");
       setPosts(data.posts || []);
-      if (data.group) setGroup(data.group);
+      const merged = data.group || g;
+      setGroup({
+        ...merged,
+        i_member: forceJoin ? true : !!merged.i_member,
+      });
     } catch (e) {
       setNote(e.message || "Couldn't open group");
     } finally {
@@ -11938,8 +11985,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-      setGroup(null);
-      setPosts([]);
+      setGroup((g) => (g ? { ...g, i_member: false } : g));
       loadCatalog();
     } catch {
       setNote("Could not leave group");
@@ -11970,17 +12016,13 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
     const text = draft.trim();
     if (!text && !mediaUrls.length) return;
     if (!currentUser?.id) { onSignIn?.(); return; }
+    if (!group.i_member) {
+      setNote("Enter the group first to post a lead.");
+      return;
+    }
     setPosting(true);
     setNote("");
     try {
-      // Ensure membership before post
-      if (!group.i_member) {
-        await merveilFetch(`/api/groups/${group.id}?action=join`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        });
-      }
       const res = await merveilFetch(`/api/groups/${group.id}?action=post`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -11990,7 +12032,6 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
       if (!res.ok) throw new Error(data.error || "Couldn't post — try again");
       setDraft("");
       setMediaUrls([]);
-      // Optimistic prepend
       if (data.post) {
         setPosts((prev) => [{
           ...data.post,
@@ -12004,7 +12045,6 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
         const rd = await reload.json().catch(() => ({}));
         setPosts(rd.posts || []);
       }
-      setGroup((g) => g ? { ...g, i_member: true } : g);
     } catch (e) {
       setNote(e.message || "Post failed");
     } finally {
@@ -12014,6 +12054,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
 
   const superPost = async (post) => {
     if (!currentUser?.id) { onSignIn?.(); return; }
+    if (!group?.i_member) { setNote("Enter the group to Super a lead."); return; }
     const was = post.i_supered;
     setPosts((prev) => prev.map((p) => p.id === post.id
       ? { ...p, i_supered: !was, super_count: Math.max(0, (p.super_count || 0) + (was ? -1 : 1)) }
@@ -12098,190 +12139,234 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
     } catch {}
   };
 
-  // —— Feed (joined group) ——
+  const intentStyle = (intent) => {
+    if (intent === "sell") return { bg: "linear-gradient(145deg,#0E9AA7,#087F8A)", chipBg: "rgba(14,154,167,0.15)", chipFg: "#0A6B75" };
+    if (intent === "buy") return { bg: "linear-gradient(145deg,#1FA64A,#15803D)", chipBg: "rgba(31,166,74,0.15)", chipFg: "#15803D" };
+    return { bg: "linear-gradient(145deg,#D97706,#B45309)", chipBg: "rgba(217,119,6,0.18)", chipFg: "#B45309" };
+  };
+
+  // —— Inside a group (Explore or Member) ——
   if (group) {
     const inGroup = !!group.i_member;
     return (
       <div className="flex flex-col h-full min-h-0" style={{ background: "#F5F0E8" }}>
-        <div className="px-2 py-2 flex items-center gap-1.5 border-b shrink-0" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#FFFFFF" }}>
-          <button type="button" onClick={() => { setGroup(null); setPosts([]); loadCatalog(); }} className="p-2 rounded-full" style={{ color: "#5C5346" }}>
+        <div className="px-2 py-2 flex items-center gap-1.5 border-b shrink-0 relative overflow-hidden" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#FFFFFF" }}>
+          <div className="absolute inset-x-0 top-0 h-1 pointer-events-none" aria-hidden style={{
+            background: "linear-gradient(90deg,#000 0 25%,#00732F 25% 50%,#FFFFFF 50% 75%,#FF0000 75% 100%)",
+            backgroundSize: "200% 100%",
+            animation: "merveilUaeWave 6s linear infinite",
+          }} />
+          <button type="button" onClick={() => { setGroup(null); setPosts([]); loadCatalog(); }} className="p-2 rounded-full relative z-10" style={{ color: "#5C5346" }}>
             <ChevronLeft size={18} />
           </button>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 relative z-10">
             <div className="text-sm font-bold truncate" style={{ color: "#1A1612" }}>{group.title || group.area}</div>
             <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
-              {group.emirate} · Public · {(group.member_count || 0)} in group
+              🇦🇪 {group.emirate} · Public · {(group.member_count || 0)} in group
+              {inGroup ? " · Member" : " · Exploring"}
             </div>
           </div>
-          {inGroup ? (
-            <button type="button" onClick={leaveGroup} className="text-[11px] font-bold px-2.5 py-1.5 rounded-full"
-              style={{ background: "rgba(224,85,76,0.12)", color: "#C0392B" }}>Leave</button>
-          ) : (
-            <button type="button" onClick={() => openGroup(group, { forceJoin: true })} className="text-[11px] font-bold px-2.5 py-1.5 rounded-full text-white"
-              style={{ background: "#0E9AA7" }}>Enter</button>
-          )}
+          <div className="flex items-center gap-1.5 relative z-10 shrink-0">
+            {inGroup ? (
+              <button type="button" onClick={leaveGroup} className="text-[11px] font-bold px-2.5 py-1.5 rounded-full"
+                style={{ background: "rgba(224,85,76,0.12)", color: "#C0392B" }}>Leave</button>
+            ) : (
+              <button type="button" onClick={() => openGroup(group, { forceJoin: true })}
+                className="text-[11px] font-bold px-2.5 py-1.5 rounded-full text-white"
+                style={{ background: "#0E9AA7" }}>Enter</button>
+            )}
+          </div>
         </div>
 
-        {!inGroup && (
-          <div className="px-4 py-8 text-center">
-            <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Public group</div>
-            <p className="text-xs mt-1 mb-4" style={{ color: "#8A7B6C" }}>Enter to read leads and post in {group.area} only — no request needed.</p>
-            <button type="button" onClick={() => openGroup(group, { forceJoin: true })}
-              className="text-sm font-bold px-5 py-2.5 rounded-full text-white" style={{ background: "#0E9AA7" }}>
-              Enter group
-            </button>
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 relative">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-[0.14]" aria-hidden>
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className="absolute text-2xl" style={{
+                left: `${10 + i * 22}%`,
+                top: `${6 + (i % 2) * 42}%`,
+                animation: `merveilFlagFloat ${5 + i}s ease-in-out infinite`,
+                animationDelay: `${i * 0.6}s`,
+              }}>🇦🇪</span>
+            ))}
           </div>
-        )}
-
-        {inGroup && (
-          <>
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-              {note && <div className="text-[11px] text-center font-semibold" style={{ color: "#B45309" }}>{note}</div>}
-              {postLoading && <div className="text-xs text-center py-8" style={{ color: "#8A7B6C" }}>Loading leads…</div>}
-              {!postLoading && posts.length === 0 && (
-                <div className="text-center py-10 px-4">
-                  <div className="text-sm font-bold" style={{ color: "#1A1612" }}>No leads yet</div>
-                  <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Be the first in {group.area}.</p>
-                </div>
-              )}
-              {posts.map((post) => {
-                const author = post.author || {};
-                const name = author.name || "Citizen";
-                const mine = post.is_mine || String(post.author_id) === String(currentUser?.id);
-                return (
-                  <div
-                    key={post.id}
-                    className="rounded-2xl border p-3"
-                    style={{ borderColor: "rgba(0,0,0,0.06)", background: "#FFFFFF", boxShadow: "0 2px 12px rgba(26,22,18,0.04)" }}
-                    ref={(el) => {
-                      if (!el || post._viewed) return;
-                      const io = new IntersectionObserver((entries) => {
-                        if (entries.some((e) => e.isIntersecting)) {
-                          recordView(post);
-                          io.disconnect();
-                        }
-                      }, { threshold: 0.35 });
-                      io.observe(el);
-                    }}
-                  >
-                    <div className="flex items-center gap-2.5 mb-2">
-                      <Avatar name={name} src={author.avatar_url} size={40} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
-                          <PresenceDot status={post.author_status || "offline"} size={10} />
-                        </div>
-                        <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
-                          {post.created_at ? timeAgo(post.created_at) : ""}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button type="button" onClick={() => onCall?.({ id: post.author_id, name, avatar_url: author.avatar_url }, "voice")}
-                          className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
-                          <Phone size={14} color="#0E9AA7" />
-                        </button>
-                        <button type="button" onClick={() => onMessage?.({ id: post.author_id, name, avatar_url: author.avatar_url })}
-                          className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
-                          <MessageCircle size={14} color="#1FA64A" />
-                        </button>
-                      </div>
+          {note && <div className="text-[11px] text-center font-semibold relative z-10" style={{ color: "#B45309" }}>{note}</div>}
+          {!inGroup && (
+            <div className="relative z-10 rounded-xl px-3 py-2 text-[11px] font-semibold text-center"
+              style={{ background: "rgba(14,154,167,0.1)", color: "#0A6B75" }}>
+              Exploring — tap <strong>Enter</strong> to post in this area
+            </div>
+          )}
+          {postLoading && <div className="text-xs text-center py-8 relative z-10" style={{ color: "#8A7B6C" }}>Loading leads…</div>}
+          {!postLoading && posts.length === 0 && (
+            <div className="text-center py-10 px-4 relative z-10">
+              <div className="text-sm font-bold" style={{ color: "#1A1612" }}>No leads yet</div>
+              <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Be the first in {group.area}.</p>
+            </div>
+          )}
+          {posts.map((post) => {
+            const author = post.author || {};
+            const name = author.name || "Citizen";
+            const mine = post.is_mine || String(post.author_id) === String(currentUser?.id);
+            return (
+              <div
+                key={post.id}
+                className="rounded-2xl border p-3 relative z-10"
+                style={{ borderColor: "rgba(0,0,0,0.06)", background: "#FFFFFF", boxShadow: "0 2px 12px rgba(26,22,18,0.04)" }}
+                ref={(el) => {
+                  if (!el || post._viewed) return;
+                  const io = new IntersectionObserver((entries) => {
+                    if (entries.some((e) => e.isIntersecting)) {
+                      recordView(post);
+                      io.disconnect();
+                    }
+                  }, { threshold: 0.35 });
+                  io.observe(el);
+                }}
+              >
+                <div className="flex items-center gap-2.5 mb-2">
+                  <Avatar name={name} src={author.avatar_url} size={40} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
+                      <PresenceDot status={post.author_status || "offline"} size={10} />
                     </div>
-                    {editingId === post.id ? (
-                      <div className="space-y-2">
-                        <textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3}
-                          className="w-full text-sm rounded-xl border px-3 py-2 outline-none resize-none"
-                          style={{ borderColor: "rgba(0,0,0,0.1)", background: "#FFF", color: "#1A1612" }} />
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => saveEdit(post)} className="text-[11px] font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "#0E9AA7" }}>Save</button>
-                          <button type="button" onClick={() => setEditingId(null)} className="text-[11px] font-bold px-3 py-1.5 rounded-full" style={{ color: "#5C5346" }}>Cancel</button>
-                        </div>
-                      </div>
-                    ) : (
-                      post.body && <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "#2A241C" }}>{post.body}</p>
-                    )}
-                    {Array.isArray(post.media_urls) && post.media_urls.length > 0 && (
-                      <div className="mt-2 flex gap-1.5 overflow-x-auto">
-                        {post.media_urls.map((url) => (
-                          String(url).match(/\.(mp4|webm|mov)(\?|$)/i)
-                            ? <video key={url} src={url} controls className="h-36 rounded-xl object-cover max-w-[220px]" />
-                            : <img key={url} src={url} alt="" className="h-36 rounded-xl object-cover max-w-[220px]" />
-                        ))}
-                      </div>
-                    )}
-                    <div className="mt-2.5 flex items-center gap-2 flex-wrap">
-                      <span className="text-[11px] font-semibold" style={{ color: "#8A7B6C" }}>👁 {post.views_count || 0}</span>
-                      <button type="button" onClick={() => superPost(post)}
-                        className="text-[11px] font-bold px-2.5 py-1 rounded-full"
-                        style={{
-                          background: post.i_supered ? "rgba(14,154,167,0.15)" : "rgba(0,0,0,0.04)",
-                          color: post.i_supered ? "#0E9AA7" : "#5C5346",
-                        }}>
-                        ★ Super {post.super_count || 0}
-                      </button>
-                      <button type="button" onClick={() => sharePost(post)} className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#5C5346" }}>Share</button>
-                      {mine && (
-                        <>
-                          <button type="button" onClick={() => { setEditingId(post.id); setEditText(post.body || ""); }}
-                            className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#0E9AA7" }}>Edit</button>
-                          <button type="button" onClick={() => deletePost(post)}
-                            className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#C0392B" }}>Delete</button>
-                        </>
-                      )}
+                    <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
+                      {post.created_at ? timeAgo(post.created_at) : ""}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-
-            {/* WhatsApp-style composer — light, expandable, media inside */}
-            <div className="shrink-0 border-t px-2 py-2" style={{ borderColor: "rgba(0,0,0,0.08)", background: "#ECE5DD" }}>
-              {mediaUrls.length > 0 && (
-                <div className="flex gap-1.5 px-1 pb-2 overflow-x-auto">
-                  {mediaUrls.map((url) => (
-                    <div key={url} className="relative shrink-0">
-                      <img src={url} alt="" className="h-14 w-14 rounded-lg object-cover" />
-                      <button type="button" onClick={() => setMediaUrls((u) => u.filter((x) => x !== url))}
-                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-white text-[10px] font-bold"
-                        style={{ background: "#C0392B" }}>×</button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button type="button" onClick={() => onCall?.({ id: post.author_id, name, avatar_url: author.avatar_url }, "voice")}
+                      className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
+                      <Phone size={14} color="#0E9AA7" />
+                    </button>
+                    <button type="button" onClick={() => onMessage?.({ id: post.author_id, name, avatar_url: author.avatar_url })}
+                      className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
+                      <MessageCircle size={14} color="#1FA64A" />
+                    </button>
+                  </div>
+                </div>
+                {editingId === post.id ? (
+                  <div className="space-y-2">
+                    <textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3}
+                      className="w-full text-sm rounded-xl border px-3 py-2 outline-none resize-none"
+                      style={{ borderColor: "rgba(0,0,0,0.1)", background: "#FFF", color: "#1A1612" }} />
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => saveEdit(post)} className="text-[11px] font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "#0E9AA7" }}>Save</button>
+                      <button type="button" onClick={() => setEditingId(null)} className="text-[11px] font-bold px-3 py-1.5 rounded-full" style={{ color: "#5C5346" }}>Cancel</button>
                     </div>
-                  ))}
+                  </div>
+                ) : (
+                  post.body && <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "#2A241C" }}>{post.body}</p>
+                )}
+                {Array.isArray(post.media_urls) && post.media_urls.length > 0 && (
+                  <div className="mt-2 flex gap-1.5 overflow-x-auto">
+                    {post.media_urls.map((url) => (
+                      String(url).match(/\.(mp4|webm|mov)(\?|$)/i)
+                        ? <video key={url} src={url} controls className="h-36 rounded-xl object-cover max-w-[220px]" />
+                        : <img key={url} src={url} alt="" className="h-36 rounded-xl object-cover max-w-[220px]" />
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-semibold" style={{ color: "#8A7B6C" }}>👁 {post.views_count || 0}</span>
+                  <button type="button" onClick={() => superPost(post)}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-full"
+                    style={{
+                      background: post.i_supered ? "rgba(14,154,167,0.15)" : "rgba(0,0,0,0.04)",
+                      color: post.i_supered ? "#0E9AA7" : "#5C5346",
+                    }}>
+                    ★ Super {post.super_count || 0}
+                  </button>
+                  <button type="button" onClick={() => sharePost(post)} className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#5C5346" }}>Share</button>
+                  {mine && inGroup && (
+                    <>
+                      <button type="button" onClick={() => { setEditingId(post.id); setEditText(post.body || ""); }}
+                        className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#0E9AA7" }}>Edit</button>
+                      <button type="button" onClick={() => deletePost(post)}
+                        className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#C0392B" }}>Delete</button>
+                    </>
+                  )}
                 </div>
-              )}
-              <div className="flex items-end gap-1.5">
-                <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()}
-                  className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-                  style={{ background: "#FFFFFF", color: "#0E9AA7", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }}
-                  aria-label="Attach">
-                  {uploading ? "…" : "+"}
-                </button>
-                <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMedia(f); e.target.value = ""; }} />
-                <div className="flex-1 min-w-0 rounded-2xl px-3 py-2" style={{ background: "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06)" }}>
-                  <textarea
-                    ref={textareaRef}
-                    value={draft}
-                    onChange={(e) => {
-                      setDraft(e.target.value);
-                      const el = e.target;
-                      el.style.height = "auto";
-                      el.style.height = Math.min(el.scrollHeight, 120) + "px";
-                    }}
-                    rows={1}
-                    placeholder={`Message ${group.area}…`}
-                    className="w-full text-[15px] outline-none resize-none border-0 bg-transparent leading-snug"
-                    style={{ color: "#1A1612", maxHeight: 120, caretColor: "#0E9AA7" }}
-                  />
-                </div>
-                <button type="button" disabled={posting || (!draft.trim() && !mediaUrls.length)} onClick={publishLead}
-                  className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white font-bold"
-                  style={{ background: (posting || (!draft.trim() && !mediaUrls.length)) ? "#A8C5C9" : "#0E9AA7", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}
-                  aria-label="Send">
-                  {posting ? "…" : "➤"}
-                </button>
               </div>
-              {note && <div className="text-[10px] mt-1 px-1 font-semibold" style={{ color: "#B45309" }}>{note}</div>}
+            );
+          })}
+        </div>
+
+        {inGroup ? (
+          <div className="shrink-0 border-t px-2 py-2" style={{ borderColor: "rgba(0,0,0,0.08)", background: "#ECE5DD" }}>
+            {mediaUrls.length > 0 && (
+              <div className="flex gap-1.5 px-1 pb-2 overflow-x-auto">
+                {mediaUrls.map((url) => (
+                  <div key={url} className="relative shrink-0">
+                    <img src={url} alt="" className="h-14 w-14 rounded-lg object-cover" />
+                    <button type="button" onClick={() => setMediaUrls((u) => u.filter((x) => x !== url))}
+                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-white text-[10px] font-bold"
+                      style={{ background: "#C0392B" }}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {showEmoji && (
+              <div className="mb-2 max-h-40 overflow-y-auto rounded-2xl border p-2 grid grid-cols-8 gap-1"
+                style={{ background: "#FFFFFF", borderColor: "rgba(0,0,0,0.08)", boxShadow: "0 8px 24px rgba(0,0,0,0.08)" }}>
+                {(typeof UAE_REACTIONS !== "undefined" ? UAE_REACTIONS : []).map((item) => (
+                  <button
+                    key={item.e + item.label}
+                    type="button"
+                    onClick={() => insertEmoji(item)}
+                    className="text-xl leading-none p-1.5 rounded-lg hover:bg-black/5"
+                    title={item.label}
+                  >{item.e}</button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-end gap-1.5">
+              <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()}
+                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: "#FFFFFF", color: "#0E9AA7", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }}
+                aria-label="Attach">
+                {uploading ? "…" : "+"}
+              </button>
+              <button type="button" onClick={() => setShowEmoji((v) => !v)}
+                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-lg"
+                style={{ background: showEmoji ? "rgba(14,154,167,0.15)" : "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }}
+                aria-label="Emoji">
+                😊
+              </button>
+              <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMedia(f); e.target.value = ""; }} />
+              <div className="flex-1 min-w-0 rounded-2xl px-3 py-2" style={{ background: "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06)" }}>
+                <textarea
+                  ref={textareaRef}
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    const el = e.target;
+                    el.style.height = "auto";
+                    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+                  }}
+                  rows={1}
+                  placeholder={`Message ${group.area}…`}
+                  className="w-full text-[15px] outline-none resize-none border-0 bg-transparent leading-snug"
+                  style={{ color: "#1A1612", maxHeight: 120, caretColor: "#0E9AA7" }}
+                />
+              </div>
+              <button type="button" disabled={posting || (!draft.trim() && !mediaUrls.length)} onClick={publishLead}
+                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white font-bold"
+                style={{ background: (posting || (!draft.trim() && !mediaUrls.length)) ? "#A8C5C9" : "#0E9AA7", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}
+                aria-label="Send">
+                {posting ? "…" : "➤"}
+              </button>
             </div>
-          </>
+            {note && <div className="text-[10px] mt-1 px-1 font-semibold" style={{ color: "#B45309" }}>{note}</div>}
+          </div>
+        ) : (
+          <div className="shrink-0 border-t px-3 py-3 text-center" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+            <button type="button" onClick={() => openGroup(group, { forceJoin: true })}
+              className="text-sm font-bold px-5 py-2.5 rounded-full text-white" style={{ background: "#0E9AA7" }}>
+              Enter group to post
+            </button>
+          </div>
         )}
       </div>
     );
@@ -12301,31 +12386,36 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {groups.map((g) => (
-            <button key={g.id} type="button" onClick={() => openGroup(g)}
-              className="w-full text-left rounded-2xl border p-3.5 flex items-center gap-3"
-              style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold text-white"
-                style={{ background: g.intent === "sell" ? "#0E9AA7" : g.intent === "buy" ? "#1FA64A" : "#C4A574" }}>
-                {g.intent === "sell" ? "S" : g.intent === "buy" ? "B" : "R"}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{g.title}</div>
-                  {(g.unread_count || 0) > 0 && (
-                    <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-white" style={{ background: "#0E9AA7" }}>
-                      {g.unread_count > 99 ? "99+" : g.unread_count}
-                    </span>
-                  )}
+          {groups.map((g) => {
+            const st = intentStyle(g.intent);
+            return (
+              <button key={g.id} type="button" onClick={() => openGroup(g)}
+                className="w-full text-left rounded-2xl border p-3.5 flex items-center gap-3"
+                style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold text-white shadow-sm"
+                  style={{ background: st.bg }}>
+                  {g.intent === "sell" ? "S" : g.intent === "buy" ? "B" : "R"}
                 </div>
-                <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
-                  {(g.member_count || 0)} members · {(g.post_count || 0)} leads
-                  {g.i_member ? " · Joined" : " · Public"}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{g.title}</div>
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full"
+                      style={{ background: st.chipBg, color: st.chipFg }}>{g.intent}</span>
+                    {(g.unread_count || 0) > 0 && (
+                      <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-white" style={{ background: "#0E9AA7" }}>
+                        {g.unread_count > 99 ? "99+" : g.unread_count}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
+                    {(g.member_count || 0)} members · {(g.post_count || 0)} leads
+                    {g.i_member ? " · Joined" : " · Public"}
+                  </div>
                 </div>
-              </div>
-              <ChevronRight size={16} color="#C4B8A8" />
-            </button>
-          ))}
+                <ChevronRight size={16} color="#C4B8A8" />
+              </button>
+            );
+          })}
         </div>
       </div>
     );
@@ -12338,7 +12428,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
       <div className="flex flex-col h-full min-h-0" style={{ background: "#F5F0E8" }}>
         <div className="px-3 py-2.5 flex items-center gap-2 border-b" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
           <button type="button" onClick={() => setEmirate(null)} className="p-1.5"><ChevronLeft size={18} color="#5C5346" /></button>
-          <div className="text-sm font-bold" style={{ color: "#1A1612" }}>{emirate}</div>
+          <div className="text-sm font-bold" style={{ color: "#1A1612" }}>🇦🇪 {emirate}</div>
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {areas.map((a) => (
@@ -12369,7 +12459,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
       <div className="px-4 pt-3 pb-2">
         <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Area Groups</div>
         <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: "#8A7B6C" }}>
-          Public RE lead channels by emirate & area. Enter a group to post — leads stay in that area only.
+          Explore any area freely. Enter a group only when you want to post. Dubai first.
         </p>
         {note && <p className="text-[10px] mt-1" style={{ color: "#B45309" }}>{note}</p>}
       </div>
@@ -12378,7 +12468,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
         {!loading && catalog.length === 0 && (
           <div className="rounded-2xl border p-4 text-center" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
             <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Groups not seeded yet</div>
-            <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Run <code>supabase-area-groups-v1.sql</code> then <code>v1b</code>.</p>
+            <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Run supabase-area-groups-ALL.sql in Supabase.</p>
           </div>
         )}
         {catalog.map((em) => {
@@ -12389,7 +12479,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
               style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
               <div>
                 <div className="flex items-center gap-2">
-                  <div className="text-[14px] font-bold" style={{ color: "#1A1612" }}>{em.emirate}</div>
+                  <div className="text-[14px] font-bold" style={{ color: "#1A1612" }}>🇦🇪 {em.emirate}</div>
                   {unread > 0 && (
                     <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-white" style={{ background: "#0E9AA7" }}>
                       {unread > 99 ? "99+" : unread}
