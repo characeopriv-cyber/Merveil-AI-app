@@ -605,6 +605,8 @@ import {
   Search,
   AtSign,
   MessageCircle,
+  ChevronLeft,
+  ChevronRight,
   MessageSquare,
   MoreVertical,
   MoreHorizontal,
@@ -625,7 +627,6 @@ import {
   Zap,
   ShieldCheck,
   Send,
-  ChevronRight,
   Building2,
   UserCheck,
   FileCheck2,
@@ -11863,6 +11864,367 @@ function MyCircleTab({ currentUser, connectionPeople, presenceMap, onMessage, on
   );
 }
 
+
+// ============================================================
+// AREA GROUPS — public Emirates RE lead channels (WhatsApp-style)
+// ============================================================
+function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
+  const [catalog, setCatalog] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [emirate, setEmirate] = useState(null);
+  const [area, setArea] = useState(null);
+  const [group, setGroup] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [postLoading, setPostLoading] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [priceHint, setPriceHint] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [mediaUrls, setMediaUrls] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    merveilFetch("/api/groups?action=catalog")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        setCatalog(d?.emirates || []);
+        if (d?.note) setNote(d.note);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const openGroup = async (g) => {
+    if (!currentUser?.id) { onSignIn?.(); return; }
+    setGroup(g);
+    setPostLoading(true);
+    setPosts([]);
+    try {
+      await merveilFetch(`/api/groups/${g.id}?action=join`, { method: "POST", body: "{}" });
+      const res = await merveilFetch(`/api/groups/${g.id}?action=posts`);
+      const data = await res.json().catch(() => ({}));
+      setPosts(data.posts || []);
+      if (data.group) setGroup(data.group);
+    } catch {
+      setNote("Couldn't load this group.");
+    } finally {
+      setPostLoading(false);
+    }
+  };
+
+  const uploadMedia = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("folder", "group-leads");
+      const res = await fetch("/api/people?action=upload", { method: "POST", credentials: "include", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) throw new Error(data.error || "Upload failed");
+      setMediaUrls((u) => [...u, data.url].slice(0, 6));
+    } catch (e) {
+      setNote(e.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const publishLead = async () => {
+    if (!group?.id || posting) return;
+    if (!draft.trim() && !mediaUrls.length) return;
+    if (!currentUser?.id) { onSignIn?.(); return; }
+    setPosting(true);
+    try {
+      const res = await merveilFetch(`/api/groups/${group.id}?action=post`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body: draft.trim(),
+          mediaUrls,
+          priceHint: priceHint.trim() || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't post");
+      setDraft("");
+      setPriceHint("");
+      setMediaUrls([]);
+      const reload = await merveilFetch(`/api/groups/${group.id}?action=posts`);
+      const rd = await reload.json().catch(() => ({}));
+      setPosts(rd.posts || []);
+    } catch (e) {
+      setNote(e.message || "Post failed");
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const superPost = async (post) => {
+    if (!currentUser?.id) { onSignIn?.(); return; }
+    const was = post.i_supered;
+    setPosts((prev) => prev.map((p) => p.id === post.id
+      ? { ...p, i_supered: !was, super_count: Math.max(0, (p.super_count || 0) + (was ? -1 : 1)) }
+      : p));
+    try {
+      const res = await merveilFetch(`/api/groups/${group.id}?action=super`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.super_count != null) {
+        setPosts((prev) => prev.map((p) => p.id === post.id
+          ? { ...p, i_supered: !!data.supered, super_count: data.super_count }
+          : p));
+      }
+    } catch {}
+  };
+
+  const recordView = async (post) => {
+    if (!currentUser?.id || !group?.id) return;
+    try {
+      const res = await merveilFetch(`/api/groups/${group.id}?action=view`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.views_count != null) {
+        setPosts((prev) => prev.map((p) => p.id === post.id ? { ...p, views_count: data.views_count } : p));
+      }
+    } catch {}
+  };
+
+  // Drill-down: emirates → areas → groups → feed
+  if (group) {
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="px-3 py-2.5 flex items-center gap-2 border-b shrink-0" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+          <button type="button" onClick={() => { setGroup(null); setPosts([]); }} className="p-1.5 rounded-full" style={{ color: "#5C5346" }}>
+            <ChevronLeft size={18} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold truncate" style={{ color: "#1A1612" }}>{group.title || group.area}</div>
+            <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
+              {group.emirate} · Public · {(group.member_count || 0)} in group
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+          {postLoading && <div className="text-xs text-center py-8" style={{ color: "#8A7B6C" }}>Loading leads…</div>}
+          {!postLoading && posts.length === 0 && (
+            <div className="text-center py-10 px-4">
+              <div className="text-sm font-bold" style={{ color: "#1A1612" }}>No leads yet</div>
+              <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Be the first to post a sell, buy, or rent lead in {group.area}.</p>
+            </div>
+          )}
+          {posts.map((post) => {
+            const author = post.author || {};
+            const name = author.name || "Citizen";
+            return (
+              <div
+                key={post.id}
+                className="rounded-2xl border p-3"
+                style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff", boxShadow: "0 2px 12px rgba(26,22,18,0.04)" }}
+                onMouseEnter={() => recordView(post)}
+                ref={(el) => {
+                  if (!el || post._viewed) return;
+                  const io = new IntersectionObserver((entries) => {
+                    if (entries.some((e) => e.isIntersecting)) {
+                      post._viewed = true;
+                      recordView(post);
+                      io.disconnect();
+                    }
+                  }, { threshold: 0.4 });
+                  io.observe(el);
+                }}
+              >
+                <div className="flex items-center gap-2.5 mb-2">
+                  <button type="button" className="shrink-0" onClick={() => {}}>
+                    <Avatar name={name} src={author.avatar_url} size={40} />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
+                      <PresenceDot status={post.author_status || "offline"} size={10} />
+                    </div>
+                    <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
+                      {post.created_at ? timeAgo(post.created_at) : ""} · {post.author_status === "online" ? "Online" : "Offline"}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button type="button" onClick={() => onCall?.({ id: post.author_id, name, avatar_url: author.avatar_url }, "voice")}
+                      className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
+                      <Phone size={14} color="#0E9AA7" />
+                    </button>
+                    <button type="button" onClick={() => onMessage?.({ id: post.author_id, name, avatar_url: author.avatar_url })}
+                      className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
+                      <MessageCircle size={14} color="#1FA64A" />
+                    </button>
+                  </div>
+                </div>
+                {post.price_hint && (
+                  <div className="text-[11px] font-bold mb-1" style={{ color: "#0E9AA7" }}>{post.price_hint}</div>
+                )}
+                {post.body && <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: "#2A241C" }}>{post.body}</p>}
+                {Array.isArray(post.media_urls) && post.media_urls.length > 0 && (
+                  <div className="mt-2 flex gap-1.5 overflow-x-auto">
+                    {post.media_urls.map((url) => (
+                      String(url).match(/\.(mp4|webm|mov)(\?|$)/i)
+                        ? <video key={url} src={url} controls className="h-36 rounded-xl object-cover max-w-[220px]" />
+                        : <img key={url} src={url} alt="" className="h-36 rounded-xl object-cover max-w-[220px]" />
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2.5 flex items-center gap-3">
+                  <span className="text-[11px] font-semibold" style={{ color: "#8A7B6C" }}>👁 {post.views_count || 0}</span>
+                  <button type="button" onClick={() => superPost(post)}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-full"
+                    style={{
+                      background: post.i_supered ? "rgba(14,154,167,0.15)" : "rgba(0,0,0,0.04)",
+                      color: post.i_supered ? "#0E9AA7" : "#5C5346",
+                    }}>
+                    ★ Super {post.super_count || 0}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="shrink-0 border-t p-3 space-y-2" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+          <input
+            value={priceHint}
+            onChange={(e) => setPriceHint(e.target.value)}
+            placeholder="Price hint (optional) e.g. AED 1.2M"
+            className="w-full text-xs rounded-xl border px-3 py-2 outline-none"
+            style={{ borderColor: "rgba(0,0,0,0.08)" }}
+          />
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={2}
+            placeholder={`Post a ${group.intent || "lead"} in ${group.area}…`}
+            className="w-full text-sm rounded-xl border px-3 py-2 outline-none resize-none"
+            style={{ borderColor: "rgba(0,0,0,0.08)" }}
+          />
+          <div className="flex items-center gap-2">
+            <label className="text-[11px] font-semibold px-2.5 py-1.5 rounded-full cursor-pointer" style={{ background: "rgba(14,154,167,0.1)", color: "#0E9AA7" }}>
+              {uploading ? "…" : "+ Photo/Video"}
+              <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMedia(f); e.target.value = ""; }} />
+            </label>
+            {mediaUrls.length > 0 && <span className="text-[10px]" style={{ color: "#8A7B6C" }}>{mediaUrls.length} attached</span>}
+            <button type="button" disabled={posting} onClick={publishLead}
+              className="ml-auto text-xs font-bold px-4 py-2 rounded-full text-white"
+              style={{ background: "#0E9AA7", opacity: posting ? 0.7 : 1 }}>
+              {posting ? "Posting…" : "Post lead"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (area && emirate) {
+    const em = catalog.find((e) => e.emirate === emirate);
+    const ar = em?.areas?.find((a) => a.area === area);
+    const groups = ar?.groups || [];
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="px-3 py-2.5 flex items-center gap-2 border-b" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+          <button type="button" onClick={() => setArea(null)} className="p-1.5"><ChevronLeft size={18} color="#5C5346" /></button>
+          <div>
+            <div className="text-sm font-bold" style={{ color: "#1A1612" }}>{area}</div>
+            <div className="text-[10px]" style={{ color: "#8A7B6C" }}>{emirate} · Sell · Buy · Rent</div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {groups.map((g) => (
+            <button key={g.id} type="button" onClick={() => openGroup(g)}
+              className="w-full text-left rounded-2xl border p-3.5 flex items-center gap-3"
+              style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold text-white"
+                style={{ background: g.intent === "sell" ? "#0E9AA7" : g.intent === "buy" ? "#1FA64A" : "#C4A574" }}>
+                {g.intent === "sell" ? "S" : g.intent === "buy" ? "B" : "R"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{g.title}</div>
+                <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
+                  {(g.member_count || 0)} members · {(g.post_count || 0)} leads · Public
+                </div>
+              </div>
+              <ChevronRight size={16} color="#C4B8A8" />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (emirate) {
+    const em = catalog.find((e) => e.emirate === emirate);
+    const areas = em?.areas || [];
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="px-3 py-2.5 flex items-center gap-2 border-b" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+          <button type="button" onClick={() => setEmirate(null)} className="p-1.5"><ChevronLeft size={18} color="#5C5346" /></button>
+          <div className="text-sm font-bold" style={{ color: "#1A1612" }}>{emirate}</div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {areas.map((a) => (
+            <button key={a.area} type="button" onClick={() => setArea(a.area)}
+              className="w-full text-left rounded-2xl border p-3.5 flex items-center justify-between"
+              style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+              <div>
+                <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{a.area}</div>
+                <div className="text-[10px]" style={{ color: "#8A7B6C" }}>{(a.groups || []).length} groups · Sell / Buy / Rent</div>
+              </div>
+              <ChevronRight size={16} color="#C4B8A8" />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="px-4 pt-3 pb-2">
+        <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Area Groups</div>
+        <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: "#8A7B6C" }}>
+          Public real-estate lead channels by emirate & area — WhatsApp-group style. Open to every citizen. No request needed.
+        </p>
+        {note && <p className="text-[10px] mt-1" style={{ color: "#B45309" }}>{note}</p>}
+      </div>
+      <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+        {loading && <div className="text-xs text-center py-10" style={{ color: "#8A7B6C" }}>Loading emirates…</div>}
+        {!loading && catalog.length === 0 && (
+          <div className="rounded-2xl border p-4 text-center" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+            <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Groups not seeded yet</div>
+            <p className="text-xs mt-1" style={{ color: "#8A7B6C" }}>Run <code>supabase-area-groups-v1.sql</code> in Supabase, then refresh.</p>
+          </div>
+        )}
+        {catalog.map((em) => (
+          <button key={em.emirate} type="button" onClick={() => setEmirate(em.emirate)}
+            className="w-full text-left rounded-2xl border p-3.5 flex items-center justify-between"
+            style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+            <div>
+              <div className="text-[14px] font-bold" style={{ color: "#1A1612" }}>{em.emirate}</div>
+              <div className="text-[10px]" style={{ color: "#8A7B6C" }}>{(em.areas || []).length} areas</div>
+            </div>
+            <ChevronRight size={16} color="#C4B8A8" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcceptedCallConsumed }) {
   const [threads, setThreads] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState([]);
@@ -13127,6 +13489,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             { id: "circle", label: t("connect.circle"), activeBg: "#1FA64A", activeFg: "#FFFFFF", idle: "#7DDB9A", badge: newCircle },
             { id: "messages", label: t("connect.messages"), activeBg: "#F5EDE3", activeFg: "#1E1814", idle: "#B8A99A", border: true, badge: msgUnread },
             { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C534A", activeFg: "#F5EDE3", idle: "#8A7B6C", badge: 0 },
+            { id: "groups", label: "Groups", isNew: true, activeBg: "#0E9AA7", activeFg: "#FFFFFF", idle: "#7EC8D0", badge: 0 },
           ];
           })().map((tabItem) => {
             const on = connectTab === tabItem.id;
@@ -13208,6 +13571,17 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                 else if (dest === "passport") window.dispatchEvent(new CustomEvent("merveil:goto-passport"));
                 else window.dispatchEvent(new CustomEvent("merveil:set-tab", { detail: { tab: dest } }));
               }}
+            />
+          </div>
+        )}
+
+        {connectTab === "groups" && (
+          <div className="flex-1 min-h-0 overflow-hidden" style={{ background: CT.bg }}>
+            <AreaGroupsView
+              currentUser={currentUser}
+              onSignIn={onSignIn}
+              onMessage={(u) => { setConnectTab("messages"); startChatWith(u); }}
+              onCall={(u, mode) => initiateCitizenCall(u, mode)}
             />
           </div>
         )}
@@ -13371,9 +13745,11 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               const isFav = favoriteIds.includes(r.userId);
               const displayName = r.name || profiles[r.userId]?.name || `Merveil User #${String(r.userId).slice(0, 8)}`;
               // Preview under the name — envelope under the word Message when empty
-              const rawPreview = (r.thread.last_body || r.thread.context_label || r.thread.last_message || "").trim();
+              const rawPreview = String(
+                r.thread.last_body || r.thread.context_label || r.thread.last_message || r.thread.last_message_body || ""
+              ).trim();
               const isCallLine = /missed|video call|voice call|call ended|outgoing call|📞|📹/i.test(rawPreview);
-              const subtitle = rawPreview || "";
+              const subtitle = rawPreview || (r.thread.last_message_at ? "Tap to open chat" : "");
               const open = async () => {
                 setActiveId(r.thread.id);
                 setMobileView("chat");
