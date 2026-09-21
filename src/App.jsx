@@ -202,33 +202,33 @@ async function merveilFetch(url, options = {}, { retryOn401 = true } = {}) {
 const MerveilOfflineIdb = {
   async cacheThreads(threads) {
     try {
-      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => null);
       if (m?.MerveilOffline) await m.MerveilOffline.cacheThreads(threads);
     } catch {}
   },
   async readThreads() {
     try {
-      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => null);
       if (m?.MerveilOffline) return await m.MerveilOffline.readThreads();
     } catch {}
     return [];
   },
   async cacheMessages(cid, msgs) {
     try {
-      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => null);
       if (m?.MerveilOffline) await m.MerveilOffline.cacheMessages(cid, msgs);
     } catch {}
   },
   async readMessages(cid) {
     try {
-      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => null);
       if (m?.MerveilOffline) return await m.MerveilOffline.readMessages(cid);
     } catch {}
     return [];
   },
   async cacheDirectory(users) {
     try {
-      const m = await import("./lib/merveilOfflineIdb.js").catch(() => import("./src/lib/merveilOfflineIdb.js").catch(() => null));
+      const m = await import("./lib/merveilOfflineIdb.js").catch(() => null);
       if (m?.MerveilOffline) await m.MerveilOffline.cacheDirectory(users);
     } catch {}
   },
