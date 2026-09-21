@@ -2,9 +2,14 @@
  * Deploy at site root: /sw.js
  * Bump CACHE_VER when shipping UI fixes so browsers drop stale shells.
  */
-const CACHE_VER = "merveil-v1-2026-09-17-call-push-gallery";
+const CACHE_VER = "merveil-v1-2026-09-21-offline-idb-push";
 
 self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_VER).then((cache) =>
+      cache.addAll(["/", "/index.html", "/manifest.webmanifest"]).catch(() => {})
+    )
+  );
   self.skipWaiting();
 });
 
