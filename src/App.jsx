@@ -2040,7 +2040,7 @@ function featureDismiss(id) {
 }
 
 /** New citizen 🆕 for max 5 days from profile created_at / joined */
-function isNewCitizen(user, maxDays = 5) {
+function isNewCitizen(user, maxDays = 3) {
   if (!user) return false;
   const raw = user.created_at || user.createdAt || user.joined_at || user.joinedAt;
   if (!raw) return false;
@@ -7845,8 +7845,8 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
           for (let i = 2; i < Math.min(data.length, 40); i++) sum += data[i];
           const avg = sum / (38 * 255);
           // Gate: silence → 0 (no movement); talking → clear pulse
-          if (avg < 0.04) return 0;
-          return Math.min(1, (avg - 0.04) * 3.2);
+          if (avg < 0.025) return 0;
+          return Math.min(1, (avg - 0.025) * 4.2);
         };
         setVoiceLevels({
           self: muted ? 0 : levelOf(localAnalyser, localData),
@@ -8210,9 +8210,9 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
                 const isSelf = p.role === "self";
                 const level = isSelf ? (voiceLevels.self || 0) : (voiceLevels.peer || 0);
                 const base = participants.length > 2 ? 96 : isSelf ? 124 : 140;
-                const speaking = level > 0.05;
-                const scale = speaking ? 1 + Math.min(0.28, level * 0.34) : 1;
-                const glow = speaking ? 10 + level * 40 : 0;
+                const speaking = level > 0.03;
+                const scale = speaking ? 1 + Math.min(0.38, level * 0.55) : 1;
+                const glow = speaking ? 14 + level * 55 : 0;
                 return (
                   <button
                     key={p.id}
@@ -11467,6 +11467,15 @@ async function initiateCitizenCall(user, mode) {
       window.dispatchEvent(new CustomEvent("merveil:contact-bump", {
         detail: { userId: String(user.id), at },
       }));
+      // Optimistic call line in Messages list (server also writes on end/miss)
+      const callLabel = (mode || "voice") === "video" ? "📹 Outgoing video call" : "📞 Outgoing call";
+      window.dispatchEvent(new CustomEvent("merveil:call-thread-hint", {
+        detail: {
+          otherUserId: String(user.id),
+          last_body: callLabel,
+          at: new Date().toISOString(),
+        },
+      }));
     } catch {}
     window.dispatchEvent(new CustomEvent("merveil:start-call", {
       detail: {
@@ -11888,15 +11897,27 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     const applyOpen = (d) => {
       const conversationId = d?.conversationId;
       if (!conversationId) return;
+      try { setConnectTab("messages"); } catch {}
+      if (d.otherUserId) {
+        try {
+          const at = Date.now();
+          ContactClock.bump(d.otherUserId, at);
+          window.dispatchEvent(new CustomEvent("merveil:contact-bump", { detail: { userId: String(d.otherUserId), at } }));
+        } catch {}
+      }
       setThreads((p) => {
-        if (p.some((t) => t.id === conversationId)) return p;
+        const existing = p.find((t) => String(t.id) === String(conversationId));
+        if (existing) {
+          return [{ ...existing, last_message_at: existing.last_message_at || new Date().toISOString() }, ...p.filter((t) => String(t.id) !== String(conversationId))];
+        }
         return [{
           id: conversationId,
-          participant_ids: d.participantIds || (d.otherUserId ? [d.otherUserId] : []),
+          participant_ids: d.participantIds || (d.otherUserId && currentUser?.id ? [currentUser.id, d.otherUserId] : (d.otherUserId ? [d.otherUserId] : [])),
           other_user_id: d.otherUserId || null,
           context_label: null,
-          last_body: "",
+          last_body: d.last_body || "",
           last_message_at: new Date().toISOString(),
+          unread_count: 0,
         }, ...p];
       });
       setActiveId(conversationId);
@@ -11917,6 +11938,36 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       }
     };
     window.addEventListener("merveil:open-conversation", onOpen);
+    const onCallHint = (e) => {
+      const d = e?.detail || {};
+      const otherId = d.otherUserId ? String(d.otherUserId) : null;
+      if (!otherId || !currentUser?.id) return;
+      const body = d.last_body || "📞 Call";
+      const at = d.at || new Date().toISOString();
+      try {
+        ContactClock.bump(otherId, Date.now());
+      } catch {}
+      setThreads((prev) => {
+        const hit = prev.find((t) => {
+          const ids = (t.participant_ids || []).map(String);
+          return ids.includes(String(currentUser.id)) && ids.includes(otherId);
+        });
+        if (hit) {
+          const row = { ...hit, last_body: body, last_message_at: at, updated_at: at };
+          return [row, ...prev.filter((t) => String(t.id) !== String(hit.id))];
+        }
+        // Placeholder until server conversation row arrives
+        return [{
+          id: `pending-call-${otherId}`,
+          participant_ids: [String(currentUser.id), otherId],
+          other_user_id: otherId,
+          last_body: body,
+          last_message_at: at,
+          unread_count: 0,
+        }, ...prev];
+      });
+    };
+    window.addEventListener("merveil:call-thread-hint", onCallHint);
     // Consume pending open from Pulse/World (event may have fired before mount)
     try {
       const raw = sessionStorage.getItem("merveil_pending_conversation");
@@ -11928,8 +11979,11 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
         sessionStorage.removeItem("merveil_pending_conversation");
       }
     } catch {}
-    return () => window.removeEventListener("merveil:open-conversation", onOpen);
-  }, []);
+    return () => {
+      window.removeEventListener("merveil:open-conversation", onOpen);
+      window.removeEventListener("merveil:call-thread-hint", onCallHint);
+    };
+  }, [currentUser?.id]);
 
   const startEditMessage = (m) => {
     setMsgMenuId(null);
@@ -12280,7 +12334,26 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           if (cancelled || !data?.conversations) return;
           try { MerveilOfflineIdb.cacheThreads(data.conversations); } catch {}
           setThreads((prev) => {
-            const merged = stableMergeById(prev, data.conversations);
+            const byId = Object.fromEntries((prev || []).map((t) => [String(t.id), t]));
+            const merged = stableMergeById(prev, data.conversations).map((t) => {
+              const old = byId[String(t.id)];
+              if (!old) return t;
+              // Never wipe a richer local preview (optimistic send / call line)
+              const last_body = (t.last_body && String(t.last_body).trim())
+                ? t.last_body
+                : (old.last_body || t.last_body || "");
+              const last_message_at = (() => {
+                const a = new Date(t.last_message_at || 0).getTime() || 0;
+                const b = new Date(old.last_message_at || 0).getTime() || 0;
+                return a >= b ? (t.last_message_at || old.last_message_at) : old.last_message_at;
+              })();
+              return {
+                ...t,
+                last_body,
+                last_message_at,
+                unread_count: t.unread_count != null ? t.unread_count : (old.unread_count || 0),
+              };
+            });
             // Sort after merge so client bumps (ContactClock) keep thread on top
             return [...merged].sort((a, b) => {
               const otherA = (a.participant_ids || []).map(String).find((id) => id !== String(currentUser.id));
@@ -12684,7 +12757,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       setThreads((prev) => {
         const next = prev.map((t) =>
           t.id === activeId
-            ? { ...t, last_body: payload.is_e2ee ? "🔒 Secure message" : preview, last_message_at: nowIso, updated_at: nowIso }
+? { ...t, last_body: payload.is_e2ee ? "🔒 Secure message" : preview, last_message_at: nowIso, updated_at: nowIso, unread_count: t.id === activeId ? 0 : t.unread_count }
             : t
         );
         // Keep newest first using max of last_message_at + ContactClock (no bounce down)
@@ -12823,46 +12896,95 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
   const startChatWith = async (otherUser) => {
     setNewChatError("");
+    if (!otherUser?.id) {
+      setNewChatError("Missing person — try again.");
+      return;
+    }
+    if (!currentUser?.id) {
+      onSignIn?.();
+      return;
+    }
+    setConnectTab("messages");
+    setMobileView("chat");
     try {
-      const createdRes = await fetch("/api/conversations", {
+      // Rank this person top immediately (Circle / Citizens / Messages)
+      try {
+        const at = Date.now();
+        ContactClock.bump(otherUser.id, at);
+        window.dispatchEvent(new CustomEvent("merveil:contact-bump", { detail: { userId: String(otherUser.id), at } }));
+      } catch {}
+
+      // Session restore race (same pattern as calls)
+      try {
+        const sess = await fetch("/api/auth/session", { credentials: "include", cache: "no-store" });
+        if (sess.ok) {
+          const body = await sess.json().catch(() => null);
+          if (body?.user?.id) {
+            try { window.dispatchEvent(new CustomEvent("merveil:session-user", { detail: body.user })); } catch {}
+          }
+        }
+      } catch {}
+
+      const createdRes = await merveilFetch("/api/conversations", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ participantIds: [currentUser.id, otherUser.id] }),
       });
       const created = await createdRes.json().catch(() => null);
       const conversationId = created?.conversation?.id;
-      if (!conversationId) throw new Error(created?.error || "No conversation returned");
-      // Only send the greeting on a brand-new thread — never on reused ones
+      if (!createdRes.ok || !conversationId) {
+        throw new Error(created?.error || "No conversation returned");
+      }
+      // Only auto-greet brand-new threads
       if (!created.reused) {
         const greetName = (otherUser.name || otherUser.full_name || "").trim() || "there";
-        await fetch(`/api/conversations/${conversationId}/messages`, {
+        await merveilFetch(`/api/conversations/${conversationId}/messages`, {
           method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ body: `Hi ${greetName}! 👋` }),
-        });
+        }).catch(() => {});
       }
-      // Always reload messages for this thread so history appears immediately
-      const msgsRes = await fetch(`/api/conversations/${conversationId}/messages`, { credentials: "include" });
+      const msgsRes = await merveilFetch(`/api/conversations/${conversationId}/messages`);
       const msgsData = await msgsRes.json().catch(() => null);
+      const lastMsg = (msgsData?.messages || []).slice(-1)[0];
+      const lastBody = lastMsg?.is_e2ee
+        ? "🔒 Secure message"
+        : (lastMsg?.body || lastMsg?.type === "voice" && "🎤 Voice" || lastMsg?.type === "image" && "📷 Photo" || (created.reused ? "" : `Hi ${(otherUser.name || otherUser.full_name || "").trim() || "there"}! 👋`));
+      const nowIso = new Date().toISOString();
       setThreadMessages(msgsData?.messages || []);
       setThreads((p) => {
-        const existing = p.find((t) => t.id === conversationId);
-        if (existing) {
-          return [existing, ...p.filter((t) => t.id !== conversationId)];
-        }
-        return [{
+        const existing = p.find((t) => String(t.id) === String(conversationId));
+        const row = {
+          ...(existing || {}),
           id: conversationId,
-          participant_ids: [currentUser.id, otherUser.id],
-          context_label: null,
-          last_body: created.reused ? (msgsData?.messages?.slice(-1)?.[0]?.body || "") : `Hi ${(otherUser.name || otherUser.full_name || "").trim() || "there"}! 👋`,
-          last_message_at: new Date().toISOString(),
-        }, ...p];
+          participant_ids: existing?.participant_ids || [currentUser.id, otherUser.id],
+          context_label: existing?.context_label || null,
+          last_body: lastBody || existing?.last_body || "",
+          last_message_at: nowIso,
+          updated_at: nowIso,
+          unread_count: existing?.unread_count || 0,
+        };
+        return [row, ...p.filter((t) => String(t.id) !== String(conversationId))];
       });
-      setProfiles((prev) => ({ ...prev, [otherUser.id]: { name: otherUser.name, avatar_url: otherUser.avatar_url || otherUser.avatarUrl } }));
+      setProfiles((prev) => ({
+        ...prev,
+        [otherUser.id]: {
+          name: otherUser.name || otherUser.full_name,
+          avatar_url: otherUser.avatar_url || otherUser.avatarUrl || otherUser.avatar,
+        },
+      }));
       setActiveId(conversationId);
       setShowNewChat(false);
       setDirectoryQuery("");
       setMobileView("chat");
+      setConnectTab("messages");
+      // Persist open target so poll races cannot drop the open chat
+      try {
+        window.dispatchEvent(new CustomEvent("merveil:open-conversation", {
+          detail: { conversationId, otherUserId: otherUser.id, name: otherUser.name },
+        }));
+      } catch {}
     } catch (e) {
-      setNewChatError(`Couldn't start the conversation — ${e.message}`);
+      setNewChatError(`Couldn't open the chat — ${e.message}`);
+      setMobileView("list");
     }
   };
   // Kept for any other callers; the UI now uses the directory instead of email lookup.
@@ -12991,12 +13113,22 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           role="tablist"
           aria-label="Connect sections"
         >
-          {[
-            { id: "citizens", label: t("connect.citizens"), activeBg: "#1D6FBF", activeFg: "#FFFFFF", idle: "#7EB6E8" },
-            { id: "circle", label: t("connect.circle"), activeBg: "#1FA64A", activeFg: "#FFFFFF", idle: "#7DDB9A" },
-            { id: "messages", label: t("connect.messages"), activeBg: "#F5EDE3", activeFg: "#1E1814", idle: "#B8A99A", border: true },
-            { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C534A", activeFg: "#F5EDE3", idle: "#8A7B6C" },
-          ].map((tabItem) => {
+          {(() => {
+            const msgUnread = (threads || []).reduce((n, th) => n + (Number(th.unread_count) || 0), 0);
+            const newCitizens = (directory || []).filter((u) => isNewCitizen(u, 3)).length;
+            // New accepted connections in last 3 days (or marked new)
+            const newCircle = (connectionPeople || []).filter((u) => {
+              if (isNewCitizen(u, 3)) return true;
+              const ts = Date.parse(u.connected_at || u.accepted_at || u.created_at || 0);
+              return ts && (Date.now() - ts) < 3 * 24 * 60 * 60 * 1000;
+            }).length;
+            return [
+            { id: "citizens", label: t("connect.citizens"), activeBg: "#1D6FBF", activeFg: "#FFFFFF", idle: "#7EB6E8", badge: newCitizens },
+            { id: "circle", label: t("connect.circle"), activeBg: "#1FA64A", activeFg: "#FFFFFF", idle: "#7DDB9A", badge: newCircle },
+            { id: "messages", label: t("connect.messages"), activeBg: "#F5EDE3", activeFg: "#1E1814", idle: "#B8A99A", border: true, badge: msgUnread },
+            { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C534A", activeFg: "#F5EDE3", idle: "#8A7B6C", badge: 0 },
+          ];
+          })().map((tabItem) => {
             const on = connectTab === tabItem.id;
             return (
             <button
@@ -13026,6 +13158,13 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                     background: on ? "rgba(255,255,255,0.22)" : "rgba(92,101,112,0.15)",
                     color: on ? "#fff" : "#5C6570",
                   }}>NEW</span>
+                )}
+                {(tabItem.badge || 0) > 0 && (
+                  <span className="text-[9px] font-bold min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center"
+                    style={{
+                      background: on ? "rgba(255,255,255,0.92)" : "#0E9AA7",
+                      color: on ? "#0E9AA7" : "#fff",
+                    }}>{tabItem.badge > 99 ? "99+" : tabItem.badge}</span>
                 )}
               </span>
             </button>
@@ -13232,9 +13371,9 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               const isFav = favoriteIds.includes(r.userId);
               const displayName = r.name || profiles[r.userId]?.name || `Merveil User #${String(r.userId).slice(0, 8)}`;
               // Preview under the name — envelope under the word Message when empty
-              const rawPreview = (r.thread.last_body || r.thread.context_label || "").trim();
-              const isCallLine = /missed|video call|voice call|call ended|📞|📹/i.test(rawPreview);
-              const subtitle = rawPreview || "Message";
+              const rawPreview = (r.thread.last_body || r.thread.context_label || r.thread.last_message || "").trim();
+              const isCallLine = /missed|video call|voice call|call ended|outgoing call|📞|📹/i.test(rawPreview);
+              const subtitle = rawPreview || "";
               const open = async () => {
                 setActiveId(r.thread.id);
                 setMobileView("chat");
@@ -13286,7 +13425,9 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                         {isMissed && <Phone size={12} style={{ color: "#E0554C", flexShrink: 0 }} />}
                         {!rawPreview ? (
                           <span className="flex flex-col items-start leading-tight">
-                            <span className="text-[13px] font-medium" style={{ color: CT.sub }}>Message</span>
+                            <span className="text-[13px] font-medium" style={{ color: unreadN > 0 ? CT.ink : CT.sub }}>
+                              {unreadN > 0 ? "New message" : "Message"}
+                            </span>
                             <span style={{ fontSize: 14, lineHeight: 1, marginTop: 1 }} aria-hidden>💌</span>
                           </span>
                         ) : (
