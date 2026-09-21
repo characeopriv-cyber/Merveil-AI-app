@@ -2408,29 +2408,42 @@ export default async function handler(req, res) {
         let lastByConvo = {};
         let unreadByConvo = {};
         if (ids.length) {
+          // Deeper batch: high limit so quiet threads still get a true last message.
+          // (Global order+limit was dropping last_body → UI showed only "Message".)
           const { data: recentMsgs } = await listClient
             .from("messages")
-            .select("conversation_id, body, created_at, sender_id, read_by, read_at")
+            .select("conversation_id, body, created_at, sender_id, read_by, read_at, type, is_e2ee, media_url")
             .in("conversation_id", ids)
             .order("created_at", { ascending: false })
-            .limit(Math.min(ids.length * 40, 2000));
+            .limit(Math.min(Math.max(ids.length * 80, 500), 8000));
           for (const m of recentMsgs || []) {
-            if (!lastByConvo[m.conversation_id]) {
-              lastByConvo[m.conversation_id] = m;
-            }
+            const cid = m.conversation_id;
+            if (!lastByConvo[cid]) lastByConvo[cid] = m;
             const readBy = (m.read_by || []).map(String);
             const isUnread =
               String(m.sender_id) !== String(listId) &&
               !readBy.includes(String(listId)) &&
               !m.read_at;
-            if (isUnread) unreadByConvo[m.conversation_id] = (unreadByConvo[m.conversation_id] || 0) + 1;
+            if (isUnread) unreadByConvo[cid] = (unreadByConvo[cid] || 0) + 1;
           }
         }
+        const previewOf = (last, fallback) => {
+          if (!last) return fallback || null;
+          if (last.is_e2ee) return "🔒 Secure message";
+          const t = String(last.type || "text").toLowerCase();
+          if (t === "system") return last.body || fallback || "Update";
+          if (t === "voice" || t === "audio") return "🎤 Voice";
+          if (t === "image" || t === "photo") return "📷 Photo";
+          if (t === "video") return "🎬 Video";
+          if (t === "file") return "📎 File";
+          const b = (last.body || "").trim();
+          return b || fallback || null;
+        };
         const withLast = (convos || []).map((c) => {
           const last = lastByConvo[c.id];
           return {
             ...c,
-            last_body: last?.body || c.last_body || null,
+            last_body: previewOf(last, c.last_body),
             last_message_at: last?.created_at || c.last_message_at || c.created_at,
             last_sender_id: last?.sender_id || null,
             unread_count: unreadByConvo[c.id] || 0,
@@ -2445,8 +2458,8 @@ export default async function handler(req, res) {
       }
 
       if (method === "POST") {
-        const creatorId = user?.id || citizen?.id || jwtSub;
-        if (!creatorId) return sendJson(res, 401, { error: "Sign in required." });
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const creatorId = actor.id;
         const okRate = await checkRateLimit(anonClient(), `convo_create_${creatorId}`, 30);
         if (!okRate) return sendJson(res, 429, { error: "Too many new conversations — slow down a moment." });
         const body = await readBody(req);
@@ -2463,13 +2476,19 @@ export default async function handler(req, res) {
         // Reuse existing 1:1 conversation so messaging the same citizen
         // from Pulse/World/Connect never creates duplicate threads.
         if (participantIds.length === 2) {
-          const [a, b] = participantIds;
-          const { data: existingList } = await convoWriter
-            .from("conversations")
-            .select("*")
-            .contains("participant_ids", [a])
-            .limit(200);
-          const existing = (existingList || []).find((c) => {
+          const [a, b] = participantIds.map(String);
+          // Query both sides — uuid/text array contains can miss one orientation on some rows
+          let existingList = [];
+          {
+            const qA = await convoWriter.from("conversations").select("*").contains("participant_ids", [a]).limit(250);
+            const qB = await convoWriter.from("conversations").select("*").contains("participant_ids", [b]).limit(250);
+            const map = new Map();
+            for (const c of [...(qA.data || []), ...(qB.data || [])]) {
+              if (c?.id) map.set(String(c.id), c);
+            }
+            existingList = [...map.values()];
+          }
+          const existing = existingList.find((c) => {
             const ids = (c.participant_ids || []).map(String);
             return ids.length === 2 && ids.includes(a) && ids.includes(b);
           });
@@ -2504,6 +2523,188 @@ export default async function handler(req, res) {
       }
 
       return sendJson(res, 404, { error: "Not found" });
+    }
+
+
+    // -------------------------------------------------------- /api/groups
+    // Public Emirates area lead groups (WhatsApp-style RE channels).
+    if (resource === "groups") {
+      const groupId = segments[1] || null;
+      const groupAction = req.query.action || null;
+      let svcG;
+      try { svcG = adminClient(); } catch (e) {
+        return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+      }
+
+      // Catalog: emirates → areas → groups
+      if (method === "GET" && !groupId && (groupAction === "catalog" || !groupAction)) {
+        const { data: rows, error } = await svcG
+          .from("area_groups")
+          .select("id, emirate, area, intent, slug, title, description, member_count, post_count")
+          .order("emirate", { ascending: true })
+          .order("area", { ascending: true });
+        if (error) {
+          return sendJson(res, 200, {
+            emirates: [],
+            note: "Run supabase-area-groups-v1.sql to enable Area Groups.",
+            error: error.message,
+          });
+        }
+        const byEm = {};
+        for (const g of rows || []) {
+          if (!byEm[g.emirate]) byEm[g.emirate] = {};
+          if (!byEm[g.emirate][g.area]) byEm[g.emirate][g.area] = [];
+          byEm[g.emirate][g.area].push(g);
+        }
+        const emirates = Object.keys(byEm).sort().map((em) => ({
+          emirate: em,
+          areas: Object.keys(byEm[em]).sort().map((area) => ({
+            area,
+            groups: byEm[em][area],
+          })),
+        }));
+        return sendJson(res, 200, { emirates, totalGroups: (rows || []).length });
+      }
+
+      // Join public group (no request — instant)
+      if (method === "POST" && groupId && (groupAction === "join" || !groupAction)) {
+        if (!requireCitizenActor(actor, res, "Sign in to enter a group.")) return;
+        const { data: g } = await svcG.from("area_groups").select("id, member_count").eq("id", groupId).maybeSingle();
+        if (!g) return sendJson(res, 404, { error: "Group not found." });
+        const { error } = await svcG.from("area_group_members").upsert({
+          group_id: groupId,
+          user_id: actor.id,
+          joined_at: new Date().toISOString(),
+        }, { onConflict: "group_id,user_id" });
+        if (error) return sendJson(res, 400, { error: error.message });
+        try {
+          const { count } = await svcG.from("area_group_members").select("*", { count: "exact", head: true }).eq("group_id", groupId);
+          await svcG.from("area_groups").update({ member_count: count || 0 }).eq("id", groupId);
+        } catch {}
+        return sendJson(res, 200, { ok: true, groupId });
+      }
+
+      // List posts in a group
+      if (method === "GET" && groupId && (groupAction === "posts" || !groupAction)) {
+        const limit = Math.min(Number(req.query.limit) || 40, 80);
+        const { data: g } = await svcG.from("area_groups").select("*").eq("id", groupId).maybeSingle();
+        if (!g) return sendJson(res, 404, { error: "Group not found." });
+        const { data: posts, error } = await svcG
+          .from("area_group_posts")
+          .select("*")
+          .eq("group_id", groupId)
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        if (error) return sendJson(res, 400, { error: error.message });
+        const authorIds = [...new Set((posts || []).map((p) => p.author_id).filter(Boolean))];
+        let profiles = {};
+        if (authorIds.length) {
+          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier").in("id", authorIds);
+          for (const pr of profs || []) profiles[pr.id] = pr;
+        }
+        // Presence for authors
+        let presenceMap = {};
+        if (authorIds.length) {
+          const cutoff = Date.now() - 300 * 1000;
+          const { data: pres } = await svcG.from("presence").select("user_id, status, updated_at").in("user_id", authorIds);
+          for (const row of pres || []) {
+            const fresh = row.updated_at && new Date(row.updated_at).getTime() > cutoff;
+            presenceMap[row.user_id] = fresh ? (row.status || "online") : "offline";
+          }
+        }
+        let mySupers = new Set();
+        if (actor?.id) {
+          const pids = (posts || []).map((p) => p.id);
+          if (pids.length) {
+            const { data: ss } = await svcG.from("area_group_supers").select("post_id").eq("user_id", actor.id).in("post_id", pids);
+            mySupers = new Set((ss || []).map((x) => x.post_id));
+          }
+        }
+        const enriched = (posts || []).map((p) => ({
+          ...p,
+          author: profiles[p.author_id] || null,
+          author_status: presenceMap[p.author_id] || "offline",
+          i_supered: mySupers.has(p.id),
+        }));
+        return sendJson(res, 200, { group: g, posts: enriched });
+      }
+
+      // Create lead post
+      if (method === "POST" && groupId && groupAction === "post") {
+        if (!requireCitizenActor(actor, res, "Sign in to post a lead.")) return;
+        const body = await readBody(req);
+        const text = String(body.body || body.text || "").trim();
+        const mediaUrls = Array.isArray(body.mediaUrls) ? body.mediaUrls.slice(0, 8) : [];
+        if (!text && !mediaUrls.length) {
+          return sendJson(res, 400, { error: "Write a lead or attach a photo/video." });
+        }
+        // Auto-join on post
+        await svcG.from("area_group_members").upsert({
+          group_id: groupId,
+          user_id: actor.id,
+          joined_at: new Date().toISOString(),
+        }, { onConflict: "group_id,user_id" }).catch(() => {});
+
+        let mediaType = "text";
+        if (mediaUrls.length && text) mediaType = "mixed";
+        else if (mediaUrls.length) mediaType = String(body.mediaType || "image");
+
+        const { data: post, error } = await svcG.from("area_group_posts").insert({
+          group_id: groupId,
+          author_id: actor.id,
+          body: text || null,
+          media_urls: mediaUrls,
+          media_type: mediaType,
+          price_hint: body.priceHint || body.price || null,
+          property_type: body.propertyType || null,
+        }).select().maybeSingle();
+        if (error) return sendJson(res, 400, { error: error.message });
+        try {
+          const { count } = await svcG.from("area_group_posts").select("*", { count: "exact", head: true }).eq("group_id", groupId);
+          await svcG.from("area_groups").update({ post_count: count || 0 }).eq("id", groupId);
+        } catch {}
+        return sendJson(res, 200, { post });
+      }
+
+      // Super a lead
+      if (method === "POST" && groupId && groupAction === "super") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const body = await readBody(req);
+        const postId = body.postId || body.id;
+        if (!postId) return sendJson(res, 400, { error: "postId required." });
+        const { data: existing } = await svcG.from("area_group_supers")
+          .select("post_id").eq("post_id", postId).eq("user_id", actor.id).maybeSingle();
+        if (existing) {
+          await svcG.from("area_group_supers").delete().eq("post_id", postId).eq("user_id", actor.id);
+          const { count } = await svcG.from("area_group_supers").select("*", { count: "exact", head: true }).eq("post_id", postId);
+          await svcG.from("area_group_posts").update({ super_count: count || 0 }).eq("id", postId);
+          return sendJson(res, 200, { supered: false, super_count: count || 0 });
+        }
+        await svcG.from("area_group_supers").insert({ post_id: postId, user_id: actor.id });
+        const { count } = await svcG.from("area_group_supers").select("*", { count: "exact", head: true }).eq("post_id", postId);
+        await svcG.from("area_group_posts").update({ super_count: count || 0 }).eq("id", postId);
+        return sendJson(res, 200, { supered: true, super_count: count || 0 });
+      }
+
+      // Record view (once per user)
+      if (method === "POST" && groupId && groupAction === "view") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const body = await readBody(req);
+        const postId = body.postId || body.id;
+        if (!postId) return sendJson(res, 400, { error: "postId required." });
+        const { data: existing } = await svcG.from("area_group_post_views")
+          .select("post_id").eq("post_id", postId).eq("user_id", actor.id).maybeSingle();
+        if (!existing) {
+          await svcG.from("area_group_post_views").insert({ post_id: postId, user_id: actor.id });
+          const { count } = await svcG.from("area_group_post_views").select("*", { count: "exact", head: true }).eq("post_id", postId);
+          await svcG.from("area_group_posts").update({ views_count: count || 0 }).eq("id", postId);
+          return sendJson(res, 200, { views_count: count || 0 });
+        }
+        const { data: post } = await svcG.from("area_group_posts").select("views_count").eq("id", postId).maybeSingle();
+        return sendJson(res, 200, { views_count: post?.views_count || 0 });
+      }
+
+      return sendJson(res, 404, { error: "Unknown groups action." });
     }
 
     // -------------------------------------------------------- /api/circles
