@@ -11979,6 +11979,53 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
 
   useEffect(() => { loadCatalog(); }, [loadCatalog]);
 
+  // Open specific group+post from shared link
+  useEffect(() => {
+    const openFromDetail = async (groupId, postId) => {
+      if (!groupId) return;
+      try {
+        // Prefer catalog entry; else minimal object
+        let g = null;
+        for (const em of catalog || []) {
+          for (const ar of em.areas || []) {
+            const hit = (ar.groups || []).find((x) => String(x.id) === String(groupId));
+            if (hit) { g = hit; break; }
+          }
+          if (g) break;
+        }
+        if (!g) g = { id: groupId, title: "Group", area: "", emirate: "", i_member: false };
+        await openGroup(g, { forceJoin: false });
+        if (postId) {
+          setTimeout(() => {
+            try {
+              const el = document.querySelector(`[data-group-post-id="${postId}"]`);
+              if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+            } catch {}
+          }, 600);
+        }
+      } catch (e) {
+        console.warn("[open-group]", e);
+      }
+    };
+    const onOpen = (e) => {
+      const { groupId, postId } = e?.detail || {};
+      openFromDetail(groupId, postId);
+    };
+    window.addEventListener("merveil:open-group", onOpen);
+    const pending = window.__merveilPendingGroup;
+    if (pending?.groupId) {
+      window.__merveilPendingGroup = null;
+      // Wait catalog if empty
+      const t = setTimeout(() => openFromDetail(pending.groupId, pending.postId), catalog?.length ? 100 : 800);
+      return () => {
+        clearTimeout(t);
+        window.removeEventListener("merveil:open-group", onOpen);
+      };
+    }
+    return () => window.removeEventListener("merveil:open-group", onOpen);
+  }, [catalog, currentUser?.id]);
+
+
   // Explore = open + load posts without join. Enter = join then member mode.
   const openGroup = async (g, { forceJoin = false } = {}) => {
     if (!currentUser?.id) { onSignIn?.(); return; }
@@ -12201,16 +12248,44 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
   };
 
   const sharePost = async (post) => {
-    const url = `${window.location.origin}/?tab=connect&group=${encodeURIComponent(group?.id || "")}&post=${encodeURIComponent(post.id)}`;
-    const text = (post.body || "Lead on Merveil").slice(0, 120);
+    // Short OG URL → WhatsApp shows photo + "Merveil AI" title (not the long query string)
+    const origin = window.location.origin;
+    const url = `${origin}/api/share?type=group&id=${encodeURIComponent(post.id)}`;
+    const line = String(post.body || "Lead on Merveil").split("\n").map((l) => l.trim()).filter(Boolean)[0] || "Lead on Merveil";
+    const text = line.slice(0, 100);
     try {
-      if (navigator.share) await navigator.share({ title: group?.title || "Merveil lead", text, url });
-      else {
+      if (typeof shareMerveilContent === "function") {
+        const media = Array.isArray(post.media_urls) ? post.media_urls : [];
+        const imageUrl = media.find((u) => u && !String(u).match(/\.(mp4|webm|mov)(\?|$)/i)) || null;
+        await shareMerveilContent({ title: "Merveil AI", text, url, imageUrl });
+      } else if (navigator.share) {
+        await navigator.share({ title: "Merveil AI", text, url });
+      } else {
         await navigator.clipboard?.writeText(`${text}\n${url}`);
         setNote("Link copied");
         setTimeout(() => setNote(""), 2000);
       }
-    } catch {}
+    } catch (e) {
+      if (e?.name !== "AbortError") {
+        try {
+          await navigator.clipboard?.writeText(`${text}\n${url}`);
+          setNote("Link copied");
+          setTimeout(() => setNote(""), 2000);
+        } catch {}
+      }
+    }
+  };
+
+  const replyToPoster = async (post) => {
+    const author = post.author || {};
+    const person = {
+      id: post.author_id || author.id,
+      name: author.name || "Citizen",
+      avatar_url: author.avatar_url,
+    };
+    if (!person.id) return;
+    // Opens chat if connected; otherwise connection request (same gate as call)
+    await requireConnectedThen(person, "message");
   };
 
   const recordView = async (post) => {
@@ -12425,6 +12500,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
             return (
               <div
                 key={post.id}
+                data-group-post-id={post.id}
                 className="rounded-2xl border p-3 relative z-10"
                 style={{ borderColor: "rgba(0,0,0,0.06)", background: "#FFFFFF", boxShadow: "0 2px 12px rgba(26,22,18,0.04)" }}
                 ref={(el) => {
@@ -12512,6 +12588,10 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
                       {post.pinned_at ? "📌 Pinned" : "Pin"}
                     </button>
                   )}
+                  <button type="button" onClick={() => replyToPoster(post)}
+                    className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#0E9AA7" }}>
+                    Reply
+                  </button>
                   <button type="button" onClick={() => reportPost(post)}
                     className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#C0392B" }}>
                     Report
@@ -12925,6 +13005,23 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   };
   // CONNECT V1: which of the three sections is showing.
   const [connectTab, setConnectTab] = useState("messages"); // "citizens" | "circle" | "messages" | "ai-call"
+  // Deep link: /?tab=connect&group=&post= → Groups tab (not Messages)
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search || "");
+      const groupId = q.get("group");
+      const postId = q.get("post");
+      const ctab = q.get("connectTab");
+      if (groupId || ctab === "groups") {
+        setConnectTab("groups");
+        window.__merveilPendingGroup = { groupId, postId };
+        try {
+          window.dispatchEvent(new CustomEvent("merveil:open-group", { detail: { groupId, postId } }));
+        } catch {}
+      }
+    } catch {}
+  }, []);
+
   // Offline hydrate: show last cached threads immediately
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -32354,6 +32451,15 @@ function AppInner() {
   useEffect(() => {
     try { localStorage.setItem("jx_last_tab", tab); } catch {}
   }, [tab]);
+  // Shared group lead links must land on Connect → Groups, not last-tab Messages
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search || "");
+      if (q.get("group") || q.get("connectTab") === "groups") {
+        setTab("connect");
+      }
+    } catch {}
+  }, []);
   // Merveil Sound engine (persists across tabs via mini-player)
   const [showFullSoundPlayer, setShowFullSoundPlayer] = useState(false);
   const soundUserIdRef = useRef(null);
