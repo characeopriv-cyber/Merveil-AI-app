@@ -2058,6 +2058,52 @@ const PRESENCE_COLORS = {
   away: "#9A9086",
 };
 
+
+/** Trust signal chip — never a gate. Verified/Unverified + optional score level. */
+function MerveilTrustBadge({ passportVerified, reVerified, trustLevel, trustLabel, trustScore, compact = false }) {
+  const verified = !!passportVerified;
+  const level = trustLevel || (verified ? "trusted" : "newcomer");
+  const levelColor = {
+    elite: "#A78BFA",
+    pillar: "#0E9AA7",
+    trusted: "#1FA64A",
+    active: "#D97706",
+    newcomer: "#8A7B6C",
+  }[level] || "#8A7B6C";
+  if (compact) {
+    return (
+      <span className="inline-flex items-center gap-1 flex-wrap">
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{
+          background: verified ? "rgba(14,154,167,0.15)" : "rgba(0,0,0,0.06)",
+          color: verified ? "#0A6B75" : "#8A7B6C",
+        }}>
+          {verified ? (reVerified ? "Verified · RE" : "Verified") : "Unverified"}
+        </span>
+        {typeof trustScore === "number" && trustScore > 0 && (
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: `${levelColor}22`, color: levelColor }}>
+            {trustLabel || level}
+          </span>
+        )}
+      </span>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{
+        background: verified ? "rgba(14,154,167,0.2)" : "rgba(255,255,255,0.08)",
+        color: verified ? "#67E8F9" : "#9CA3AF",
+      }}>
+        {verified ? (reVerified ? "Verified · RE" : "Verified") : "Unverified"}
+      </span>
+      {(trustLabel || trustScore != null) && (
+        <span className="text-[10px] font-semibold" style={{ color: levelColor }}>
+          {trustLabel || level}{typeof trustScore === "number" ? ` · ${trustScore}` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function PresenceDot({ status, size = 14, className = "", title }) {
   const st = String(status || "offline").toLowerCase();
   const color = PRESENCE_COLORS[st] || PRESENCE_COLORS.offline;
@@ -11900,7 +11946,7 @@ function TopGroupPostersStrip() {
   );
 }
 
-function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
+function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall, onProfile }) {
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [emirate, setEmirate] = useState(null);
@@ -12028,7 +12074,7 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
 
   // Explore = open + load posts without join. Enter = join then member mode.
   const openGroup = async (g, { forceJoin = false } = {}) => {
-    if (!currentUser?.id) { onSignIn?.(); return; }
+    if (forceJoin && !currentUser?.id) { onSignIn?.(); return; }
     setGroup({ ...g, i_member: !!g.i_member });
     setPostLoading(true);
     setPosts([]);
@@ -12515,38 +12561,49 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
                 }}
               >
                 <div className="flex items-center gap-2.5 mb-2">
-                  <Avatar name={name} src={author.avatar_url} size={40} />
+                  <button type="button" className="shrink-0 rounded-full" onClick={() => onProfile?.({ id: post.author_id || author.id, name, avatar_url: author.avatar_url })}>
+                    <Avatar name={name} src={author.avatar_url} size={40} />
+                  </button>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
-                      <PresenceDot status={post.author_status || "offline"} size={10} />
-                      {post.source === "pulse" && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(14,154,167,0.12)", color: "#0A6B75" }}>From Pulse</span>
+                    <button type="button" className="text-left w-full min-w-0" onClick={() => onProfile?.({ id: post.author_id || author.id, name, avatar_url: author.avatar_url })}>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
+                        <PresenceDot status={post.author_status || "offline"} size={10} />
+                        <MerveilTrustBadge
+                          compact
+                          passportVerified={!!post.passport_verified}
+                          reVerified={!!post.re_verified}
+                          trustLevel={post.trust_level || post.author?.trust_level}
+                          trustLabel={post.trust_label || post.author?.trust_label}
+                          trustScore={post.trust_score ?? post.author?.trust_score}
+                        />
+                        {post.source === "pulse" && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(14,154,167,0.12)", color: "#0A6B75" }}>From Pulse</span>
+                        )}
+                        {post.bridged_to_pulse && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(31,166,74,0.12)", color: "#15803D" }}>On Pulse</span>
+                        )}
+                      </div>
+                      {author.profession && (
+                        <div className="text-[10px] mt-0.5 truncate" style={{ color: "#8A7B6C" }}>{author.profession}</div>
                       )}
-                      {post.bridged_to_pulse && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(31,166,74,0.12)", color: "#15803D" }}>On Pulse</span>
-                      )}
-                    </div>
-                    <div className="text-[9px] font-semibold mt-0.5" style={{
-                      color: post.passport_verified && post.re_verified ? "#0E9AA7"
-                        : post.passport_verified ? "#B45309" : "#8A7B6C",
-                    }}>
-                      {post.verify_label || (post.passport_verified ? "Passport verified" : "Unverified")}
-                    </div>
-                    <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
-                      {post.created_at ? timeAgo(post.created_at) : ""}
-                    </div>
+                      <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
+                        {post.created_at ? timeAgo(post.created_at) : ""}
+                      </div>
+                    </button>
                   </div>
+                  {!mine && (
                   <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id, name, avatar_url: author.avatar_url }, "call")}
+                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: author.avatar_url }, "call")}
                       className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
                       <Phone size={14} color="#0E9AA7" />
                     </button>
-                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id, name, avatar_url: author.avatar_url }, "message")}
+                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: author.avatar_url }, "message")}
                       className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
                       <MessageCircle size={14} color="#1FA64A" />
                     </button>
                   </div>
+                  )}
                 </div>
                 {editingId === post.id ? (
                   <div className="space-y-2">
@@ -13005,7 +13062,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   };
   // CONNECT V1: which of the three sections is showing.
   const [connectTab, setConnectTab] = useState("messages"); // "citizens" | "circle" | "messages" | "ai-call"
-  // Deep link: /?tab=connect&group=&post= → Groups tab (not Messages)
+  // Deep link: /?tab=connect&group=&post= → Groups tab (list pane, not blank chat)
   useEffect(() => {
     try {
       const q = new URLSearchParams(window.location.search || "");
@@ -13013,11 +13070,16 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       const postId = q.get("post");
       const ctab = q.get("connectTab");
       if (groupId || ctab === "groups") {
+        setActiveId(null);
+        setMobileView("list");
         setConnectTab("groups");
         window.__merveilPendingGroup = { groupId, postId };
-        try {
-          window.dispatchEvent(new CustomEvent("merveil:open-group", { detail: { groupId, postId } }));
-        } catch {}
+        // Delay event so AreaGroupsView is mounted after tab switch
+        setTimeout(() => {
+          try {
+            window.dispatchEvent(new CustomEvent("merveil:open-group", { detail: { groupId, postId } }));
+          } catch {}
+        }, 350);
       }
     } catch {}
   }, []);
@@ -14213,8 +14275,24 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             <AreaGroupsView
               currentUser={currentUser}
               onSignIn={onSignIn}
-              onMessage={(u) => { setConnectTab("messages"); startChatWith(u); }}
+              onMessage={(u) => {
+                setActiveId(null);
+                setMobileView("list");
+                setConnectTab("messages");
+                // Open chat after tab switch
+                setTimeout(() => {
+                  startChatWith(u);
+                  setMobileView("chat");
+                }, 80);
+              }}
               onCall={(u, mode) => initiateCitizenCall(u, mode)}
+              onProfile={(u) => {
+                if (u?.id) {
+                  try {
+                    window.dispatchEvent(new CustomEvent("merveil:open-creator-profile", { detail: { userId: String(u.id) } }));
+                  } catch {}
+                }
+              }}
             />
           </div>
         )}
@@ -16751,7 +16829,7 @@ function friendlyAiCallError(err, body) {
   const code = body?.code || "";
   const raw = body?.error || err?.message || "Something went wrong";
   if (code === "PASSPORT_REQUIRED" || /Verified Professional/i.test(raw)) {
-    return "Your Merveil Passport must be verified before you can activate AI Call.";
+    return "AI Call needs a Professional, Investor, or Company Passport. Free Core still uses chat AI with daily limits — like Facebook, posting and profiles stay open for everyone.";
   }
   if (code === "NOT_PROVISIONED" || /Provision the Merveil/i.test(raw)) {
     return "Your AI agent needs to be activated before connecting a phone number.";
@@ -18815,7 +18893,7 @@ function PostJobModal({ onClose, onPublish, verifyStatuses }) {
                 <div className="p-3 rounded-xl text-xs flex items-start gap-2"
                   style={{ background:"#FFF3CD", color:"#856404" }}>
                   <BadgeCheck size={14} className="shrink-0 mt-0.5"/>
-                  <span>Verify your Emirates ID or passport in the Verify tab to get the verified badge on your profile. You can still post without it — but verified profiles get 4x more responses.</span>
+                  <span>Optional: verify in Passport to show a Verified badge. You can post, chat, and use Groups fully without it — Merveil is open like Facebook.</span>
                 </div>
               )}
               <input placeholder="Your full name" value={form.name} onChange={e=>upd("name",e.target.value)}
@@ -27250,6 +27328,8 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
 function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost, onOpenOwnPassport }) {
   const [profile, setProfile] = useState(null);
   const [worldPosts, setWorldPosts] = useState([]);
+  const [listings, setListings] = useState([]);
+  const [groupPosts, setGroupPosts] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showPassport, setShowPassport] = useState(false);
@@ -27300,6 +27380,8 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
           if (cancelled || !data) return;
           setProfile(data.profile || null);
           setWorldPosts(data.worldPosts || []);
+          setListings(data.listings || []);
+          setGroupPosts(data.groupPosts || []);
           setStats(data.stats || null);
           const p = data.profile || {};
           setFeeling(p.feeling || p.mood_emoji || "");
@@ -27581,6 +27663,15 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               <Avatar name={profile.name || "Citizen"} src={profile.avatar_url} size={96} />
             </div>
             <div className="text-xl font-bold mt-3" style={{ fontFamily: "'Space Grotesk',sans-serif", color: CREATOR_INK }}>{profile.name || "Merveil Citizen"}</div>
+            <div className="mt-1.5">
+              <MerveilTrustBadge
+                passportVerified={profile.passport_verified}
+                reVerified={profile.re_verified}
+                trustLevel={profile.trust_level}
+                trustLabel={profile.trust_label}
+                trustScore={profile.trust_score}
+              />
+            </div>
             {(profile.profession || profile.city) && (
               <div className="text-xs mt-1" style={{ color: CREATOR_SUB }}>
                 {[profile.profession, profile.city || profile.country].filter(Boolean).join(" · ")}
@@ -27720,10 +27811,71 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             </div>
           </div>
 
-          {/* Reels as circles */}
+          {/* Pulse listings — primary for real estate citizens */}
+          <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#6B7280" }}>
+              Pulse listings · {listings.length}
+            </span>
+          </div>
+          <div className="px-3 pb-2">
+            {listings.length === 0 ? (
+              <div className="text-xs text-center py-6" style={{ color: "#5C6779" }}>No Pulse listings yet.</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {listings.map((l) => (
+                  <div key={l.id} className="rounded-xl overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)" }}>
+                    {l.photo_url || (l.photo_urls && l.photo_urls[0]) ? (
+                      <img src={l.photo_url || l.photo_urls[0]} alt="" className="w-full h-24 object-cover" loading="lazy" />
+                    ) : (
+                      <div className="w-full h-24 flex items-center justify-center text-[10px]" style={{ background: "#1F2937", color: "#9CA3AF" }}>No photo</div>
+                    )}
+                    <div className="p-2">
+                      <div className="text-[11px] font-bold truncate" style={{ color: "#F3F4F6" }}>{l.title}</div>
+                      <div className="text-[10px] truncate" style={{ color: "#9CA3AF" }}>{[l.area, l.type].filter(Boolean).join(" · ")}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Area Group leads */}
           <div className="px-4 pt-2 pb-1 flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#6B7280" }}>
-              Reels · {worldPosts.length}
+              Group leads · {groupPosts.length}
+            </span>
+          </div>
+          <div className="px-3 pb-2 space-y-2">
+            {groupPosts.length === 0 ? (
+              <div className="text-xs text-center py-4" style={{ color: "#5C6779" }}>No group leads yet.</div>
+            ) : (
+              groupPosts.slice(0, 12).map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  className="w-full text-left rounded-xl p-2.5 border"
+                  style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)" }}
+                  onClick={() => {
+                    onClose?.();
+                    try {
+                      window.dispatchEvent(new CustomEvent("merveil:open-group", {
+                        detail: { groupId: g.group_id, postId: g.id },
+                      }));
+                      window.dispatchEvent(new CustomEvent("merveil:set-tab", { detail: { tab: "messages" } }));
+                    } catch {}
+                  }}
+                >
+                  <div className="text-[12px] font-semibold line-clamp-2" style={{ color: "#F3F4F6" }}>{String(g.body || "Lead").slice(0, 120)}</div>
+                  <div className="text-[10px] mt-1" style={{ color: "#9CA3AF" }}>👁 {g.views_count || 0} · Super {g.super_count || 0}</div>
+                </button>
+              ))
+            )}
+          </div>
+
+          {/* World reels */}
+          <div className="px-4 pt-2 pb-1 flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "#6B7280" }}>
+              World reels · {worldPosts.length}
             </span>
           </div>
           {isSelf && worldPosts.length > 0 && (
@@ -30728,7 +30880,7 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
         });
         const data = await res.json().catch(() => null);
         if (res.status === 403 && data?.code === "KYC_REQUIRED") {
-          setActivateMsg("Identity verification required first.");
+          setActivateMsg("For paid Passport activation, confirm identity once (KYC) — same as banking. Posting, chat, and profiles stay open on Core.");
           setSubTab("verify");
           setSwitchingTier(false);
           return;
@@ -31373,7 +31525,7 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
       {subTab === "verify" && (
         <div className="p-4 md:p-6">
           <p className="text-sm mb-4 max-w-2xl" style={{ color: T.sub }}>
-            Identity verification is required before activating Professional, Investor, or Company Passport and before wallet payouts.
+            Paid Passport plans and wallet payouts need a one-time identity check (like banking). Everyday Merveil — post, chat, groups, profile — works for everyone on Core, verified or not.
             Take a photo or upload — camera permission is requested only when you choose “Take photo”.
           </p>
           <PassportKycPanel statuses={statuses} setStatuses={setStatuses} currentUser={currentUser} onUserUpdated={onUserUpdated} />
@@ -32444,6 +32596,11 @@ function AppInner() {
   const VALID_TABS = ["pulse", "investor", "messages", "market", "world", "sound", "passport", "community", "newcomer", "arena", "transactions", "ai-call"];
   const [tab, setTab] = useState(() => {
     try {
+      const q = new URLSearchParams(window.location.search || "");
+      let t = q.get("tab");
+      if (t === "connect") t = "messages"; // Connect UI is tab "messages"
+      if (t && VALID_TABS.includes(t)) return t;
+      if (q.get("group") || q.get("connectTab") === "groups") return "messages";
       const saved = localStorage.getItem("jx_last_tab");
       return VALID_TABS.includes(saved) ? saved : "pulse";
     } catch { return "pulse"; }
@@ -32456,7 +32613,8 @@ function AppInner() {
     try {
       const q = new URLSearchParams(window.location.search || "");
       if (q.get("group") || q.get("connectTab") === "groups") {
-        setTab("connect");
+        // Connect UI lives under tab "messages" (bottom nav Connect)
+        setTab("messages");
       }
     } catch {}
   }, []);
@@ -32482,6 +32640,8 @@ function AppInner() {
   // rebrand). This keeps every existing onGoTo("jobs")/onGoTo("souk") call
   // site working correctly instead of silently landing on a blank screen.
   const goToTab = (t) => {
+    // Bottom-nav "Connect" is implemented as tab id "messages"
+    if (t === "connect") t = "messages";
     // Opportunity surfaces live under Pulse (Discover / Invest / Market / Community)
     if (t === "investor" || t === "invest") {
       setTab("pulse");
