@@ -6733,26 +6733,45 @@ return sendJson(res, 404, { error: "Unknown groups action." });
       // Gallery download — same-origin proxy so CORS never blocks Save to device
       if (method === "GET" && action === "download") {
         const postId = req.query.postId;
-        if (!postId) return sendJson(res, 400, { error: "postId required" });
+        const mediaUrlHint = (req.query.mediaUrl || "").trim();
         let svcDl;
         try { svcDl = adminClient(); } catch { svcDl = anonClient(); }
-        const { data: post } = await svcDl.from("world_posts")
-          .select("id, title, video_url, photo_url, photo_urls")
-          .eq("id", postId)
-          .maybeSingle();
-        if (!post) return sendJson(res, 404, { error: "Post not found" });
-        const mediaUrl = post.video_url || post.photo_url || (post.photo_urls && post.photo_urls[0]);
+        let post = null;
+        if (postId) {
+          const { data } = await svcDl.from("world_posts")
+            .select("id, title, video_url, photo_url, photo_urls")
+            .eq("id", postId)
+            .maybeSingle();
+          post = data;
+        }
+        const mediaUrl = (post && (post.video_url || post.photo_url || (post.photo_urls && post.photo_urls[0])))
+          || mediaUrlHint
+          || null;
         if (!mediaUrl) return sendJson(res, 404, { error: "No media on this post" });
         try {
           const upstream = await fetch(mediaUrl, { redirect: "follow" });
           if (!upstream.ok) return sendJson(res, 502, { error: "Could not fetch media" });
           const buf = Buffer.from(await upstream.arrayBuffer());
-          const ctype = upstream.headers.get("content-type") || (post.video_url ? "video/mp4" : "image/jpeg");
-          const ext = ctype.includes("video") ? "mp4" : ctype.includes("png") ? "png" : ctype.includes("webp") ? "webp" : "jpg";
-          const safeTitle = String(post.title || "merveil-reel").replace(/[^\w\-]+/g, "_").slice(0, 40);
-          res.setHeader("Content-Type", ctype);
+          if (!buf.length) return sendJson(res, 502, { error: "Empty media" });
+          let ctype = (upstream.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+          // Never stream JSON/HTML as a "download"
+          if (!ctype || ctype.includes("json") || ctype.includes("text/html") || ctype.includes("text/plain")) {
+            if (post?.video_url || /\.mp4(\?|$)/i.test(mediaUrl) || /\.webm(\?|$)/i.test(mediaUrl)) ctype = "video/mp4";
+            else if (/\.png(\?|$)/i.test(mediaUrl)) ctype = "image/png";
+            else if (/\.webp(\?|$)/i.test(mediaUrl)) ctype = "image/webp";
+            else ctype = post?.video_url ? "video/mp4" : "image/jpeg";
+          }
+          const isVideo = ctype.startsWith("video/") || !!(post && post.video_url);
+          const ext = ctype.includes("webm") ? "webm"
+            : ctype.includes("mp4") || isVideo ? "mp4"
+            : ctype.includes("png") ? "png"
+            : ctype.includes("webp") ? "webp"
+            : "jpg";
+          const safeTitle = String((post && post.title) || "merveil-reel").replace(/[^\w\-]+/g, "_").slice(0, 40) || "merveil-reel";
+          res.setHeader("Content-Type", isVideo ? (ctype.startsWith("video/") ? ctype : "video/mp4") : ctype);
           res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.${ext}"`);
           res.setHeader("Cache-Control", "private, max-age=60");
+          res.setHeader("X-Content-Type-Options", "nosniff");
           res.status(200).end(buf);
           return;
         } catch (e) {
