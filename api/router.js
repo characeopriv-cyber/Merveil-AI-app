@@ -992,7 +992,7 @@ function getClientIp(req) {
 // (Ordinary 10 / Services 25 / Investor effectively unlimited) was
 // previously only checked by the frontend before calling this. Anyone
 // bypassing the UI could call an AI-backed endpoint directly, unlimited
-// times, at real Anthropic API cost. Every endpoint that calls the AI
+// times, at real Grok/OpenAI API cost. Every endpoint that calls the AI
 // must call this first and stop on `allowed: false`.
 async function checkAiUsageAllowed(sb, userId) {
   const { data: profile } = await sb.from("profiles").select("passport_tier").eq("id", userId).maybeSingle();
@@ -1010,6 +1010,62 @@ async function checkAiUsageAllowed(sb, userId) {
   const used = data?.message_count || 0;
   return { allowed: used < limit, used, limit, tier };
 }
+
+/** Citizen AI: Grok (xAI) or OpenAI only — no Anthropic/Claude. */
+function merveilAiConfig() {
+  const apiKey = process.env.XAI_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY || "";
+  let apiUrl = (process.env.XAI_API_URL || process.env.AI_API_URL || process.env.OPENAI_API_URL || "").replace(/\/$/, "");
+  if (!apiUrl && process.env.XAI_API_KEY) apiUrl = "https://api.x.ai/v1";
+  if (!apiUrl && process.env.OPENAI_API_KEY) apiUrl = "https://api.openai.com/v1";
+  if (!apiUrl) apiUrl = "https://api.x.ai/v1";
+  const preferred = process.env.AI_MODEL || process.env.XAI_MODEL || process.env.OPENAI_MODEL || "grok-2-latest";
+  const fallbacks = [preferred, "grok-2-latest", "grok-3", "gpt-4o-mini", "gpt-4o"].filter((m, i, a) => m && a.indexOf(m) === i);
+  return { apiKey, apiUrl, preferred, fallbacks };
+}
+
+/** OpenAI-compatible chat/completions (xAI Grok or OpenAI). */
+async function merveilChatCompletion({ messages, system, maxTokens = 800, temperature = 0.3 }) {
+  const { apiKey, apiUrl, fallbacks } = merveilAiConfig();
+  if (!apiKey) {
+    const err = new Error("Merveil AI not configured. Set XAI_API_KEY (Grok) or OPENAI_API_KEY on the server.");
+    err.code = "AI_NOT_CONFIGURED";
+    throw err;
+  }
+  const endpoint = apiUrl.includes("/chat/completions") ? apiUrl : `${apiUrl}/chat/completions`;
+  const sys = system ? [{ role: "system", content: system }] : [];
+  let lastErr = null;
+  for (const model of fallbacks) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [...sys, ...messages],
+          max_tokens: Math.min(Number(maxTokens) || 800, 4096),
+          temperature,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const text = data?.choices?.[0]?.message?.content || "";
+        return { text, model, raw: data };
+      }
+      const errMsg = String(data?.error?.message || data?.error || res.status);
+      lastErr = new Error(errMsg);
+      if (res.status === 400 && /model|not found|invalid/i.test(errMsg)) continue;
+      throw lastErr;
+    } catch (e) {
+      lastErr = e;
+      if (e.code === "AI_NOT_CONFIGURED") throw e;
+    }
+  }
+  throw lastErr || new Error("Merveil AI request failed");
+}
+
 
 function mapProfile(row) {
   if (!row) return null;
@@ -1587,7 +1643,7 @@ export default async function handler(req, res) {
         } else if (mimetype.startsWith("image/")) {
           contentBlock = { type: "image", source: { type: "base64", media_type: mimetype, data: buffer.toString("base64") } };
         } else if (isXlsx) {
-          // Claude's document API doesn't read Excel natively — extract the
+          // Excel is converted to text before Grok/OpenAI — extract the
           // sheet contents to plain text first using the xlsx package (must
           // be added as a project dependency: npm install xlsx).
           try {
@@ -1617,11 +1673,7 @@ export default async function handler(req, res) {
           });
         }
 
-        if (!process.env.ANTHROPIC_API_KEY) {
-          return sendJson(res, 500, { error: "AI document reading isn't configured on the server yet (missing ANTHROPIC_API_KEY)." });
-        }
-
-        const prompt =
+        const invPrompt =
           "You are Merveil's inventory analyst. This document is a rent roll, sale sheet, or property/unit list — " +
           "possibly messy, handwritten, or a photo of a printed page. Extract every unit or property row you can find " +
           "into a JSON array. For each unit, include ONLY these fields, using null for anything not present or not " +
@@ -1631,29 +1683,34 @@ export default async function handler(req, res) {
           "leaseEnd (YYYY-MM-DD if present), lastRenewalType. " +
           "Respond with ONLY the raw JSON array — no markdown, no code fences, no explanation, no surrounding text.";
 
-        let aiRes;
+        let userContent;
+        if (contentBlock?.type === "image" && contentBlock?.source?.data) {
+          const mt = contentBlock.source.media_type || "image/jpeg";
+          userContent = [
+            { type: "text", text: invPrompt },
+            { type: "image_url", image_url: { url: `data:${mt};base64,${contentBlock.source.data}` } },
+          ];
+        } else if (contentBlock?.type === "text") {
+          userContent = `${invPrompt}\n\n${contentBlock.text || ""}`;
+        } else {
+          userContent = `${invPrompt}\n\n[Document uploaded — for best results use Excel or a clear photo.]`;
+        }
+
+        let text = "";
         try {
-          aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "x-api-key": process.env.ANTHROPIC_API_KEY,
-              "anthropic-version": "2023-06-01",
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-6",
-              max_tokens: 4096,
-              messages: [{ role: "user", content: [contentBlock, { type: "text", text: prompt }] }],
-            }),
+          const aiOut = await merveilChatCompletion({
+            system: "You extract structured real-estate inventory JSON for Merveil AI. Output JSON only.",
+            messages: [{ role: "user", content: userContent }],
+            maxTokens: 4096,
+            temperature: 0.1,
           });
+          text = aiOut.text || "";
         } catch (e) {
-          return sendJson(res, 502, { error: "Couldn't reach Merveil AI — try again in a moment." });
+          return sendJson(res, 502, {
+            error: e.message || "Couldn't reach Merveil AI — try again in a moment.",
+            hint: "Set XAI_API_KEY (Grok) or OPENAI_API_KEY. Claude is not used.",
+          });
         }
-        const aiData = await aiRes.json();
-        if (!aiRes.ok) {
-          return sendJson(res, 502, { error: aiData?.error?.message || "Merveil AI couldn't read this file." });
-        }
-        const text = (aiData.content || []).find((c) => c.type === "text")?.text || "";
         let units;
         try {
           const cleaned = text.replace(/```json|```/g, "").trim();
@@ -1687,7 +1744,7 @@ export default async function handler(req, res) {
         if (text.length > 12000) {
           return sendJson(res, 400, { error: "Text is too long — paste under 12,000 characters." });
         }
-        // Deterministic parser first (works offline / without ANTHROPIC_API_KEY)
+        // Deterministic parser first (works offline / without XAI/OpenAI key)
         const lower = text.toLowerCase();
         let type = /\bfor\s*rent\b|\brental\b|\bper\s*year\b|\bper\s*month\b|\/year\b|\/month\b/.test(lower) ? "Rent" : "Sale";
         if (/\bfor\s*sale\b|\bselling\b|aed\s*[\d,]+\s*(only)?\s*$/m.test(lower) && !/rent/.test(lower)) type = "Sale";
@@ -1739,26 +1796,18 @@ export default async function handler(req, res) {
           description: text.slice(0, 4000),
           source: "ai-parse-listing",
         };
-        // Optional upgrade via Claude when key present
-        if (process.env.ANTHROPIC_API_KEY && text.length > 40) {
+        // Optional upgrade via Grok / OpenAI when key present
+        const { apiKey: hasAiKey } = merveilAiConfig();
+        if (hasAiKey && text.length > 40) {
           try {
             const prompt = `Extract UAE property listing fields as pure JSON (no markdown) with keys: title, type (Sale|Rent), category (Apartment|Villa|Townhouse|Office|Retail|Plot|Warehouse), price (number string no commas), emirate, area, beds, baths, sqft, furnished (Furnished|Unfurnished|Semi-furnished or empty), description (cleaned). Text:\n${text.slice(0, 6000)}`;
-            const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: {
-                "x-api-key": process.env.ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-              },
-              body: JSON.stringify({
-                model: "claude-sonnet-4-6",
-                max_tokens: 800,
-                messages: [{ role: "user", content: prompt }],
-              }),
+            const aiOut = await merveilChatCompletion({
+              system: "Extract structured UAE property listing JSON for Merveil. JSON only.",
+              messages: [{ role: "user", content: prompt }],
+              maxTokens: 800,
+              temperature: 0.1,
             });
-            const aiData = await aiRes.json();
-            const raw = (aiData.content || []).find((c) => c.type === "text")?.text || "";
-            const cleaned = raw.replace(/```json|```/g, "").trim();
+            const cleaned = String(aiOut.text || "").replace(/```json|```/g, "").trim();
             const parsed = JSON.parse(cleaned);
             if (parsed && typeof parsed === "object") {
               Object.assign(structured, {
@@ -1774,7 +1823,7 @@ export default async function handler(req, res) {
                 furnished: parsed.furnished || structured.furnished,
                 description: parsed.description || structured.description,
               });
-              structured.source = "ai-parse-listing+claude";
+              structured.source = "ai-parse-listing+merveil";
             }
           } catch (e) {
             /* keep deterministic structured */
@@ -1976,7 +2025,62 @@ export default async function handler(req, res) {
           .select()
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
-        return sendJson(res, 200, { property: { ...data, type: data.listing_type || "Sale", priceFreq: data.listing_type === "Rent" ? "yr" : undefined, ownerId: data.owner_id, isLive: true } });
+
+        // Pulse → Area Group: mirror first post into matching Sell/Buy/Rent group
+        let groupMirror = null;
+        try {
+          if (data?.area && !body.skipGroupMirror && !data.source_group_id) {
+            let svcP;
+            try { svcP = adminClient(); } catch { svcP = sb; }
+            const intent = (data.listing_type || "Sale").toLowerCase().includes("rent") ? "rent"
+              : (data.listing_type || "").toLowerCase().includes("buy") ? "buy" : "sell";
+            const { data: gmatch } = await svcP.from("area_groups")
+              .select("id, title, area, emirate, intent")
+              .ilike("area", data.area)
+              .eq("intent", intent)
+              .limit(1)
+              .maybeSingle();
+            if (gmatch?.id) {
+              const bodyText = [data.title, data.description].filter(Boolean).join("\n");
+              const hash = bodyText ? merveilLeadContentHash(bodyText) : null;
+              let isFirst = true;
+              if (hash) {
+                const { count } = await svcP.from("area_group_posts").select("*", { count: "exact", head: true }).eq("content_hash", hash);
+                isFirst = !count;
+              }
+              // Auto-join so post is allowed
+              await svcP.from("area_group_members").upsert({
+                group_id: gmatch.id,
+                user_id: actor.id,
+                joined_at: new Date().toISOString(),
+                last_read_at: new Date().toISOString(),
+              }, { onConflict: "group_id,user_id" });
+              const media = data.photo_urls || (data.photo_url ? [data.photo_url] : []);
+              const { data: gp } = await svcP.from("area_group_posts").insert({
+                group_id: gmatch.id,
+                author_id: actor.id,
+                body: bodyText || data.title,
+                media_urls: media,
+                media_type: data.video_url ? "mixed" : "image",
+                content_hash: hash,
+                source: "pulse",
+                pulse_property_id: data.id,
+                duplicate_rank: isFirst ? 1 : 2,
+              }).select("id").maybeSingle();
+              groupMirror = { group_id: gmatch.id, title: gmatch.title, post_id: gp?.id };
+              await merveilNotifyCitizen(svcP, actor.id,
+                `Your Pulse listing is also in Groups · ${gmatch.title}. Open it to update the lead anytime.`,
+                { title: "Also in Area Groups", tag: `pulse-group-${data.id}`, url: `/?tab=connect&group=${gmatch.id}` });
+            }
+          }
+        } catch (e) {
+          console.error("[pulse→group]", e.message);
+        }
+
+        return sendJson(res, 200, {
+          property: { ...data, type: data.listing_type || "Sale", priceFreq: data.listing_type === "Rent" ? "yr" : undefined, ownerId: data.owner_id, isLive: true },
+          group_mirror: groupMirror,
+        });
       }
 
       if (method === "PATCH") {
@@ -2712,17 +2816,33 @@ export default async function handler(req, res) {
             for (const f of favs || []) favSet.add(f.group_id);
           } catch (_) {}
         }
-        // Unread = posts after last_read_at (or joined_at) for memberships only
+        // PUBLIC activity (everyone, including visitors): posts in last 48h
+        // MEMBERS: true unread since last_read_at (prefer unread when higher)
+        let activityByGroup = {};
         let unreadByGroup = {};
+        try {
+          const since48 = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+          const { data: recentAll } = await svcG
+            .from("area_group_posts")
+            .select("id, group_id, author_id, created_at, hidden_at")
+            .gte("created_at", since48)
+            .order("created_at", { ascending: false })
+            .limit(5000);
+          for (const post of recentAll || []) {
+            if (post.hidden_at) continue;
+            activityByGroup[post.group_id] = (activityByGroup[post.group_id] || 0) + 1;
+          }
+        } catch (_) {}
         const joinedIds = Object.keys(memberMap);
-        if (joinedIds.length) {
+        if (actor?.id && joinedIds.length) {
           const { data: recent } = await svcG
             .from("area_group_posts")
-            .select("id, group_id, author_id, created_at")
+            .select("id, group_id, author_id, created_at, hidden_at")
             .in("group_id", joinedIds)
             .order("created_at", { ascending: false })
             .limit(Math.min(joinedIds.length * 30, 3000));
           for (const post of recent || []) {
+            if (post.hidden_at) continue;
             if (String(post.author_id) === String(actor.id)) continue;
             const mem = memberMap[post.group_id];
             if (!mem) continue;
@@ -2736,10 +2856,16 @@ export default async function handler(req, res) {
           if (!byEm[g.emirate]) byEm[g.emirate] = {};
           if (!byEm[g.emirate][g.area]) byEm[g.emirate][g.area] = [];
           const mem = memberMap[g.id];
+          const activity = activityByGroup[g.id] || 0;
+          const unread = unreadByGroup[g.id] || 0;
+          // Public badge = max(activity, member unread) so visitors see live energy
+          const badge = Math.max(activity, unread);
           byEm[g.emirate][g.area].push({
             ...g,
             i_member: !!mem,
-            unread_count: unreadByGroup[g.id] || 0,
+            activity_count: activity,
+            unread_count: badge,
+            member_unread: unread,
             is_favorite: !!(favSet && favSet.has(g.id)),
           });
         }
@@ -2843,7 +2969,7 @@ export default async function handler(req, res) {
         const authorIds = [...new Set((posts || []).map((p) => p.author_id).filter(Boolean))];
         let profiles = {};
         if (authorIds.length) {
-          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier").in("id", authorIds);
+          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, kyc_status, agent_verified, company_verified, account_type, rera_number").in("id", authorIds);
           for (const pr of profs || []) profiles[pr.id] = pr;
         }
         let presenceMap = {};
@@ -2863,13 +2989,25 @@ export default async function handler(req, res) {
             mySupers = new Set((ss || []).map((x) => x.post_id));
           }
         }
-        const enriched = (posts || []).map((p) => ({
-          ...p,
-          author: profiles[p.author_id] || null,
-          author_status: presenceMap[p.author_id] || "offline",
-          i_supered: mySupers.has(p.id),
-          is_mine: actor?.id ? String(p.author_id) === String(actor.id) : false,
-        }));
+        const enriched = (posts || []).map((p) => {
+          const auth = profiles[p.author_id] || null;
+          const passportOk = auth && String(auth.kyc_status || "").toLowerCase() === "verified";
+          const reOk = !!(auth && (auth.agent_verified || auth.company_verified || auth.rera_number));
+          let verify_label = "Unverified";
+          if (passportOk && reOk) verify_label = "Passport · RE verified";
+          else if (passportOk) verify_label = "Passport verified · RE unverified";
+          else if (reOk) verify_label = "RE verified · Passport incomplete";
+          return {
+            ...p,
+            author: auth,
+            author_status: presenceMap[p.author_id] || "offline",
+            i_supered: mySupers.has(p.id),
+            is_mine: actor?.id ? String(p.author_id) === String(actor.id) : false,
+            passport_verified: !!passportOk,
+            re_verified: !!reOk,
+            verify_label,
+          };
+        });
         return sendJson(res, 200, { group: { ...g, i_member: iMember }, posts: enriched });
       }
 
@@ -3105,7 +3243,75 @@ export default async function handler(req, res) {
         } catch (e) {
           console.error("[groups/post notify]", e.message);
         }
-        return sendJson(res, 200, { post, group: g });
+
+        // —— Pulse bridge: first unique lead only → Pulse Discover
+        let pulseBridged = false;
+        let passportReminder = null;
+        try {
+          const rank = duplicateRank || 1;
+          if (rank <= 1 && post && !post.hidden_at) {
+            let passportOk = false;
+            try {
+              const { data: pr } = await svcG.from("profiles").select("kyc_status, name").eq("id", actor.id).maybeSingle();
+              passportOk = String(pr?.kyc_status || "").toLowerCase() === "verified";
+            } catch (_) {}
+            const titleLine = (text || "Group lead").split("\n")[0].slice(0, 120);
+            const listingType = g.intent === "rent" ? "Rent" : g.intent === "buy" ? "Buy" : "Sale";
+            const fromLabel = `${g.area} · ${listingType} · Groups`;
+            const insProp = await svcG.from("properties").insert({
+              owner_id: actor.id,
+              title: titleLine,
+              description: `${text || ""}\n\n— From Groups · ${fromLabel}`,
+              emirate: g.emirate || null,
+              area: g.area || null,
+              listing_type: listingType,
+              photo_urls: mediaUrls || [],
+              photo_url: (mediaUrls && mediaUrls[0]) || null,
+              source_group_id: groupId,
+              source_group_post_id: post.id,
+              from_group_label: fromLabel,
+            }).select("id").maybeSingle();
+            if (!insProp.error && insProp.data?.id) {
+              pulseBridged = true;
+              try {
+                await svcG.from("area_group_posts").update({
+                  bridged_to_pulse: true,
+                  pulse_property_id: insProp.data.id,
+                  source: "group",
+                }).eq("id", post.id);
+              } catch (_) {}
+              if (!passportOk) {
+                passportReminder = "Your group lead is on Pulse — complete Passport verification or it may be limited. Update Passport in your profile.";
+                await merveilNotifyCitizen(svcG, actor.id, passportReminder, {
+                  title: "Merveil · Complete Passport",
+                  tag: `passport-pulse-${post.id}`,
+                  url: "/?tab=passport",
+                });
+              } else {
+                await merveilNotifyCitizen(svcG, actor.id,
+                  `Your group lead also appears on Pulse Discover (${fromLabel}). Check and update details anytime.`,
+                  { title: "Live on Pulse", tag: `pulse-bridge-${post.id}`, url: "/?tab=pulse" });
+              }
+            } else if (insProp.error) {
+              console.error("[group→pulse]", insProp.error.message);
+            }
+          } else if (rank >= 2) {
+            // already notified duplicate; ensure no second Pulse post
+            await merveilNotifyCitizen(svcG, actor.id,
+              "Similar lead already on Pulse from an earlier post — this group post stays in the area group only.",
+              { title: "Pulse not duplicated", tag: `no-pulse-dup-${contentHash}` });
+          }
+        } catch (e) {
+          console.error("[group pulse bridge]", e.message);
+        }
+
+        return sendJson(res, 200, {
+          post,
+          group: g,
+          pulse_bridged: pulseBridged,
+          passport_reminder: passportReminder,
+          duplicate_rank: duplicateRank || 1,
+        });
       }
 
       // Edit own post
@@ -5887,7 +6093,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
     // action=sponsored below, inside the /api/console block.
 
     // ------------------------------------------------------ /api/assistant
-    // Merveil AI chat — YOUR API (OpenAI-compatible). Not Anthropic.
+    // Merveil AI chat — YOUR API (Grok or OpenAI). Not Claude.
     // Env (server only):
     //   AI_API_URL  — e.g. https://api.x.ai/v1  or https://your-host/v1
     //                 or full .../chat/completions
@@ -5982,7 +6188,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
     }
 
     // ------------------------------------------------------ /api/assistant-usage
-    // Merveil AI costs real money per message (Anthropic API), so usage is
+    // Merveil AI costs real money per message (Grok/OpenAI API), so usage is
     // capped by Passport tier: Ordinary gets a small daily allowance, Services
     // gets more, Investor is effectively unlimited. Frontend may check before
     // calling /api/assistant; the assistant route also enforces server-side.
@@ -9430,11 +9636,31 @@ return sendJson(res, 404, { error: "Unknown groups action." });
       if (action === "upload" && method === "POST") {
         const uploaderId = user?.id || citizen?.id || jwtSub;
         if (!uploaderId) return sendJson(res, 401, { error: "Sign in required." });
-        const form = formidable({ maxFileSize: 80 * 1024 * 1024 });
+        const form = formidable({ maxFileSize: 120 * 1024 * 1024 }); // HD video headroom
         const [fields, files] = await form.parse(req);
         const file = files.file?.[0];
         if (!file) return sendJson(res, 400, { error: "No file provided." });
         const folder = fields.folder?.[0] || "misc";
+        const mime = file.mimetype || "";
+        const isVideo = mime.startsWith("video/");
+        const isImage = mime.startsWith("image/");
+        // Soft HD gate: reject tiny "low quality" payloads
+        if (isImage && file.size < 40 * 1024) {
+          return sendJson(res, 400, {
+            error: "Photo looks too small for HD. Use a clearer HD photo, or ask Merveil AI to enhance (boost credits).",
+            code: "HD_REQUIRED",
+            enhance_available: true,
+          });
+        }
+        if (isVideo && file.size < 200 * 1024) {
+          return sendJson(res, 400, {
+            error: "Video too small — upload HD video up to 60 seconds.",
+            code: "HD_REQUIRED",
+          });
+        }
+        if (isVideo && file.size > 120 * 1024 * 1024) {
+          return sendJson(res, 400, { error: "Video max ~120MB (HD, ≤60s)." });
+        }
         const fs = await import("fs");
         const buffer = fs.readFileSync(file.filepath);
         const safeName = (file.originalFilename || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -9443,20 +9669,27 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         try { storageClient = adminClient(); } catch { /* user client */ }
         let bucket = "uploads";
         let { error } = await storageClient.storage.from(bucket).upload(path, buffer, {
-          contentType: file.mimetype || "application/octet-stream",
+          contentType: mime || "application/octet-stream",
           upsert: true,
         });
         if (error) {
           bucket = "media";
           const alt = await storageClient.storage.from(bucket).upload(path, buffer, {
-            contentType: file.mimetype || "application/octet-stream",
+            contentType: mime || "application/octet-stream",
             upsert: true,
           });
           error = alt.error;
         }
         if (error) return sendJson(res, 400, { error: error.message || "Upload failed." });
         const { data: pub } = storageClient.storage.from(bucket).getPublicUrl(path);
-        return sendJson(res, 200, { url: pub.publicUrl, name: safeName, size: file.size, contentType: file.mimetype, bucket });
+        return sendJson(res, 200, {
+          url: pub.publicUrl,
+          name: safeName,
+          size: file.size,
+          contentType: mime,
+          bucket,
+          hd_hint: isVideo ? "Keep videos ≤60s HD" : "HD photos recommended (up to 8 per post)",
+        });
       }
 
       return sendJson(res, 404, { error: "Not found" });
