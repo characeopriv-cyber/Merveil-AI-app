@@ -13175,8 +13175,10 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall, onProfile })
           )}
           {posts.map((post) => {
             const author = post.author || {};
-            const name = author.name || "Citizen";
-            const mine = post.is_mine || String(post.author_id) === String(currentUser?.id);
+            const authorId = post.author_id || author.id || post.user_id || null;
+            const name = author.name || post.author_name || "Citizen";
+            const avatar = author.avatar_url || post.author_avatar || post.avatar_url || null;
+            const mine = post.is_mine || String(authorId) === String(currentUser?.id);
             return (
               <div
                 key={post.id}
@@ -13195,11 +13197,11 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall, onProfile })
                 }}
               >
                 <div className="flex items-center gap-2.5 mb-2">
-                  <button type="button" className="shrink-0 rounded-full" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name: name || author?.name || 'Citizen', avatar_url: author?.avatar_url || null }); })()}>
-                    <Avatar name={name} src={author.avatar_url} size={40} />
+                  <button type="button" className="shrink-0 rounded-full" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name, avatar_url: avatar || null }); })()}>
+                    <Avatar name={name} src={avatar} size={40} />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <button type="button" className="text-left w-full min-w-0" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name: name || author?.name || 'Citizen', avatar_url: author?.avatar_url || null }); })()}>
+                    <button type="button" className="text-left w-full min-w-0" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name, avatar_url: avatar || null }); })()}>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
                         <PresenceDot status={post.author_status || "offline"} size={10} />
@@ -13228,11 +13230,11 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall, onProfile })
                   </div>
                   {!mine && (
                   <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: author.avatar_url }, "call")}
+                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: avatar }, "call")}
                       className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
                       <Phone size={14} color="#0E9AA7" />
                     </button>
-                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: author.avatar_url }, "message")}
+                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: avatar }, "message")}
                       className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
                       <MessageCircle size={14} color="#1FA64A" />
                     </button>
@@ -15084,6 +15086,25 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
             return (
               <>
+              {connectFilter === "all" && (
+                <button
+                  type="button"
+                  onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
+                  className="w-full text-left p-3 border-b flex items-center gap-3"
+                  style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "#FFFFFF" }}
+                >
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#0E9AA7)" }}>
+                    <Sparkles size={16} color="#fff" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
+                    </div>
+                    <span className="text-xs truncate block" style={{ color: T.sub }}>Your Merveil intelligence layer · always available</span>
+                  </div>
+                </button>
+              )}
               <VirtualWindow
                 items={rows}
                 itemHeight={76}
@@ -15212,22 +15233,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               );
             }}
               />
-              {connectFilter === "all" && (
-                <button onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
-                  className="w-full text-left p-3 border-t flex items-center gap-3 mt-1"
-                  style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "transparent" }}>
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
-                    <Sparkles size={16} color="#fff" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
-                    </div>
-                    <span className="text-xs truncate block" style={{ color: T.sub }}>Ask about listings, areas, anything</span>
-                  </div>
-                </button>
-              )}
+
               </>
             );
           })()}
@@ -22188,6 +22194,122 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       .finally(() => setGalleryLoading(false));
   };
 
+  const addMerveilVideoWatermark = async (blob) => {
+    if (!blob || !String(blob.type || "").toLowerCase().startsWith("video/")) return null;
+    if (typeof document === "undefined" || typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement === "undefined") return null;
+    if (!HTMLCanvasElement.prototype.captureStream) return null;
+
+    const mimeCandidates = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+    ];
+    const mime = mimeCandidates.find((m) => {
+      try { return MediaRecorder.isTypeSupported(m); } catch { return false; }
+    });
+    if (!mime) return null;
+
+    const sourceUrl = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.src = sourceUrl;
+    video.playsInline = true;
+    video.muted = false;
+    video.preload = "auto";
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+
+    let audioCtx = null;
+    let sourceNode = null;
+    let audioDest = null;
+    let recorder = null;
+    const chunks = [];
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) { URL.revokeObjectURL(sourceUrl); return null; }
+
+    try {
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = resolve;
+        video.onerror = () => reject(new Error("Could not read video"));
+        video.load();
+      });
+
+      const maxEdge = 1080;
+      const scale = Math.min(1, maxEdge / Math.max(video.videoWidth || maxEdge, video.videoHeight || maxEdge));
+      canvas.width = Math.max(2, Math.round((video.videoWidth || 1080) * scale));
+      canvas.height = Math.max(2, Math.round((video.videoHeight || 1920) * scale));
+
+      const stream = canvas.captureStream(30);
+
+      // Preserve original audio when the browser exposes an audio track.
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        await audioCtx.resume().catch(() => {});
+        sourceNode = audioCtx.createMediaElementSource(video);
+        audioDest = audioCtx.createMediaStreamDestination();
+        sourceNode.connect(audioDest);
+        sourceNode.connect(audioCtx.destination);
+        audioDest.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
+      } catch {
+        // Video-only fallback is still branded; do not block the user's save.
+        audioCtx = null;
+        sourceNode = null;
+        audioDest = null;
+      }
+
+      recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
+      const done = new Promise((resolve, reject) => {
+        recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+        recorder.onerror = () => reject(new Error("Watermark recording failed"));
+        recorder.onstop = () => resolve();
+      });
+
+      const draw = () => {
+        if (video.readyState >= 2) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const pad = Math.max(18, Math.round(canvas.width * 0.025));
+          const font = Math.max(18, Math.round(canvas.width * 0.026));
+          const markH = font + pad * 1.15;
+          const markW = Math.round(font * 6.8 + pad * 1.8);
+          const x = canvas.width - markW - pad;
+          const y = canvas.height - markH - pad;
+          ctx.save();
+          ctx.fillStyle = "rgba(0,0,0,0.48)";
+          const r = Math.min(markH / 2, 14);
+          ctx.beginPath();
+          ctx.roundRect(x, y, markW, markH, r);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(x + pad + font * 0.42, y + markH / 2, font * 0.42, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(6,182,212,0.95)";
+          ctx.fill();
+          ctx.fillStyle = "#fff";
+          ctx.font = `700 ${font}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+          ctx.textBaseline = "middle";
+          ctx.fillText("M", x + pad + font * 0.22, y + markH / 2 + 0.5);
+          ctx.fillText("Merveil AI", x + pad * 1.45 + font * 0.84, y + markH / 2 + 0.5);
+          ctx.restore();
+        }
+        if (recorder?.state === "recording") requestAnimationFrame(draw);
+      };
+
+      recorder.start(250);
+      await video.play();
+      draw();
+      await done;
+      return new Blob(chunks, { type: mime });
+    } catch (e) {
+      try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch {}
+      return null;
+    } finally {
+      try { sourceNode?.disconnect(); } catch {}
+      try { audioDest?.stream?.getTracks()?.forEach((t) => t.stop()); } catch {}
+      try { audioCtx?.close(); } catch {}
+      try { video.pause(); } catch {}
+      URL.revokeObjectURL(sourceUrl);
+    }
+  };
+
   const downloadWorldToDevice = async (post) => {
     const mediaUrl = post?.video_url || post?.photo_url || (Array.isArray(post?.photo_urls) ? post.photo_urls[0] : null);
     if (!post?.id && !mediaUrl) {
@@ -22251,10 +22373,15 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           const blob = await res.blob();
           const ctype = res.headers.get("content-type") || blob.type || "";
           if (!isBadBlob(blob, ctype)) {
-            const ext = extFrom(ctype, mediaUrl, !!post?.video_url);
+            let outputBlob = blob;
+            if (post?.video_url) {
+              const branded = await addMerveilVideoWatermark(blob);
+              if (branded) outputBlob = branded;
+            }
+            const ext = post?.video_url && outputBlob.type.includes("webm") ? "webm" : extFrom(ctype, mediaUrl, !!post?.video_url);
             const name = `merveil-reel-${String(post?.id || "clip").slice(0, 12)}.${ext}`;
-            saveBlob(blob, name);
-            toast("success", ext === "mp4" || ext === "webm" ? "Video saved to Downloads." : "Saved to Downloads.");
+            saveBlob(outputBlob, name);
+            toast("success", ext === "mp4" || ext === "webm" ? "Video saved with Merveil AI mark." : "Saved to Downloads.");
             return;
           }
         }
@@ -22275,10 +22402,15 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         if (res.ok && !ctype.includes("application/json")) {
           const blob = await res.blob();
           if (!isBadBlob(blob, ctype)) {
-            const ext = extFrom(ctype, mediaUrl, !!post?.video_url);
+            let outputBlob = blob;
+            if (post?.video_url) {
+              const branded = await addMerveilVideoWatermark(blob);
+              if (branded) outputBlob = branded;
+            }
+            const ext = post?.video_url && outputBlob.type.includes("webm") ? "webm" : extFrom(ctype, mediaUrl, !!post?.video_url);
             const name = `merveil-reel-${postId.slice(0, 12)}.${ext}`;
-            saveBlob(blob, name);
-            toast("success", "Video saved to Downloads.");
+            saveBlob(outputBlob, name);
+            toast("success", "Video saved with Merveil AI mark.");
             return;
           }
         }
