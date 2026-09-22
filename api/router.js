@@ -228,7 +228,7 @@ function merveilTrustLevelFromScore(score) {
 
 function merveilTrustBadgeFromProfile(prof = {}, rep = null) {
   const passportOk = String(prof.kyc_status || "").toLowerCase() === "verified" || !!prof.passport_verified;
-  const reOk = !!(prof.agent_verified || prof.company_verified || prof.rera_number || prof.re_verified);
+  const reOk = !!(prof.rera_number || prof.re_verified || prof.agent_verified || prof.company_verified);
   const score = rep?.score != null ? Number(rep.score) : Number(prof.trust_score) || 0;
   const lv = rep?.level || prof.trust_level || merveilTrustLevelFromScore(score).level;
   const label = rep?.trust_label || prof.trust_label || merveilTrustLevelFromScore(score).label;
@@ -247,7 +247,7 @@ async function merveilRecomputeReputation(svc, userId) {
   if (!userId || !svc) return null;
   try {
     const { data: prof } = await svc.from("profiles")
-      .select("id, kyc_status, agent_verified, company_verified, rera_number, passport_tier, created_at")
+      .select("id, kyc_status, rera_number, passport_tier, created_at")
       .eq("id", userId).maybeSingle();
     if (!prof) return null;
 
@@ -292,7 +292,7 @@ async function merveilRecomputeReputation(svc, userId) {
     } catch (_) {}
 
     const identity_pts = (String(prof.kyc_status || "").toLowerCase() === "verified" ? 120 : 0)
-      + ((prof.agent_verified || prof.company_verified || prof.rera_number) ? 80 : 0)
+      + ((prof.rera_number || prof.agent_verified || prof.company_verified) ? 80 : 0)
       + (["professional", "investor", "company"].includes(String(prof.passport_tier || "").toLowerCase()) ? 40 : 0);
 
     const activity_pts = Math.min(250, listingCount * 8 + groupLeads * 6 + worldCount * 5);
@@ -3106,7 +3106,7 @@ export default async function handler(req, res) {
         const authorIds = [...new Set((posts || []).map((p) => p.author_id).filter(Boolean))];
         let profiles = {};
         if (authorIds.length) {
-          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, kyc_status, agent_verified, company_verified, account_type, rera_number, trust_score, trust_level, trust_label").in("id", authorIds);
+          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, kyc_status, account_type, rera_number, trust_score, trust_level, trust_label").in("id", authorIds);
           for (const pr of profs || []) profiles[pr.id] = pr;
         }
         let presenceMap = {};
@@ -3129,7 +3129,7 @@ export default async function handler(req, res) {
         const enriched = (posts || []).map((p) => {
           const auth = profiles[p.author_id] || null;
           const passportOk = auth && String(auth.kyc_status || "").toLowerCase() === "verified";
-          const reOk = !!(auth && (auth.agent_verified || auth.company_verified || auth.rera_number));
+          const reOk = !!(auth && (auth.rera_number || auth.agent_verified || auth.company_verified));
           let verify_label = "Unverified";
           if (passportOk && reOk) verify_label = "Passport · RE verified";
           else if (passportOk) verify_label = "Passport verified · RE unverified";
@@ -9614,13 +9614,31 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         // Use service role so RLS never hides a valid citizen (Pulse/World creator pages).
         let peopleClient;
         try { peopleClient = adminClient(); } catch { peopleClient = anonClient(); }
+        // Do not select agent_verified/company_verified — may be missing on older prod schemas
         const { data, error } = await peopleClient
           .from("profiles")
-          .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought, role_label, kyc_status, agent_verified, company_verified")
+          .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought, role_label, kyc_status, rera_number")
           .eq("id", userId)
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
-        if (!data) return sendJson(res, 404, { error: "Not found" });
+        // Always return a public card — never blank the creator page for investors / group taps
+        if (!data) {
+          return sendJson(res, 200, {
+            profile: {
+              id: userId,
+              name: "Merveil Citizen",
+              avatar_url: null,
+              passport_tier: "core",
+              account_type: "citizen",
+              bio: "",
+              _stub: true,
+            },
+            worldPosts: [],
+            listings: [],
+            groupPosts: [],
+            stats: { worldPostCount: 0, totalViews: 0, totalLikes: 0, connectionsCount: 0 },
+          });
+        }
         // Zero-trust public card: never leak wallet, KYC, contact, or admin fields
         const PUBLIC_PROFILE_KEYS = new Set([
           "id", "name", "avatar_url", "cover_video_url", "junction_id", "passport_tier",
@@ -9693,7 +9711,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         // Public verification flags only (never raw KYC docs)
         if (data) {
           data.passport_verified = String(data.kyc_status || "").toLowerCase() === "verified";
-          data.re_verified = !!(data.agent_verified || data.company_verified);
+          data.re_verified = !!(data.rera_number || data.agent_verified || data.company_verified);
           let repSnap = null;
           try { repSnap = await merveilRecomputeReputation(peopleClient, userId); } catch (_) {}
           const badge = merveilTrustBadgeFromProfile(data, repSnap);
@@ -9907,7 +9925,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
           rep = existing;
         }
         const { data: prof } = await svcR.from("profiles")
-          .select("id, name, avatar_url, kyc_status, agent_verified, company_verified, rera_number, passport_tier, profession, trust_score, trust_level, trust_label")
+          .select("id, name, avatar_url, kyc_status, rera_number, passport_tier, profession, trust_score, trust_level, trust_label")
           .eq("id", targetId).maybeSingle();
         const badge = merveilTrustBadgeFromProfile(prof || {}, rep);
         return sendJson(res, 200, {
