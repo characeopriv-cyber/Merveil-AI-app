@@ -2250,7 +2250,7 @@ function VirtualWindow({ items, itemHeight = 72, overscan = 8, className = "", s
   );
 }
 
-(a, b) {
+function shallowSameRecord(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
