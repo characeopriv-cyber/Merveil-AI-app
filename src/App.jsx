@@ -22213,55 +22213,55 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     const video = document.createElement("video");
     video.src = sourceUrl;
     video.playsInline = true;
-    video.muted = false;
     video.preload = "auto";
     video.setAttribute("playsinline", "");
     video.setAttribute("webkit-playsinline", "");
 
-    let audioCtx = null;
-    let sourceNode = null;
-    let audioDest = null;
+    let sourceStream = null;
     let recorder = null;
     const chunks = [];
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { alpha: false });
-    if (!ctx) { URL.revokeObjectURL(sourceUrl); return null; }
+    if (!ctx) {
+      URL.revokeObjectURL(sourceUrl);
+      return null;
+    }
 
     try {
       await new Promise((resolve, reject) => {
-        video.onloadedmetadata = resolve;
-        video.onerror = () => reject(new Error("Could not read video"));
+        const timeout = setTimeout(() => reject(new Error("Video metadata timeout")), 25000);
+        video.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
+        video.onerror = () => { clearTimeout(timeout); reject(new Error("Could not read video")); };
         video.load();
       });
 
       const maxEdge = 1080;
-      const scale = Math.min(1, maxEdge / Math.max(video.videoWidth || maxEdge, video.videoHeight || maxEdge));
-      canvas.width = Math.max(2, Math.round((video.videoWidth || 1080) * scale));
-      canvas.height = Math.max(2, Math.round((video.videoHeight || 1920) * scale));
+      const sourceW = video.videoWidth || 1080;
+      const sourceH = video.videoHeight || 1920;
+      const scale = Math.min(1, maxEdge / Math.max(sourceW, sourceH));
+      canvas.width = Math.max(2, Math.round(sourceW * scale) & ~1);
+      canvas.height = Math.max(2, Math.round(sourceH * scale) & ~1);
 
       const stream = canvas.captureStream(30);
 
       // Preserve original audio when the browser exposes an audio track.
       try {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        await audioCtx.resume().catch(() => {});
-        sourceNode = audioCtx.createMediaElementSource(video);
-        audioDest = audioCtx.createMediaStreamDestination();
-        sourceNode.connect(audioDest);
-        sourceNode.connect(audioCtx.destination);
-        audioDest.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
+        sourceStream = video.captureStream?.() || video.mozCaptureStream?.() || null;
+        sourceStream?.getAudioTracks?.().forEach((track) => {
+          try { stream.addTrack(track); } catch {}
+        });
+      } catch {}
+
+      try {
+        recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
       } catch {
-        // Video-only fallback is still branded; do not block the user's save.
-        audioCtx = null;
-        sourceNode = null;
-        audioDest = null;
+        return null;
       }
 
-      recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
-      const done = new Promise((resolve, reject) => {
+      const stopped = new Promise((resolve, reject) => {
         recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
         recorder.onerror = () => reject(new Error("Watermark recording failed"));
-        recorder.onstop = () => resolve();
+        recorder.onstop = resolve;
       });
 
       const draw = () => {
@@ -22269,15 +22269,16 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const pad = Math.max(18, Math.round(canvas.width * 0.025));
           const font = Math.max(18, Math.round(canvas.width * 0.026));
-          const markH = font + pad * 1.15;
+          const markH = Math.round(font + pad * 1.15);
           const markW = Math.round(font * 6.8 + pad * 1.8);
-          const x = canvas.width - markW - pad;
-          const y = canvas.height - markH - pad;
+          const x = Math.max(pad, canvas.width - markW - pad);
+          const y = Math.max(pad, canvas.height - markH - pad);
+
           ctx.save();
           ctx.fillStyle = "rgba(0,0,0,0.48)";
-          const r = Math.min(markH / 2, 14);
+          const radius = Math.min(markH / 2, 14);
           ctx.beginPath();
-          ctx.roundRect(x, y, markW, markH, r);
+          ctx.roundRect(x, y, markW, markH, radius);
           ctx.fill();
           ctx.beginPath();
           ctx.arc(x + pad + font * 0.42, y + markH / 2, font * 0.42, 0, Math.PI * 2);
@@ -22293,18 +22294,34 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         if (recorder?.state === "recording") requestAnimationFrame(draw);
       };
 
+      const finish = () => {
+        try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch {}
+      };
+
+      video.addEventListener("ended", finish, { once: true });
       recorder.start(250);
-      await video.play();
+      try {
+        await video.play();
+      } catch {
+        // The download tap is normally a user gesture. Retry muted only if
+        // the browser blocks audible playback; the video still gets branded.
+        video.muted = true;
+        await video.play();
+      }
       draw();
-      await done;
-      return new Blob(chunks, { type: mime });
-    } catch (e) {
+
+      const hardStopMs = Math.max(5000, Math.min(180000, ((Number(video.duration) || 60) * 1000) + 5000));
+      const hardStop = setTimeout(finish, hardStopMs);
+      await stopped;
+      clearTimeout(hardStop);
+
+      const output = new Blob(chunks, { type: mime });
+      return output.size ? output : null;
+    } catch {
       try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch {}
       return null;
     } finally {
-      try { sourceNode?.disconnect(); } catch {}
-      try { audioDest?.stream?.getTracks()?.forEach((t) => t.stop()); } catch {}
-      try { audioCtx?.close(); } catch {}
+      try { sourceStream?.getTracks?.().forEach((track) => track.stop()); } catch {}
       try { video.pause(); } catch {}
       URL.revokeObjectURL(sourceUrl);
     }
