@@ -44,7 +44,9 @@
     <!-- Optional Stripe.js for in-app card confirm. Publishable key only (never secret). -->
     <script src="https://js.stripe.com/v3/" async></script>
   </head>
-  <body>
+  <body style="margin:0;background:#0B1220;color:#E8EEF2">
+    <!-- prevent-flash: dark shell until React paints intro / app (avoids greige blink) -->
+    <style id="merveil-boot">html,body,#root{min-height:100%;background:#0B1220!important}</style>
     <div id="root"></div>
     <script>
       // Set from Vercel public env or replace at deploy. Never put sk_ keys here.
