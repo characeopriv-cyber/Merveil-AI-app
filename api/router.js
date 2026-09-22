@@ -1188,7 +1188,7 @@ export default async function handler(req, res) {
 
     // ---------------------------------------------------------- /api/share
     // Crawler-friendly OG HTML for WhatsApp / iMessage / LinkedIn previews.
-    // Usage: /api/share?type=world|listing|property|invest|service|job|passport&id=
+    // Usage: /api/share?type=world|listing|property|group|invest|service|job|passport&id=
     if (resource === "share" && method === "GET") {
       const type = (req.query.type || "world").toLowerCase();
       const id = req.query.id || "";
@@ -1218,6 +1218,27 @@ export default async function handler(req, res) {
               || (Array.isArray(data.photos) ? data.photos[0] : null);
             if (photo) image = photo;
             dest = `${origin}/?listing=${data.id}`;
+          }
+        } else if ((type === "group" || type === "group_post" || type === "lead") && id) {
+          let svcS;
+          try { svcS = adminClient(); } catch { svcS = anonClient(); }
+          const { data } = await svcS.from("area_group_posts").select("id, body, media_urls, group_id, author_id").eq("id", id).maybeSingle();
+          if (data) {
+            let gtitle = "Area Group";
+            try {
+              const { data: g } = await svcS.from("area_groups").select("title, area, emirate, intent").eq("id", data.group_id).maybeSingle();
+              if (g) gtitle = g.title || `${g.area || ""} · ${(g.intent || "").toUpperCase()}` || gtitle;
+            } catch (_) {}
+            const bodyLine = String(data.body || "").split("\n").map((l) => l.trim()).filter(Boolean)[0] || "Lead on Merveil";
+            title = "Merveil AI";
+            description = bodyLine.slice(0, 120);
+            const media = Array.isArray(data.media_urls) ? data.media_urls : [];
+            const first = media[0];
+            if (first && !String(first).match(/\.(mp4|webm|mov)(\?|$)/i)) image = first;
+            else if (first) image = defaultImage; // video → brand logo until thumb pipeline
+            else image = defaultImage;
+            // Short human dest: open exact group + post (not Messages)
+            dest = `${origin}/?tab=connect&connectTab=groups&group=${encodeURIComponent(data.group_id)}&post=${encodeURIComponent(data.id)}`;
           }
         } else if (type === "invest" && id) {
           const { data } = await anonClient().from("invest_posts").select("id, title, body, photo_url").eq("id", id).maybeSingle();
