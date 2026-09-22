@@ -1,4 +1,15 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback, startTransition, memo } from "react";
+
+/** Prefer concurrent update when available (tab switches, soft list merges). */
+function merveilStartTransition(fn) {
+  try {
+    if (typeof startTransition === "function") startTransition(fn);
+    else fn();
+  } catch {
+    fn();
+  }
+}
+
 import { createPortal } from "react-dom";
 import { createClient as createSupabaseBrowserClient } from "@supabase/supabase-js";
 
@@ -796,6 +807,11 @@ const THEME_VARS_STYLE = `
   --t-sub: #625D56; --t-line: #C4BAAC; --t-inkline: #252321;
   --t-header: #EAE4DB;
   /* Raised shell — clearer than flat greige wash */
+/* —— Render performance —— */
+.gpu-reel { transform: translateZ(0); backface-visibility: hidden; contain: layout paint; }
+.cv-auto { content-visibility: auto; contain-intrinsic-size: auto 120px; }
+.merveil-list-row { content-visibility: auto; contain-intrinsic-size: auto 72px; }
+
   --t-nav: rgba(234,228,219,0.94);
 }
 :root[data-theme="dark"] {
@@ -2181,39 +2197,60 @@ function MerveilAiMiniMark({ aiGenerated = false }) {
  */
 function VirtualWindow({ items, itemHeight = 72, overscan = 8, className = "", style = {}, renderItem, getKey }) {
   const ref = useRef(null);
-  const [range, setRange] = useState({ start: 0, end: 20 });
+  const [range, setRange] = useState({ start: 0, end: 24 });
+  const rafRef = useRef(0);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const onScroll = () => {
+    const measure = () => {
       const h = el.clientHeight || 600;
       const top = el.scrollTop || 0;
       const start = Math.max(0, Math.floor(top / itemHeight) - overscan);
       const end = Math.min(items.length, Math.ceil((top + h) / itemHeight) + overscan);
       setRange((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
     };
-    onScroll();
+    const onScroll = () => {
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        measure();
+      });
+    };
+    measure();
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+    // ResizeObserver keeps window correct when keyboard/orientation changes
+    let ro;
+    try {
+      ro = new ResizeObserver(() => onScroll());
+      ro.observe(el);
+    } catch {}
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      try { ro?.disconnect(); } catch {}
+    };
   }, [items.length, itemHeight, overscan]);
   const start = range.start;
   const end = Math.min(items.length, Math.max(range.end, start + 1));
   const slice = items.slice(start, end);
   return (
-    <div ref={ref} className={className} style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", ...style }} data-merveil-scroll="1">
-      <div style={{ height: start * itemHeight }} aria-hidden="true" />
+    <div ref={ref} className={className} style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", contain: "strict", ...style }} data-merveil-scroll="1">
+      <div style={{ height: start * itemHeight, contain: "size layout" }} aria-hidden="true" />
       {slice.map((item, i) => {
         const idx = start + i;
         const key = getKey ? getKey(item, idx) : (item?.id ?? idx);
-        return <div key={key} style={{ minHeight: itemHeight }}>{renderItem(item, idx)}</div>;
+        return (
+          <div key={key} style={{ minHeight: itemHeight, contentVisibility: "auto", containIntrinsicSize: `auto ${itemHeight}px` }}>
+            {renderItem(item, idx)}
+          </div>
+        );
       })}
-      <div style={{ height: Math.max(0, (items.length - end) * itemHeight) }} aria-hidden="true" />
+      <div style={{ height: Math.max(0, (items.length - end) * itemHeight), contain: "size layout" }} aria-hidden="true" />
     </div>
   );
 }
 
-
-function shallowSameRecord(a, b) {
+(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
@@ -4464,18 +4501,78 @@ function InventoryUploadFlow({ currentUser, onClose, onCreated }) {
     // Not a CSV — let Merveil AI read it directly (PDF, photo/scan of a rent
     // roll, etc.) instead of requiring a specific spreadsheet format.
     setAiParsing(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    fetch("/api/properties?action=inventory-ai-parse", { method: "POST", credentials: "include", body: formData })
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) { setParseError(data.error || "Merveil AI couldn't read this file."); return; }
-        if (!data.units?.length) { setParseError("Merveil AI didn't find any units in this file — try a clearer scan or a different format."); return; }
+    setParseError("");
+    const nameLower = (file.name || "").toLowerCase();
+    const tryLocalCsv = () => new Promise((resolve) => {
+      if (!/\.csv$/i.test(nameLower) && file.type !== "text/csv") { resolve(null); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const text = String(reader.result || "");
+          const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+          if (lines.length < 2) { resolve(null); return; }
+          const split = (line) => line.split(/[,;\t]/).map((c) => c.replace(/^"|"$/g, "").trim());
+          const headers = split(lines[0]).map((h) => h.toLowerCase());
+          const units = [];
+          for (let i = 1; i < lines.length; i++) {
+            const cols = split(lines[i]);
+            if (!cols.some(Boolean)) continue;
+            const get = (...keys) => {
+              for (const k of keys) {
+                const idx = headers.findIndex((h) => h.includes(k));
+                if (idx >= 0 && cols[idx]) return cols[idx];
+              }
+              return "";
+            };
+            units.push({
+              unit: get("unit", "unit no", "unit_no", "apt", "apartment") || cols[0] || `U${i}`,
+              beds: get("bed", "br", "bedroom") || "",
+              baths: get("bath", "ba") || "",
+              sqft: get("sqft", "size", "area") || "",
+              price: get("price", "rent", "amount") || "",
+              status: get("status", "occupancy") || "",
+              floor: get("floor") || "",
+              notes: get("note", "remark") || "",
+              raw: cols,
+            });
+          }
+          resolve(units.length ? units : null);
+        } catch { resolve(null); }
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsText(file);
+    });
+
+    tryLocalCsv().then(async (localUnits) => {
+      if (localUnits?.length) {
+        setParsedUnits(localUnits.map((u) => ({ ...u, raw: u })));
+        setStep(1);
+        setAiParsing(false);
+        return;
+      }
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+        const r = await fetch("/api/properties?action=inventory-ai-parse", { method: "POST", credentials: "include", body: formData });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          const msg = data.error || "Could not parse this file.";
+          if (r.status === 429) setParseError(msg + " Tip: export as CSV for offline parse, or upgrade Passport for more AI.");
+          else setParseError(msg);
+          return;
+        }
+        if (!data.units?.length) {
+          setParseError("No units found. Try CSV with headers: Unit, Beds, Baths, Sqft, Price, Status.");
+          return;
+        }
         setParsedUnits(data.units.map((u) => ({ ...u, raw: u })));
         setStep(1);
-      })
-      .catch((e) => setParseError(`Couldn't reach Merveil AI — ${e.message}`))
-      .finally(() => setAiParsing(false));
+      } catch (e) {
+        setParseError(`Upload failed — ${e.message}. Try a CSV export if AI is unavailable.`);
+      } finally {
+        setAiParsing(false);
+      }
+    });
   };
 
   const submit = async () => {
@@ -11538,7 +11635,7 @@ async function initiateCitizenCall(user, mode) {
   }
 }
 
-function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
+function CitizenRowImpl({ user, status, onMessage, onCall, onProfile }) {
   const trusted = user.passport_tier === "professional" || user.passport_tier === "investor" || user.passport_tier === "company";
   const live = status === "online" || status === "busy";
   // Shared clock so Citizens / Circle / Messages never disagree after a call
@@ -11631,6 +11728,8 @@ function CitizenRow({ user, status, onMessage, onCall, onProfile }) {
 // CITIZENS — everyone registered in Merveil. No friendship/follow gate.
 // Presence determines WHERE a citizen appears (Online vs Offline), never
 // WHETHER they appear.
+const CitizenRow = React.memo(CitizenRowImpl);
+
 function CitizensTab({ currentUser, presenceMap, onMessage, onCall, onProfile }) {
   const [citizens, setCitizens] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14287,9 +14386,12 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               }}
               onCall={(u, mode) => initiateCitizenCall(u, mode)}
               onProfile={(u) => {
-                if (u?.id) {
+                const id = u?.id || u;
+                if (id) {
                   try {
-                    window.dispatchEvent(new CustomEvent("merveil:open-creator-profile", { detail: { userId: String(u.id) } }));
+                    window.dispatchEvent(new CustomEvent("merveil:open-creator-profile", {
+                      detail: { userId: String(id), name: u?.name || null, avatar_url: u?.avatar_url || null },
+                    }));
                   } catch {}
                 }
               }}
@@ -19674,7 +19776,7 @@ function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpe
   );
 }
 
-function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, onToggleSuper, onToggleSave, onCall, onOpenCreator, onChat, forceMuted, compact, currentUser, onRequireSignIn, onEdit, onDelete, onNotInterested }) {
+function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike, onToggleSuper, onToggleSave, onCall, onOpenCreator, onChat, forceMuted, compact, currentUser, onRequireSignIn, onEdit, onDelete, onNotInterested }) {
   const videoRef = useRef(null);
   // Start muted so autoplay works for visitors on iOS/Android/desktop (browser policy).
   // User can unmute with the speaker control — same pattern as Instagram/Facebook Reels.
@@ -20626,6 +20728,20 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
     </div>
   );
 }
+
+const WorldReelCard = React.memo(WorldReelCardImpl, (prev, next) => {
+  // Skip re-render when inactive reel props are unchanged (big win on swipe)
+  if (prev.isActive !== next.isActive) return false;
+  if (prev.liked !== next.liked || prev.supered !== next.supered || prev.saved !== next.saved) return false;
+  if (prev.forceMuted !== next.forceMuted || prev.compact !== next.compact) return false;
+  if (prev.post?.id !== next.post?.id) return false;
+  if ((prev.post?.super_count || 0) !== (next.post?.super_count || 0)) return false;
+  if ((prev.post?.views || 0) !== (next.post?.views || 0)) return false;
+  if ((prev.post?.comments_count || 0) !== (next.post?.comments_count || 0)) return false;
+  if (prev.post?.video_url !== next.post?.video_url) return false;
+  if (prev.currentUser?.id !== next.currentUser?.id) return false;
+  return true; // equal → skip render
+});
 
 // Official Merveil AI seed reels — shown when the World feed is empty so
 // citizens always land on real video (not a blank screen). Public sample
@@ -21814,18 +21930,6 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
             aria-label="Post a World reel">
             <Plus size={14} /> Post
           </button>
-          <button type="button" onClick={openSavedGallery}
-            className="pointer-events-auto flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-full shadow-lg min-h-[40px]"
-            style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.25)", color: "#fff" }}
-            aria-label="Saved gallery">
-            <Bookmark size={14} color="#FBBF24" /> Saved
-          </button>
-          <div className="pointer-events-auto px-2.5 py-1 rounded-full text-left"
-            style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.2)" }}>
-            <div className="text-[10px] font-bold" style={{ color: "#fff" }}>WORLD REELS</div>
-            <div className="text-[8px] leading-tight" style={{ color: "rgba(255,255,255,0.65)" }}>What should I discover next?</div>
-          </div>
-          <div className="flex-1" />
           <div className="pointer-events-auto flex rounded-full overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.2)", background: "rgba(0,0,0,0.45)" }} role="group" aria-label="Reel presentation size">
             {[
               { id: "full", label: "Full" },
@@ -21841,7 +21945,8 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
                 }}>{m.label}</button>
             ))}
           </div>
-        </div>
+          <div className="flex-1" />
+                  </div>
         {loading && reelItems.length === 0 ? (
           <div className="h-full flex items-center justify-center text-sm" style={{ color: "rgba(255,255,255,0.7)" }} role="status">Loading World…</div>
         ) : reelItems.length === 0 ? (
@@ -23580,11 +23685,23 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
 
           {mode === "manual" && (
             <>
-              <div className="flex gap-2">
-                {["Sale", "Rent"].map((t) => (
-                  <button key={t} type="button" onClick={() => setField("type", t)}
-                    className="flex-1 py-2 rounded-xl text-xs font-bold border" style={chip(form.type === t)}>{t}</button>
+              <div className="flex gap-2 flex-wrap">
+                {["Sale", "Rent", "Buy", "Hotel"].map((t) => (
+                  <button key={t} type="button" onClick={() => {
+                    setField("type", t);
+                    // Disposition drives labels & defaults
+                    if (t === "Rent") setField("category", form.category || "Apartment");
+                    if (t === "Hotel") setField("category", "Hotel");
+                    if (t === "Buy" || t === "Sale") setField("category", form.category === "Hotel" ? "Apartment" : (form.category || "Apartment"));
+                  }}
+                    className="flex-1 min-w-[64px] py-2 rounded-xl text-xs font-bold border" style={chip(form.type === t)}>{t}</button>
                 ))}
+              </div>
+              <div className="text-[11px] px-0.5" style={{ color: T.sub }}>
+                {form.type === "Rent" && "Rent listing — yearly/monthly price, deposit fields welcome in description."}
+                {form.type === "Sale" && "Sale listing — asking price in AED."}
+                {form.type === "Buy" && "Wanted / Buy request — what you are looking to purchase."}
+                {form.type === "Hotel" && "Hotel / short-stay — nightly or package rate."}
               </div>
               <input
                 value={form.title}
@@ -23596,11 +23713,12 @@ function PostPropertyModal({ onClose, statuses, onPublish }) {
               <div className="grid grid-cols-2 gap-2">
                 <select value={form.category} onChange={(e) => setField("category", e.target.value)}
                   className="text-sm rounded-xl border px-3 py-2.5" style={{ borderColor: T.line, background: "#fff" }}>
-                  {["Apartment", "Villa", "Townhouse", "Penthouse", "Office", "Retail", "Plot", "Warehouse"].map((c) => (
+                  {["Apartment", "Villa", "Townhouse", "Penthouse", "Hotel", "Office", "Retail", "Plot", "Warehouse"].map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
-                <input value={form.price} onChange={(e) => setField("price", e.target.value)} placeholder="Price AED"
+                <input value={form.price} onChange={(e) => setField("price", e.target.value)}
+                  placeholder={form.type === "Rent" ? "Rent AED / year" : form.type === "Hotel" ? "Rate AED / night" : form.type === "Buy" ? "Budget AED" : "Sale price AED"}
                   className="text-sm rounded-xl border px-3 py-2.5 outline-none" style={{ borderColor: T.line, background: "#fff" }} />
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -27381,9 +27499,26 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
     let cancelled = false;
     const load = () => {
       merveilFetch(`/api/people?action=profile&userId=${encodeURIComponent(userId)}`)
-        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => (r.ok ? r.json() : r.json().catch(() => null).then((b) => ({ _fail: true, status: r.status, body: b }))))
         .then((data) => {
-          if (cancelled || !data) return;
+          if (cancelled) return;
+          if (!data || data._fail || !data.profile) {
+            // Never dead-end: show a usable card so Group / Pulse taps always open a profile
+            let hint = {};
+            try { hint = JSON.parse(sessionStorage.getItem("merveil_creator_hint_" + String(userId)) || "{}"); } catch {}
+            setProfile((prev) => prev || {
+              id: userId,
+              name: hint.name || "Merveil Citizen",
+              avatar_url: hint.avatar_url || null,
+              bio: "",
+              passport_tier: "core",
+              account_type: "citizen",
+            });
+            setWorldPosts([]);
+            setListings([]);
+            setGroupPosts([]);
+            return;
+          }
           setProfile(data.profile || null);
           setWorldPosts(data.worldPosts || []);
           setListings(data.listings || []);
@@ -33114,7 +33249,12 @@ function AppInner() {
   useEffect(() => {
     const onOpen = (e) => {
       const id = e?.detail?.userId;
-      if (id && String(id) !== "merveil-ai") setGlobalCreatorId(String(id));
+      if (id && String(id) !== "merveil-ai") {
+        try {
+          if (e.detail?.name) sessionStorage.setItem("merveil_creator_hint_" + String(id), JSON.stringify({ name: e.detail.name, avatar_url: e.detail.avatar_url || null }));
+        } catch {}
+        setGlobalCreatorId(String(id));
+      }
     };
     window.addEventListener("merveil:open-creator-profile", onOpen);
     return () => window.removeEventListener("merveil:open-creator-profile", onOpen);

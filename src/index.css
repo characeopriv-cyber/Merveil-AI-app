@@ -212,3 +212,24 @@ html.merveil-scroll-unlock #root {
     max-width: 1360px;
   }
 }
+
+
+/* react-perf — isolate expensive layers */
+.gpu-reel,
+[data-fill="1"] {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+.merveil-app-scroll {
+  contain: layout style;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.merveil-list-row,
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
+}
+img, video {
+  content-visibility: auto;
+}

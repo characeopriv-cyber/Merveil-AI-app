@@ -2,18 +2,12 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
-import { startMerveilRealtime } from "./merveilRealtime.js";
-import { startMerveilNotifications } from "./merveilNotifications.js";
-import { startMerveilProductionFeeds } from "./merveilProductionFeeds.js";
-import { startMerveilBoost } from "./merveilBoostGlobal.js";
-import { startMerveilControl } from "./merveilControlGlobal.js";
 
-startMerveilRealtime();
-startMerveilNotifications();
-startMerveilProductionFeeds();
-startMerveilBoost();
-startMerveilControl();
+// PlusHub floating trigger removed — it covered the notification bell.
+// Secondary destinations (Sound, Arena, AI Call, Community, Transactions)
+// and Ecosystem rooms stay reachable from Passport → More / Ecosystem.
 
+try { document.getElementById("merveil-boot")?.remove(); } catch {}
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <App />
