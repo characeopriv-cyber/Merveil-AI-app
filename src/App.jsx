@@ -10,6 +10,530 @@ function merveilStartTransition(fn) {
   }
 }
 
+/* —— World video preload + compress + songs (TikTok-style) —— */
+const MERVEIL_SONGS = [
+  { id: "mh-1", title: "Desert Pulse", artist: "Merveil Sound", genre: "afrobeat", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" },
+  { id: "mh-2", title: "Marina Night", artist: "Merveil Sound", genre: "chill", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3" },
+  { id: "mh-3", title: "Burj Drive", artist: "Merveil Sound", genre: "electronic", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3" },
+  { id: "mh-4", title: "Souk Rhythm", artist: "Merveil Sound", genre: "arabic", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3" },
+  { id: "mh-5", title: "Gulf Breeze", artist: "Merveil Sound", genre: "chill", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3" },
+  { id: "mh-6", title: "Arena Heat", artist: "Merveil Sound", genre: "workout", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3" },
+  { id: "mh-7", title: "Citizen Loop", artist: "Merveil Sound", genre: "hiphop", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3" },
+  { id: "mh-8", title: "Skyline Jazz", artist: "Merveil Sound", genre: "jazz", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3" },
+  { id: "mh-9", title: "Island Dub", artist: "Merveil Sound", genre: "reggae", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3" },
+  { id: "mh-10", title: "Neon Creek", artist: "Merveil Sound", genre: "electronic", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3" },
+  { id: "mh-11", title: "Passport Groove", artist: "Merveil Sound", genre: "afrobeat", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3" },
+  { id: "mh-12", title: "Quiet Office", artist: "Merveil Sound", genre: "chill", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3" },
+  { id: "mh-13", title: "Late Call", artist: "Merveil Sound", genre: "jazz", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-13.mp3" },
+  { id: "mh-14", title: "Deal Flow", artist: "Merveil Sound", genre: "hiphop", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-14.mp3" },
+  { id: "mh-15", title: "World Open", artist: "Merveil Sound", genre: "electronic", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-15.mp3" },
+  { id: "mh-16", title: "Circle Energy", artist: "Merveil Sound", genre: "workout", duration: 372, preview_url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3" },
+];
+const MERVEIL_SONG_GENRES = ["all", "afrobeat", "arabic", "chill", "electronic", "hiphop", "jazz", "reggae", "workout"];
+function findMerveilSong(id) {
+  if (!id) return null;
+  return MERVEIL_SONGS.find((s) => String(s.id) === String(id)) || null;
+}
+function filterMerveilSongs(genre = "all", q = "") {
+  const query = String(q || "").trim().toLowerCase();
+  return MERVEIL_SONGS.filter((s) => {
+    if (genre && genre !== "all" && s.genre !== genre) return false;
+    if (!query) return true;
+    return s.title.toLowerCase().includes(query) || s.artist.toLowerCase().includes(query) || s.genre.toLowerCase().includes(query);
+  });
+}
+
+const worldVideoPreloadCache = typeof window !== "undefined" ? new Map() : null;
+const worldVideoPreloadOrder = [];
+function merveilPreloadWorldVideos(urls, slots = 5) {
+  if (!worldVideoPreloadCache || typeof document === "undefined") return;
+  const list = [...new Set((urls || []).filter(Boolean))];
+  list.forEach((url) => {
+    if (worldVideoPreloadCache.has(url)) return;
+    const el = document.createElement("video");
+    el.preload = "auto";
+    el.muted = true;
+    el.playsInline = true;
+    el.setAttribute("playsinline", "");
+    try { el.crossOrigin = "anonymous"; } catch {}
+    el.src = url;
+    try { el.load(); } catch {}
+    try { fetch(url, { mode: "no-cors", cache: "force-cache" }).catch(() => {}); } catch {}
+    worldVideoPreloadCache.set(url, el);
+    worldVideoPreloadOrder.push(url);
+    while (worldVideoPreloadOrder.length > slots) {
+      const old = worldVideoPreloadOrder.shift();
+      const doomed = worldVideoPreloadCache.get(old);
+      worldVideoPreloadCache.delete(old);
+      try { doomed.removeAttribute("src"); doomed.load(); } catch {}
+    }
+  });
+}
+
+async function compressWorldVideoFile(file, {
+  onProgress,
+  signal,
+  maxEdge = 1080,
+  maxSec = 60,
+  targetBitrate,
+} = {}) {
+  const result = {
+    file,
+    compressed: false,
+    error: null,
+    code: null,
+    duration: null,
+    width: null,
+    height: null,
+    originalBytes: file?.size || 0,
+    bytes: file?.size || 0,
+  };
+  if (!file) {
+    result.error = "No file selected";
+    result.code = "NO_FILE";
+    return result;
+  }
+  if (typeof document === "undefined") {
+    result.error = "Compression only runs in the browser";
+    result.code = "NO_DOM";
+    return result;
+  }
+  if (typeof MediaRecorder === "undefined") {
+    result.error = "This browser cannot compress video — uploading original";
+    result.code = "NO_MEDIARECORDER";
+    return result;
+  }
+  if (signal?.aborted) {
+    result.error = "Cancelled";
+    result.code = "ABORTED";
+    return result;
+  }
+
+  let mime = null;
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+    "video/mp4",
+  ];
+  for (const m of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+    } catch {}
+  }
+  if (!mime) {
+    result.error = "No supported recorder format — uploading original";
+    result.code = "NO_MIME";
+    return result;
+  }
+
+  const url = URL.createObjectURL(file);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.src = url;
+
+  const abortErr = () => {
+    const e = new Error("Cancelled");
+    e.code = "ABORTED";
+    return e;
+  };
+
+  try {
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("Could not read video metadata (timeout)")), 25000);
+      video.onloadedmetadata = () => { clearTimeout(t); resolve(); };
+      video.onerror = () => { clearTimeout(t); reject(new Error("Could not decode this video file")); };
+      if (signal) {
+        signal.addEventListener("abort", () => { clearTimeout(t); reject(abortErr()); }, { once: true });
+      }
+    });
+
+    if (signal?.aborted) throw abortErr();
+
+    const rawDur = Number(video.duration);
+    if (!Number.isFinite(rawDur) || rawDur <= 0) {
+      result.error = "Video duration unknown — uploading original";
+      result.code = "BAD_DURATION";
+      return result;
+    }
+    const duration = Math.min(rawDur, maxSec);
+    result.duration = duration;
+
+    let w = video.videoWidth || 720;
+    let h = video.videoHeight || 1280;
+    if (w < 16 || h < 16) {
+      result.error = "Video dimensions too small";
+      result.code = "BAD_SIZE";
+      return result;
+    }
+
+    const long = Math.max(w, h);
+    const compressOver = 8 * 1024 * 1024; // 8MB
+    // Skip if already mobile-friendly
+    if (file.size <= compressOver && long <= maxEdge + 20 && rawDur <= maxSec + 0.5) {
+      result.code = "SKIP_SMALL";
+      result.width = w;
+      result.height = h;
+      return result;
+    }
+
+    if (long > maxEdge) {
+      const scale = maxEdge / long;
+      w = Math.max(2, Math.round(w * scale));
+      h = Math.max(2, Math.round(h * scale));
+    }
+    w -= w % 2;
+    h -= h % 2;
+    result.width = w;
+    result.height = h;
+
+    // Adaptive bitrate: ~0.1 bit per pixel per frame at 24fps, clamped
+    const pixels = w * h;
+    const adaptive = Math.round(pixels * 24 * 0.09);
+    const bitrate = Math.min(
+      Math.max(targetBitrate || adaptive, 900_000),
+      2_800_000
+    );
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    if (!ctx) {
+      result.error = "Canvas unavailable — uploading original";
+      result.code = "NO_CANVAS";
+      return result;
+    }
+
+    const fps = 24;
+    const stream = canvas.captureStream(fps);
+
+    // Prefer real audio track from the element
+    try {
+      const captured = video.captureStream?.() || video.mozCaptureStream?.();
+      if (captured) {
+        captured.getAudioTracks().forEach((t) => {
+          try { stream.addTrack(t); } catch {}
+        });
+      }
+    } catch (e) {
+      console.warn("[merveil] audio capture skipped", e?.message || e);
+    }
+
+    const chunks = [];
+    let recorder;
+    try {
+      recorder = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: bitrate,
+        audioBitsPerSecond: 96_000,
+      });
+    } catch (e) {
+      try {
+        recorder = new MediaRecorder(stream, { mimeType: mime });
+      } catch (e2) {
+        result.error = e2.message || "MediaRecorder failed to start";
+        result.code = "RECORDER_INIT";
+        return result;
+      }
+    }
+
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size) chunks.push(e.data);
+    };
+    recorder.onerror = (ev) => {
+      console.warn("[merveil] recorder error", ev?.error || ev);
+    };
+
+    const stopped = new Promise((resolve, reject) => {
+      recorder.onstop = () => resolve();
+      recorder.onerror = (ev) => reject(ev?.error || new Error("Recorder failed"));
+    });
+
+    // Seek to start reliably
+    try {
+      video.currentTime = 0;
+      await new Promise((r) => {
+        const t = setTimeout(r, 500);
+        video.onseeked = () => { clearTimeout(t); r(); };
+      });
+    } catch {}
+
+    if (signal?.aborted) throw abortErr();
+
+    try {
+      recorder.start(200);
+    } catch (e) {
+      result.error = e.message || "Could not start compression";
+      result.code = "RECORDER_START";
+      return result;
+    }
+
+    try {
+      await video.play();
+    } catch (e) {
+      // draw frames without play if needed
+      console.warn("[merveil] video.play blocked during compress", e?.message || e);
+    }
+
+    const startedAt = performance.now();
+    await new Promise((resolve) => {
+      let lastDraw = 0;
+      const frameInterval = 1000 / fps;
+      const hardStop = setTimeout(() => {
+        try { video.pause(); } catch {}
+        try { if (recorder.state !== "inactive") recorder.stop(); } catch {}
+        resolve();
+      }, Math.ceil(duration * 1000) + 12000);
+
+      const tick = (now) => {
+        if (signal?.aborted) {
+          clearTimeout(hardStop);
+          try { video.pause(); } catch {}
+          try { if (recorder.state !== "inactive") recorder.stop(); } catch {}
+          resolve();
+          return;
+        }
+        const done =
+          video.ended ||
+          video.paused && video.currentTime > 0.2 && video.currentTime >= duration - 0.05 ||
+          video.currentTime >= duration;
+        if (done) {
+          clearTimeout(hardStop);
+          try { video.pause(); } catch {}
+          try { if (recorder.state !== "inactive") recorder.stop(); } catch {}
+          resolve();
+          return;
+        }
+        if (now - lastDraw >= frameInterval - 1) {
+          lastDraw = now;
+          try {
+            ctx.drawImage(video, 0, 0, w, h);
+          } catch (drawErr) {
+            // occasional decode glitches — skip frame
+          }
+          try {
+            onProgress?.(Math.min(0.99, video.currentTime / duration), {
+              currentTime: video.currentTime,
+              duration,
+              bitrate,
+              width: w,
+              height: h,
+            });
+          } catch {}
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+
+    if (signal?.aborted) throw abortErr();
+
+    try {
+      await stopped;
+    } catch (e) {
+      result.error = e.message || "Compression recorder stopped with error";
+      result.code = "RECORDER_STOP";
+      return result;
+    }
+
+    stream.getTracks().forEach((t) => {
+      try { t.stop(); } catch {}
+    });
+
+    const blob = new Blob(chunks, { type: (mime || "video/webm").split(";")[0] });
+    if (!blob.size) {
+      result.error = "Compression produced an empty file — uploading original";
+      result.code = "EMPTY_OUTPUT";
+      return result;
+    }
+
+    // Keep original if compressed is not meaningfully smaller (unless we had to downscale a lot)
+    const mustKeep = long > maxEdge * 1.15 || rawDur > maxSec + 1;
+    if (!mustKeep && blob.size >= file.size * 0.92) {
+      result.code = "NOT_SMALLER";
+      result.error = null;
+      return result;
+    }
+
+    const ext = (mime || "").includes("mp4") ? "mp4" : "webm";
+    const out = new File([blob], `merveil-reel-${Date.now()}.${ext}`, {
+      type: blob.type || "video/webm",
+    });
+    result.file = out;
+    result.compressed = true;
+    result.bytes = out.size;
+    result.code = "OK";
+    result.elapsedMs = Math.round(performance.now() - startedAt);
+    result.bitrate = bitrate;
+    result.mime = mime;
+    try {
+      onProgress?.(1, { done: true, bytes: out.size, originalBytes: file.size });
+    } catch {}
+    return result;
+  } catch (e) {
+    if (e?.code === "ABORTED" || signal?.aborted) {
+      result.error = "Compression cancelled";
+      result.code = "ABORTED";
+      return result;
+    }
+    result.error = e?.message || "Compression failed — uploading original";
+    result.code = "EXCEPTION";
+    console.warn("[merveil] compressWorldVideoFile", e);
+    return result;
+  } finally {
+    try { URL.revokeObjectURL(url); } catch {}
+    try { video.removeAttribute("src"); video.load(); } catch {}
+  }
+}
+
+/** Canvas waveform visualizer driven by Web Audio AnalyserNode */
+function createMerveilWaveformController(canvas, {
+  bars = 32,
+  color = "#0E9AA7",
+  bg = "transparent",
+} = {}) {
+  let raf = 0;
+  let analyser = null;
+  let ctxAudio = null;
+  let source = null;
+  let data = null;
+  let running = false;
+  const c2d = canvas?.getContext?.("2d");
+
+  function draw() {
+    if (!c2d || !canvas || !analyser || !data) return;
+    analyser.getByteFrequencyData(data);
+    const w = canvas.width;
+    const h = canvas.height;
+    c2d.clearRect(0, 0, w, h);
+    if (bg && bg !== "transparent") {
+      c2d.fillStyle = bg;
+      c2d.fillRect(0, 0, w, h);
+    }
+    const gap = 2;
+    const barW = Math.max(2, (w - gap * bars) / bars);
+    for (let i = 0; i < bars; i++) {
+      const idx = Math.floor((i / bars) * data.length);
+      const v = data[idx] / 255;
+      const barH = Math.max(2, v * h * 0.92);
+      const x = i * (barW + gap);
+      const y = (h - barH) / 2;
+      c2d.fillStyle = color;
+      c2d.globalAlpha = 0.45 + v * 0.55;
+      c2d.beginPath();
+      if (c2d.roundRect) c2d.roundRect(x, y, barW, barH, 2);
+      else c2d.rect(x, y, barW, barH);
+      c2d.fill();
+    }
+    c2d.globalAlpha = 1;
+  }
+
+  function loop() {
+    if (!running) return;
+    draw();
+    raf = requestAnimationFrame(loop);
+  }
+
+  async function connect(mediaEl) {
+    disconnect();
+    if (!mediaEl || !canvas) return false;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      ctxAudio = new AC();
+      if (ctxAudio.state === "suspended") await ctxAudio.resume().catch(() => {});
+      analyser = ctxAudio.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.72;
+      // Prefer a dedicated element so createMediaElementSource is not called twice on the same node
+      let el = mediaEl;
+      try {
+        if (mediaEl.src) {
+          el = new Audio(mediaEl.src);
+          el.crossOrigin = "anonymous";
+          el.loop = true;
+          el.volume = mediaEl.volume ?? 0.85;
+          await el.play().catch(() => {});
+        }
+      } catch {}
+      source = ctxAudio.createMediaElementSource(el);
+      source.connect(analyser);
+      analyser.connect(ctxAudio.destination);
+      data = new Uint8Array(analyser.frequencyBinCount);
+      running = true;
+      loop();
+      return true;
+    } catch (e) {
+      console.warn("[merveil] waveform connect", e?.message || e);
+      disconnect();
+      return false;
+    }
+  }
+
+  function disconnect() {
+    running = false;
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    try { source?.disconnect(); } catch {}
+    try { analyser?.disconnect(); } catch {}
+    source = null;
+    analyser = null;
+    data = null;
+    if (ctxAudio) {
+      try { ctxAudio.close(); } catch {}
+      ctxAudio = null;
+    }
+    if (c2d && canvas) c2d.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  return { connect, disconnect, draw };
+}
+
+function MerveilWaveform({ audioRef, active, color = "#5EEAD4", height = 36, className = "" }) {
+  const canvasRef = useRef(null);
+  const ctrlRef = useRef(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = canvas.clientWidth || 280;
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(height * dpr);
+    const ctrl = createMerveilWaveformController(canvas, { bars: 40, color });
+    ctrlRef.current = ctrl;
+    return () => { ctrl.disconnect(); ctrlRef.current = null; };
+  }, [height, color]);
+
+  useEffect(() => {
+    const ctrl = ctrlRef.current;
+    const el = audioRef?.current;
+    if (!ctrl) return;
+    if (active && el) {
+      ctrl.connect(el).catch(() => {});
+    } else {
+      ctrl.disconnect();
+    }
+    return () => { try { ctrl.disconnect(); } catch {} };
+  }, [active, audioRef]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className={className}
+      style={{ width: "100%", height, display: "block", borderRadius: 8 }}
+      aria-hidden
+    />
+  );
+}
+
+
+
+
 import { createPortal } from "react-dom";
 import { createClient as createSupabaseBrowserClient } from "@supabase/supabase-js";
 
@@ -19778,9 +20302,9 @@ function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpe
 
 function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike, onToggleSuper, onToggleSave, onCall, onOpenCreator, onChat, forceMuted, compact, currentUser, onRequireSignIn, onEdit, onDelete, onNotInterested }) {
   const videoRef = useRef(null);
-  // Start muted so autoplay works for visitors on iOS/Android/desktop (browser policy).
-  // User can unmute with the speaker control — same pattern as Instagram/Facebook Reels.
-  const [muted, setMuted] = useState(true);
+  const songRef = useRef(null);
+  // Prefer sound on (TikTok-style). Browsers may still force mute until gesture — we fall back.
+  const [muted, setMuted] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -19847,6 +20371,27 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
       try { el.currentTime = 0; } catch {}
     }
   }, [isActive, muted, forceMuted, post?.id, post?.video_url, compact]);
+
+  // Attached World song (library) — plays with active reel
+  useEffect(() => {
+    const song = findMerveilSong(post?.music_track_id) || (post?.music_url ? { preview_url: post.music_url, title: post.music_title } : null);
+    if (!song?.preview_url) {
+      try { songRef.current?.pause(); } catch {}
+      return;
+    }
+    if (!songRef.current) songRef.current = new Audio();
+    const a = songRef.current;
+    if (isActive && !forceMuted) {
+      if (a.src !== song.preview_url) a.src = song.preview_url;
+      a.loop = true;
+      a.muted = muted;
+      a.volume = muted ? 0 : 0.85;
+      a.play().catch(() => {});
+    } else {
+      try { a.pause(); } catch {}
+    }
+    return () => { try { a.pause(); } catch {} };
+  }, [isActive, forceMuted, muted, post?.music_track_id, post?.music_url, post?.id]);
 
   const share = (e) => {
     e.stopPropagation();
@@ -19934,7 +20479,7 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
           key={post.video_url}
           src={post.video_url}
           className="absolute inset-0 w-full h-full object-cover bg-black"
-          style={{ opacity: videoReady && !videoError ? 1 : 0 }}
+          style={{ opacity: videoError ? 0 : 1, background: "#000" }}
           loop
           muted={!!forceMuted || muted}
           playsInline
@@ -19942,12 +20487,14 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
           x5-playsinline=""
           x5-video-player-type="h5"
           autoPlay
-          preload="metadata"
+          preload="auto"
           controls={false}
           disablePictureInPicture
           poster={post.photo_url || post.poster_url || post.cover_url || post.thumbnail_url || undefined}
+          onLoadStart={() => { setVideoReady(false); }}
           onLoadedData={() => { setVideoReady(true); try { videoRef.current?.play()?.catch(() => {}); } catch {} }}
           onCanPlay={() => { setVideoReady(true); try { videoRef.current?.play()?.catch(() => {}); } catch {} }}
+          onPlaying={() => setVideoReady(true)}
           onError={() => setVideoError(true)}
         />
       ) : !post.photo_url && !post.poster_url && !post.cover_url ? (
@@ -20058,7 +20605,16 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
               </button>
               <button type="button" className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/10"
                 onClick={() => { setShowMoreTools(false); currentUser ? onToggleSave?.() : onRequireSignIn?.(); }}>
-                <Bookmark size={14} color={saved ? "#FBBF24" : "#fff"} /> {saved ? "Saved" : "Save"}
+                <Bookmark size={14} color={saved ? "#FBBF24" : "#fff"} /> {saved ? "Saved · in profile" : "Save to profile"}
+              </button>
+              <button type="button" className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/10"
+                onClick={() => {
+                  setShowMoreTools(false);
+                  try {
+                    window.dispatchEvent(new CustomEvent("merveil:world-download", { detail: { post } }));
+                  } catch {}
+                }}>
+                <Download size={14} color="#fff" /> Download video
               </button>
               <button type="button" className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/10"
                 onClick={() => { setShowMoreTools(false); repost(); }}>
@@ -20190,7 +20746,14 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
     videoUrl: editPost?.video_url || "",
     photoUrls: editPost?.photo_urls || (editPost?.photo_url ? [editPost.photo_url] : []),
     mediaType: editPost?.media_type || (defaultAsReel ? "video" : "photo"),
+    musicTrackId: editPost?.music_track_id || null,
+    musicTitle: editPost?.music_title || null,
+    musicUrl: editPost?.music_url || null,
   });
+  const [songGenre, setSongGenre] = useState("all");
+  const [songQuery, setSongQuery] = useState("");
+  const [songPreviewId, setSongPreviewId] = useState(null);
+  const songAudioRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -20218,7 +20781,7 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
   }, [playbackRate, muted, videoPreview, step]);
 
   const onVideoPick = async (e) => {
-    const file = e.target.files?.[0];
+    let file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     const isVideo = (file.type && file.type.startsWith("video/"))
@@ -20226,13 +20789,43 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
     if (!isVideo) { setError("Please pick a video file (mp4, mov, webm…)."); return; }
     if (file.size > 80 * 1024 * 1024) { setError("Video must be under 80 MB."); return; }
 
+    setError("");
+    setUploading(true);
+    setStep("edit");
+    const compressAbort = { current: new AbortController() };
+    try {
+      setError("Optimizing video for World…");
+      const result = await compressWorldVideoFile(file, {
+        signal: compressAbort.current.signal,
+        onProgress: (p) => {
+          try {
+            if (typeof p === "number") setError(`Optimizing video… ${Math.round(p * 100)}%`);
+          } catch {}
+        },
+      });
+      if (result.code === "ABORTED") {
+        setError("Compression cancelled — pick the video again to retry.");
+        setUploading(false);
+        return;
+      }
+      if (result.compressed && result.file) {
+        file = result.file;
+        const from = ((result.originalBytes || 0) / 1e6).toFixed(1);
+        const to = ((result.bytes || file.size) / 1e6).toFixed(1);
+        setError(`Optimized ${from}MB → ${to}MB · ready`);
+      } else if (result.error && result.code && !["SKIP_SMALL", "NOT_SMALLER", "NO_MEDIARECORDER", "NO_MIME"].includes(result.code)) {
+        setError(`${result.error} — continuing with original`);
+      } else {
+        setError("");
+      }
+    } catch (err) {
+      setError(`Optimize skipped — ${err?.message || "using original file"}`);
+    }
+
     const localUrl = URL.createObjectURL(file);
     setVideoPreview(localUrl);
     setCoverDataUrl(null);
     if (!form.title.trim()) upd("title", file.name.replace(/\.[^.]+$/, "").slice(0, 80) || "World Reel");
-    setError("");
-    setUploading(true);
-    setStep("edit");
 
     const duration = await new Promise((resolve) => {
       const v = document.createElement("video");
@@ -20657,6 +21250,97 @@ function PostWorldModal({ onClose, onPublish, defaultAsReel = false, editPost = 
               <input placeholder="Title" value={form.title} onChange={(e) => upd("title", e.target.value)}
                 className="text-sm px-3 py-2.5 rounded-xl border outline-none bg-transparent"
                 style={{ borderColor: "rgba(255,255,255,0.12)", color: "#fff" }} />
+
+              {/* Songs library — TikTok-style */}
+              <div className="rounded-xl border p-3" style={{ borderColor: "rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.25)" }}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.55)" }}>🎵 Song</div>
+                  {form.musicTrackId ? (
+                    <button type="button" className="text-[10px] font-semibold" style={{ color: "#F87171" }}
+                      onClick={() => {
+                        try { songAudioRef.current?.pause(); } catch {}
+                        setSongPreviewId(null);
+                        setForm((f) => ({ ...f, musicTrackId: null, musicTitle: null, musicUrl: null }));
+                      }}>Remove</button>
+                  ) : null}
+                </div>
+                {form.musicTrackId ? (
+                  <div className="mb-2">
+                    <div className="text-xs font-semibold text-white">
+                      {form.musicTitle || findMerveilSong(form.musicTrackId)?.title || "Selected"}
+                      <span className="opacity-60 font-normal"> · {findMerveilSong(form.musicTrackId)?.artist || "Merveil Sound"}</span>
+                    </div>
+                    <MerveilWaveform audioRef={songAudioRef} active={!!songPreviewId} color="#5EEAD4" height={32} className="mt-2" />
+                  </div>
+                ) : songPreviewId ? (
+                  <MerveilWaveform audioRef={songAudioRef} active color="#0E9AA7" height={28} className="mb-2" />
+                ) : null}
+                <input
+                  value={songQuery}
+                  onChange={(e) => setSongQuery(e.target.value)}
+                  placeholder="Search songs…"
+                  className="w-full text-xs px-2.5 py-2 rounded-lg border outline-none mb-2 bg-transparent"
+                  style={{ borderColor: "rgba(255,255,255,0.12)", color: "#fff" }}
+                />
+                <div className="flex gap-1.5 overflow-x-auto pb-2 mb-1">
+                  {MERVEIL_SONG_GENRES.map((g) => (
+                    <button key={g} type="button" onClick={() => setSongGenre(g)}
+                      className="text-[10px] font-bold px-2 py-1 rounded-full shrink-0"
+                      style={{
+                        background: songGenre === g ? "#0E9AA7" : "rgba(255,255,255,0.08)",
+                        color: "#fff",
+                      }}>{g}</button>
+                  ))}
+                </div>
+                <div className="max-h-36 overflow-y-auto flex flex-col gap-1">
+                  {filterMerveilSongs(songGenre, songQuery).map((song) => {
+                    const selected = form.musicTrackId === song.id;
+                    const previewing = songPreviewId === song.id;
+                    return (
+                      <div key={song.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
+                        style={{ background: selected ? "rgba(14,154,167,0.25)" : "transparent" }}>
+                        <button type="button" className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: "rgba(255,255,255,0.1)" }}
+                          onClick={() => {
+                            try {
+                              if (!songAudioRef.current) songAudioRef.current = new Audio();
+                              const a = songAudioRef.current;
+                              if (previewing) { a.pause(); setSongPreviewId(null); return; }
+                              a.src = song.preview_url;
+                              a.loop = true;
+                              a.play().catch(() => {});
+                              setSongPreviewId(song.id);
+                            } catch {}
+                          }}
+                          aria-label={previewing ? "Stop" : "Preview"}>
+                          {previewing ? "⏸" : "▶"}
+                        </button>
+                        <button type="button" className="flex-1 text-left min-w-0" onClick={() => {
+                          setForm((f) => ({
+                            ...f,
+                            musicTrackId: song.id,
+                            musicTitle: song.title,
+                            musicUrl: song.preview_url,
+                          }));
+                          try {
+                            if (!songAudioRef.current) songAudioRef.current = new Audio();
+                            const a = songAudioRef.current;
+                            a.src = song.preview_url;
+                            a.loop = true;
+                            a.play().catch(() => {});
+                            setSongPreviewId(song.id);
+                          } catch {}
+                        }}>
+                          <div className="text-xs font-semibold text-white truncate">{song.title}</div>
+                          <div className="text-[10px] truncate" style={{ color: "rgba(255,255,255,0.5)" }}>{song.artist} · {song.genre}</div>
+                        </button>
+                        {selected ? <span className="text-[10px] font-bold" style={{ color: "#5EEAD4" }}>Use</span> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <select value={form.topic} onChange={(e) => upd("topic", e.target.value)}
                 className="text-sm px-3 py-2.5 rounded-xl border outline-none"
                 style={{ borderColor: "rgba(255,255,255,0.12)", background: "#151921", color: "#fff" }}>
@@ -21333,6 +22017,27 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     if (worldReelIndex >= posts.length - 3) loadMoreWorld();
   }, [worldReelIndex, posts.length, hasMoreWorld, loadMoreWorld]);
 
+  // TikTok-style aggressive preload: current + next 3 reels in hidden video elements
+  useEffect(() => {
+    const urls = [];
+    for (let i = Math.max(0, worldReelIndex - 1); i <= worldReelIndex + 3 && i < posts.length; i++) {
+      const u = posts[i]?.video_url;
+      if (u) urls.push(u);
+    }
+    merveilPreloadWorldVideos(urls, 5);
+    const links = urls.slice(0, 4).map((href) => {
+      try {
+        const l = document.createElement("link");
+        l.rel = "preload";
+        l.as = "video";
+        l.href = href;
+        document.head.appendChild(l);
+        return l;
+      } catch { return null; }
+    });
+    return () => { links.forEach((l) => { try { l?.remove(); } catch {} }); };
+  }, [worldReelIndex, posts]);
+
   // Swipe left on World (edge) → open own Creator page
   useEffect(() => {
     if (!currentUser?.id || viewingCreatorId) return;
@@ -21531,6 +22236,16 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     }
   };
 
+  // Explicit download from ⋯ menu
+  useEffect(() => {
+    const onDl = (e) => {
+      const p = e?.detail?.post;
+      if (p) downloadWorldToDevice(p);
+    };
+    window.addEventListener("merveil:world-download", onDl);
+    return () => window.removeEventListener("merveil:world-download", onDl);
+  }, []);
+
   const toggleSave = async (post) => {
     if (!currentUser) { onSignIn?.(); return; }
     const wasSaved = savedIds.includes(post.id);
@@ -21538,8 +22253,13 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
     if (!wasSaved) {
       bumpWorldAffinity({ topic: post.topic, creatorId: post.owner_id, weight: 2 });
       setAffinityTick((t) => t + 1);
-      // Always offer a real device download (phone gallery / Downloads)
+      // Device file + profile library
       downloadWorldToDevice(post);
+      try {
+        window.dispatchEvent(new CustomEvent("merveil:toast", {
+          detail: { type: "success", message: "Saved to your profile · downloading file…" },
+        }));
+      } catch {}
     }
     try {
       const res = await merveilFetch("/api/world?action=save", {
@@ -27454,6 +28174,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
   const [worldPosts, setWorldPosts] = useState([]);
   const [listings, setListings] = useState([]);
   const [groupPosts, setGroupPosts] = useState([]);
+  const [savedReels, setSavedReels] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showPassport, setShowPassport] = useState(false);
@@ -28082,6 +28803,43 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
               </div>
             )}
           </div>
+
+          {/* Own profile — Saved World reels (private library) */}
+          {currentUser && String(currentUser.id) === String(userId) && (
+            <div className="px-4 pb-8">
+              <div className="text-xs font-bold tracking-wide uppercase mb-3 flex items-center gap-2" style={{ color: CREATOR_SUB || "#9CA3AF" }}>
+                <Bookmark size={12} /> Saved · {savedReels.length}
+              </div>
+              {savedReels.length === 0 ? (
+                <div className="text-xs py-4" style={{ color: CREATOR_SUB || "#9CA3AF" }}>
+                  Save a World reel (⋯ → Save) to collect it here and download the file.
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  {savedReels.map((p) => (
+                    <button key={p.id} type="button" onClick={() => onPlayPost?.(p)}
+                      className="relative overflow-hidden aspect-square text-left"
+                      style={{
+                        borderRadius: 14,
+                        background: "#111",
+                        boxShadow: "0 0 0 1px rgba(251,191,36,0.35)",
+                      }}>
+                      {p.photo_url || p.video_url ? (
+                        p.photo_url ? (
+                          <img src={p.photo_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                        ) : (
+                          <video src={p.video_url} muted playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+                        )
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center"><Video size={18} color="#fff" /></div>
+                      )}
+                      <div className="absolute bottom-1 left-1 right-1 text-[9px] font-semibold text-white truncate">{p.title || "Saved"}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -34615,7 +35373,7 @@ function AppInner() {
           + ((tabCounts.pulseFeed + tabCounts.pulseReels) > 0 ? `${tabCounts.pulseFeed + tabCounts.pulseReels} new on Pulse. ` : "")
           + (tabCounts.world > 0 ? `${tabCounts.world} new on World. ` : "")}
       </div>
-      <div className={`fixed bottom-0 left-0 right-0 z-50 m-shell-nav ${rootLiveCall ? "hidden" : ""}`}
+      <div className={`fixed bottom-0 left-0 right-0 z-50 m-shell-nav ${(rootLiveCall || tab === "world") ? "hidden" : ""}`}
         role="navigation"
         aria-label="Main"
         style={{
