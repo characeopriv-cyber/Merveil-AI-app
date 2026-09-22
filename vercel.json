@@ -1,14 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/invite",
-      "destination": "/api/share?type=invite"
-    },
-    {
-      "source": "/invite/",
-      "destination": "/api/share?type=invite"
-    },
-    {
       "source": "/interface",
       "destination": "/interface/index.html"
     },
@@ -55,14 +47,6 @@
     {
       "source": "/merveil-admin-x9k2/(.*)",
       "destination": "/admin/index.html"
-    },
-    {
-      "source": "/api/v1/(.*)",
-      "destination": "/api/v1?route=$1"
-    },
-    {
-      "source": "/api/v1",
-      "destination": "/api/v1?route=health"
     },
     {
       "source": "/developer",
@@ -253,24 +237,40 @@
       "destination": "/developer-portal/$1"
     },
     {
-      "source": "/api/dev/(.*)",
-      "destination": "/api/dev/$1"
+      "source": "/invite",
+      "destination": "/api/router?resource=share&type=invite"
     },
     {
-      "source": "/api/engine/(.*)",
-      "destination": "/api/engine/$1"
+      "source": "/invite/",
+      "destination": "/api/router?resource=share&type=invite"
+    },
+    {
+      "source": "/api/v1/(.*)",
+      "destination": "/api/router?resource=v1&route=$1"
+    },
+    {
+      "source": "/api/v1",
+      "destination": "/api/router?resource=v1&route=health"
+    },
+    {
+      "source": "/api/webhooks/(.*)",
+      "destination": "/api/router?resource=webhooks&hook=$1"
     },
     {
       "source": "/api/studio/(.*)",
-      "destination": "/api/studio/$1"
+      "destination": "/api/router?resource=studio&path=$1"
+    },
+    {
+      "source": "/api/engine/(.*)",
+      "destination": "/api/router?resource=engine&path=$1"
     },
     {
       "source": "/api/enrich",
-      "destination": "/api/enrich"
+      "destination": "/api/router?resource=enrich"
     },
     {
       "source": "/api/enrich/",
-      "destination": "/api/enrich"
+      "destination": "/api/router?resource=enrich"
     },
     {
       "source": "/api/(.*)",
