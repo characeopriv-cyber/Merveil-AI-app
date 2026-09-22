@@ -216,6 +216,122 @@ async function merveilAwardBoostCredits(svc, userId, amount, reason) {
   }
 }
 
+/** Trust is a signal only — never blocks social access (Facebook-style). */
+function merveilTrustLevelFromScore(score) {
+  const n = Math.max(0, Math.min(1000, Number(score) || 0));
+  if (n >= 750) return { level: "elite", label: "Elite trust" };
+  if (n >= 500) return { level: "pillar", label: "Community pillar" };
+  if (n >= 300) return { level: "trusted", label: "Trusted citizen" };
+  if (n >= 100) return { level: "active", label: "Active citizen" };
+  return { level: "newcomer", label: "Building trust" };
+}
+
+function merveilTrustBadgeFromProfile(prof = {}, rep = null) {
+  const passportOk = String(prof.kyc_status || "").toLowerCase() === "verified" || !!prof.passport_verified;
+  const reOk = !!(prof.agent_verified || prof.company_verified || prof.rera_number || prof.re_verified);
+  const score = rep?.score != null ? Number(rep.score) : Number(prof.trust_score) || 0;
+  const lv = rep?.level || prof.trust_level || merveilTrustLevelFromScore(score).level;
+  const label = rep?.trust_label || prof.trust_label || merveilTrustLevelFromScore(score).label;
+  return {
+    passport_verified: !!passportOk,
+    re_verified: !!reOk,
+    verify_label: passportOk && reOk ? "Verified · RE" : passportOk ? "Verified" : reOk ? "RE verified" : "Unverified",
+    trust_score: score,
+    trust_level: lv,
+    trust_label: label,
+  };
+}
+
+/** Recompute + persist reputation for one user (best-effort). */
+async function merveilRecomputeReputation(svc, userId) {
+  if (!userId || !svc) return null;
+  try {
+    const { data: prof } = await svc.from("profiles")
+      .select("id, kyc_status, agent_verified, company_verified, rera_number, passport_tier, created_at")
+      .eq("id", userId).maybeSingle();
+    if (!prof) return null;
+
+    let connectionsCount = 0;
+    try {
+      const { count } = await svc.from("connections").select("*", { count: "exact", head: true })
+        .eq("status", "accepted").or(`user_id.eq.${userId},connected_user_id.eq.${userId}`);
+      connectionsCount = count || 0;
+    } catch (_) {}
+
+    let listingCount = 0, groupLeads = 0, worldCount = 0;
+    try {
+      const { count: c1 } = await svc.from("properties").select("*", { count: "exact", head: true }).eq("owner_id", userId);
+      listingCount = c1 || 0;
+    } catch (_) {}
+    try {
+      const { count: c2 } = await svc.from("area_group_posts").select("*", { count: "exact", head: true }).eq("author_id", userId).is("hidden_at", null);
+      groupLeads = c2 || 0;
+    } catch (_) {}
+    try {
+      const { count: c3 } = await svc.from("world_posts").select("*", { count: "exact", head: true }).eq("owner_id", userId);
+      worldCount = c3 || 0;
+    } catch (_) {}
+
+    let contrib = null;
+    try {
+      const { data } = await svc.from("area_group_contributor_stats").select("*").eq("user_id", userId).maybeSingle();
+      contrib = data;
+    } catch (_) {}
+
+    let openReports = 0, activeSanctions = 0;
+    try {
+      const { count } = await svc.from("reports").select("*", { count: "exact", head: true })
+        .eq("status", "open").eq("target_id", String(userId));
+      openReports = count || 0;
+    } catch (_) {}
+    try {
+      const now = new Date().toISOString();
+      const { count } = await svc.from("area_group_sanctions").select("*", { count: "exact", head: true })
+        .eq("user_id", userId).gte("ends_at", now);
+      activeSanctions = count || 0;
+    } catch (_) {}
+
+    const identity_pts = (String(prof.kyc_status || "").toLowerCase() === "verified" ? 120 : 0)
+      + ((prof.agent_verified || prof.company_verified || prof.rera_number) ? 80 : 0)
+      + (["professional", "investor", "company"].includes(String(prof.passport_tier || "").toLowerCase()) ? 40 : 0);
+
+    const activity_pts = Math.min(250, listingCount * 8 + groupLeads * 6 + worldCount * 5);
+    const network_pts = Math.min(200, connectionsCount * 12);
+    const engagement_pts = Math.min(200,
+      (contrib?.real_leads || 0) * 4
+      + (contrib?.calls_completed || 0) * 8
+      + (contrib?.deals_closed || 0) * 25
+      + (contrib?.inbox_messages || 0) * 1
+    );
+    const reliability_pts = Math.max(0, 100 - activeSanctions * 40 - openReports * 15);
+    const penalty_pts = activeSanctions * 50 + openReports * 20;
+
+    let score = identity_pts + activity_pts + network_pts + engagement_pts + reliability_pts - penalty_pts;
+    score = Math.max(0, Math.min(1000, Math.round(score)));
+    const { level, label } = merveilTrustLevelFromScore(score);
+
+    const row = {
+      user_id: userId,
+      activity_pts, network_pts, engagement_pts, reliability_pts, identity_pts, penalty_pts,
+      score, level, trust_label: label,
+      updated_at: new Date().toISOString(),
+    };
+    await svc.from("citizen_reputation").upsert(row);
+    await svc.from("profiles").update({
+      trust_score: score,
+      trust_level: level,
+      trust_label: label,
+    }).eq("id", userId);
+
+    return row;
+  } catch (e) {
+    console.error("[reputation]", e.message);
+    return null;
+  }
+}
+
+
+
 
 function sameActorId(a, b) {
   if (a == null || b == null) return false;
@@ -2990,7 +3106,7 @@ export default async function handler(req, res) {
         const authorIds = [...new Set((posts || []).map((p) => p.author_id).filter(Boolean))];
         let profiles = {};
         if (authorIds.length) {
-          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, kyc_status, agent_verified, company_verified, account_type, rera_number").in("id", authorIds);
+          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, kyc_status, agent_verified, company_verified, account_type, rera_number, trust_score, trust_level, trust_label").in("id", authorIds);
           for (const pr of profs || []) profiles[pr.id] = pr;
         }
         let presenceMap = {};
@@ -3018,15 +3134,28 @@ export default async function handler(req, res) {
           if (passportOk && reOk) verify_label = "Passport · RE verified";
           else if (passportOk) verify_label = "Passport verified · RE unverified";
           else if (reOk) verify_label = "RE verified · Passport incomplete";
+          const badge = merveilTrustBadgeFromProfile(auth || {}, {
+            score: auth?.trust_score,
+            level: auth?.trust_level,
+            trust_label: auth?.trust_label,
+          });
           return {
             ...p,
-            author: auth,
+            author: {
+              ...(auth || { id: p.author_id, name: "Citizen", avatar_url: null, profession: null }),
+              trust_score: badge.trust_score,
+              trust_level: badge.trust_level,
+              trust_label: badge.trust_label,
+            },
             author_status: presenceMap[p.author_id] || "offline",
             i_supered: mySupers.has(p.id),
             is_mine: actor?.id ? String(p.author_id) === String(actor.id) : false,
-            passport_verified: !!passportOk,
-            re_verified: !!reOk,
-            verify_label,
+            passport_verified: badge.passport_verified,
+            re_verified: badge.re_verified,
+            verify_label: badge.verify_label,
+            trust_score: badge.trust_score,
+            trust_level: badge.trust_level,
+            trust_label: badge.trust_label,
           };
         });
         return sendJson(res, 200, { group: { ...g, i_member: iMember }, posts: enriched });
@@ -3219,6 +3348,7 @@ export default async function handler(req, res) {
             { title: "Similar lead detected", tag: `dup-${contentHash}` });
         }
 
+        try { await merveilRecomputeReputation(svcG, actor.id); } catch (_) {}
         try {
           const { data: st } = await svcG.from("area_group_contributor_stats").select("*").eq("user_id", actor.id).maybeSingle();
           const real_leads = (st?.real_leads || 0) + 1;
@@ -3302,7 +3432,7 @@ export default async function handler(req, res) {
                 }).eq("id", post.id);
               } catch (_) {}
               if (!passportOk) {
-                passportReminder = "Your group lead is on Pulse — complete Passport verification or it may be limited. Update Passport in your profile.";
+                passportReminder = "Your lead is live on Pulse Discover. Tip: a complete Passport helps people trust you faster — optional, never required to post.";
                 await merveilNotifyCitizen(svcG, actor.id, passportReminder, {
                   title: "Merveil · Complete Passport",
                   tag: `passport-pulse-${post.id}`,
@@ -3528,6 +3658,7 @@ export default async function handler(req, res) {
               policy_codes: ai.flags,
               issued_by: "merveil_ai",
             });
+            try { await merveilRecomputeReputation(svcG, existing.author_id); } catch (_) {}
             await merveilNotifyCitizen(svcG, existing.author_id,
               `Merveil AI suspended group posting for ${days} days. Reason: ${category}.`,
               { title: "Merveil AI · Suspension", tag: `sus-${postId}` });
@@ -9485,7 +9616,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         try { peopleClient = adminClient(); } catch { peopleClient = anonClient(); }
         const { data, error } = await peopleClient
           .from("profiles")
-          .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought, role_label")
+          .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought, role_label, kyc_status, agent_verified, company_verified")
           .eq("id", userId)
           .maybeSingle();
         if (error) return sendJson(res, 400, { error: error.message });
@@ -9547,12 +9678,51 @@ return sendJson(res, 404, { error: "Unknown groups action." });
           + (worldPosts || []).reduce((sum, p) => sum + (Number(p.views) || Number(p.views_count) || 0), 0);
         const totalSupers = worldSupers;
 
+        let groupPosts = [];
+        try {
+          const { data: gp } = await peopleClient
+            .from("area_group_posts")
+            .select("id, body, media_urls, group_id, created_at, views_count, super_count, hidden_at")
+            .eq("author_id", userId)
+            .is("hidden_at", null)
+            .order("created_at", { ascending: false })
+            .limit(40);
+          groupPosts = gp || [];
+        } catch (_) {}
+
+        // Public verification flags only (never raw KYC docs)
+        if (data) {
+          data.passport_verified = String(data.kyc_status || "").toLowerCase() === "verified";
+          data.re_verified = !!(data.agent_verified || data.company_verified);
+          let repSnap = null;
+          try { repSnap = await merveilRecomputeReputation(peopleClient, userId); } catch (_) {}
+          const badge = merveilTrustBadgeFromProfile(data, repSnap);
+          data.passport_verified = badge.passport_verified;
+          data.re_verified = badge.re_verified;
+          data.verify_label = badge.verify_label;
+          data.trust_score = badge.trust_score;
+          data.trust_level = badge.trust_level;
+          data.trust_label = badge.trust_label;
+          delete data.kyc_status;
+          delete data.agent_verified;
+          delete data.company_verified;
+        }
+
         return sendJson(res, 200, {
           profile: data,
           listings: (listings || []).map((l) => ({
             id: `db-${l.id}`, title: l.title, area: l.area, emirate: l.emirate, price: l.price,
             type: l.listing_type || "Sale", category: l.category,
             photo_url: l.photo_url, photo_urls: l.photo_urls, views: l.views || 0, likesCount: l.likes_count || 0,
+          })),
+          groupPosts: groupPosts.map((g) => ({
+            id: g.id,
+            body: g.body,
+            media_urls: g.media_urls || [],
+            group_id: g.group_id,
+            created_at: g.created_at,
+            views_count: g.views_count || 0,
+            super_count: g.super_count || 0,
           })),
           worldPosts: (worldPosts || []).map((p) => ({
             id: p.id, title: p.title, topic: p.topic, country: p.country, description: p.description,
@@ -9562,6 +9732,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
           })),
           stats: {
             listingCount: (listings || []).length,
+            groupPostCount: groupPosts.length,
             worldPostCount: (worldPosts || []).length,
             totalLikes,
             totalViews,
@@ -9714,6 +9885,48 @@ return sendJson(res, 404, { error: "Unknown groups action." });
       }
 
       return sendJson(res, 404, { error: "Not found" });
+    }
+
+
+    // ------------------------------------------------------- /api/reputation
+    // Public trust card — signal only, never a permission gate.
+    if (resource === "reputation") {
+      let svcR;
+      try { svcR = adminClient(); } catch (e) {
+        return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
+      }
+      const targetId = req.query.userId || actor?.id || null;
+      if (!targetId) return sendJson(res, 400, { error: "userId required." });
+      if (method === "GET") {
+        let rep = null;
+        const { data: existing } = await svcR.from("citizen_reputation").select("*").eq("user_id", targetId).maybeSingle();
+        const stale = !existing || (Date.now() - new Date(existing.updated_at || 0).getTime() > 6 * 3600 * 1000);
+        if (stale) {
+          rep = await merveilRecomputeReputation(svcR, targetId);
+        } else {
+          rep = existing;
+        }
+        const { data: prof } = await svcR.from("profiles")
+          .select("id, name, avatar_url, kyc_status, agent_verified, company_verified, rera_number, passport_tier, profession, trust_score, trust_level, trust_label")
+          .eq("id", targetId).maybeSingle();
+        const badge = merveilTrustBadgeFromProfile(prof || {}, rep);
+        return sendJson(res, 200, {
+          userId: targetId,
+          reputation: rep,
+          badge,
+          open_access: true,
+          note: "Trust is a signal. Unverified citizens keep full social access.",
+        });
+      }
+      if (method === "POST" && (req.query.action === "recompute")) {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        if (String(actor.id) !== String(targetId) && !actor.is_admin) {
+          return sendJson(res, 403, { error: "Can only refresh your own trust score." });
+        }
+        const rep = await merveilRecomputeReputation(svcR, targetId);
+        return sendJson(res, 200, { reputation: rep, badge: merveilTrustBadgeFromProfile({}, rep) });
+      }
+      return sendJson(res, 404, { error: "Unknown reputation action." });
     }
 
     // ------------------------------------------------------- /api/lifelink  (Passport V2)
@@ -12563,7 +12776,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         const profile = await loadProfile();
         if (!isEligible(profile)) {
           return sendJson(res, 403, {
-            error: "Verified Professional, Investor, or Company Passport required",
+            error: "AI Call is a Passport plan feature (Professional, Investor, or Company). Core Passport still gets chat AI with daily limits.",
             code: "PASSPORT_REQUIRED",
           });
         }
@@ -12624,7 +12837,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         const profile = await loadProfile();
         if (!isEligible(profile)) {
           return sendJson(res, 403, {
-            error: "Verified Professional, Investor, or Company Passport required",
+            error: "AI Call is a Passport plan feature (Professional, Investor, or Company). Core Passport still gets chat AI with daily limits.",
             code: "PASSPORT_REQUIRED",
           });
         }
