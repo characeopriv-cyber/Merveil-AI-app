@@ -19676,8 +19676,9 @@ function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpe
 
 function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, onToggleSuper, onToggleSave, onCall, onOpenCreator, onChat, forceMuted, compact, currentUser, onRequireSignIn, onEdit, onDelete, onNotInterested }) {
   const videoRef = useRef(null);
-  // Prefer sound-on autoplay (TikTok-style). Fall back to muted only if the browser blocks it.
-  const [muted, setMuted] = useState(false);
+  // Start muted so autoplay works for visitors on iOS/Android/desktop (browser policy).
+  // User can unmute with the speaker control — same pattern as Instagram/Facebook Reels.
+  const [muted, setMuted] = useState(true);
   const [videoError, setVideoError] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -19830,14 +19831,19 @@ function WorldReelCard({ post, isActive, liked, supered, saved, onToggleLike, on
           ref={videoRef}
           key={post.video_url}
           src={post.video_url}
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{ opacity: videoReady ? 1 : 0 }}
+          className="absolute inset-0 w-full h-full object-cover bg-black"
+          style={{ opacity: videoReady && !videoError ? 1 : 0 }}
           loop
           muted={!!forceMuted || muted}
           playsInline
+          webkit-playsinline=""
+          x5-playsinline=""
+          x5-video-player-type="h5"
           autoPlay
-          preload="auto"
-          poster={post.photo_url || post.poster_url || post.cover_url || undefined}
+          preload="metadata"
+          controls={false}
+          disablePictureInPicture
+          poster={post.photo_url || post.poster_url || post.cover_url || post.thumbnail_url || undefined}
           onLoadedData={() => { setVideoReady(true); try { videoRef.current?.play()?.catch(() => {}); } catch {} }}
           onCanPlay={() => { setVideoReady(true); try { videoRef.current?.play()?.catch(() => {}); } catch {} }}
           onError={() => setVideoError(true)}
@@ -20650,7 +20656,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Reel culture starts here",
     description: "Vertical, fast, real. Post from your gallery — max 60 seconds — and reach citizens worldwide.",
     topic: "Entertainment", country: "Global",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 28, super_count: 7, views: 940, comments_count: 0,
     created_at: "2026-08-01T00:00:05.000Z", _seed: true,
@@ -20661,7 +20667,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Share the moment",
     description: "Concerts, scenes, street energy — if it fits in a reel, it belongs on World.",
     topic: "Entertainment", country: "United Arab Emirates",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_960x540.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 61, super_count: 19, views: 2100, comments_count: 0,
     created_at: "2026-08-01T00:00:10.000Z", _seed: true,
@@ -20674,7 +20680,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Keep it light",
     description: "Comedy travels. Post a short laugh and watch citizens Super it across borders.",
     topic: "Comedy", country: "Global",
-    video_url: "https://www.w3schools.com/html/mov_bbb.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 88, super_count: 24, views: 3400, comments_count: 0,
     created_at: "2026-08-01T00:01:00.000Z", _seed: true,
@@ -20696,7 +20702,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Citizen humour",
     description: "The best jokes on World come from real people, not algorithms. Be next.",
     topic: "Comedy", country: "Global",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 47, super_count: 14, views: 1750, comments_count: 0,
     created_at: "2026-08-01T00:01:10.000Z", _seed: true,
@@ -20709,7 +20715,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Sound on",
     description: "Music clips, covers, studio moments — World is built for audio that moves.",
     topic: "Music", country: "Global",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-10s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 102, super_count: 31, views: 5200, comments_count: 0,
     created_at: "2026-08-01T00:02:00.000Z", _seed: true,
@@ -20720,7 +20726,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Beat drops welcome",
     description: "Upload your track visual or live take. Citizens can Super and repost.",
     topic: "Music", country: "Global",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-15s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 56, super_count: 18, views: 2400, comments_count: 0,
     created_at: "2026-08-01T00:02:05.000Z", _seed: true,
@@ -20731,7 +20737,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "From studio to World",
     description: "Independent artists and labels — your next audience is already here.",
     topic: "Music", country: "United Arab Emirates",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-20s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 74, super_count: 22, views: 3100, comments_count: 0,
     created_at: "2026-08-01T00:02:10.000Z", _seed: true,
@@ -20744,7 +20750,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Built with intelligence",
     description: "Merveil World ranks tech and innovation slightly ahead so builders surface fast.",
     topic: "AI & Technology", country: "Global",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 156, super_count: 48, views: 8900, comments_count: 0,
     created_at: "2026-08-01T00:03:00.000Z", _seed: true,
@@ -20755,7 +20761,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Demo your product",
     description: "60-second product demos, model drops, and research clips belong here.",
     topic: "AI & Technology", country: "Global",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_960x540.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 91, super_count: 27, views: 4100, comments_count: 0,
     created_at: "2026-08-01T00:03:05.000Z", _seed: true,
@@ -20779,7 +20785,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Cities that think",
     description: "Mobility, energy, digital twin — share the projects reshaping urban life.",
     topic: "Smart Cities", country: "United Arab Emirates",
-    video_url: "https://www.w3schools.com/html/mov_bbb.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 119, super_count: 36, views: 6200, comments_count: 0,
     created_at: "2026-08-01T00:04:00.000Z", _seed: true,
@@ -20790,7 +20796,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Dubai to the world",
     description: "Infrastructure that feels like the future. Citizens document it first on World.",
     topic: "Smart Cities", country: "United Arab Emirates",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-30s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 83, super_count: 21, views: 3700, comments_count: 0,
     created_at: "2026-08-01T00:04:05.000Z", _seed: true,
@@ -20801,7 +20807,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Urban signals",
     description: "Sensors, transit, green corridors — one reel can start a conversation with decision-makers.",
     topic: "Smart Cities", country: "Global",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 54, super_count: 12, views: 1900, comments_count: 0,
     created_at: "2026-08-01T00:04:10.000Z", _seed: true,
@@ -20814,7 +20820,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Property in motion",
     description: "Walk-throughs and skyline shots travel farther as reels than static galleries.",
     topic: "Real Estate", country: "United Arab Emirates",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_960x540.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 134, super_count: 41, views: 7800, comments_count: 0,
     created_at: "2026-08-01T00:05:00.000Z", _seed: true,
@@ -20825,7 +20831,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Site visit, 45 seconds",
     description: "Developers and agents: post the unit, the view, the lobby — then connect on Passport.",
     topic: "Real Estate", country: "United Arab Emirates",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-10s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 72, super_count: 20, views: 3300, comments_count: 0,
     created_at: "2026-08-01T00:05:05.000Z", _seed: true,
@@ -20860,7 +20866,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Hidden corners",
     description: "Markets, deserts, coastlines — the unfiltered version of every destination.",
     topic: "Travel", country: "Global",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-15s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 63, super_count: 16, views: 2600, comments_count: 0,
     created_at: "2026-08-01T00:06:05.000Z", _seed: true,
@@ -20871,7 +20877,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Next flight out",
     description: "Share the journey, not just the postcard. World ranks travel with lifestyle.",
     topic: "Travel", country: "Global",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 81, super_count: 23, views: 3500, comments_count: 0,
     created_at: "2026-08-01T00:06:10.000Z", _seed: true,
@@ -20884,7 +20890,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Taste of the city",
     description: "Chefs, home cooks, street food — 60 seconds is enough to make someone hungry.",
     topic: "Food", country: "United Arab Emirates",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_960x540.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 171, super_count: 52, views: 11200, comments_count: 0,
     created_at: "2026-08-01T00:07:00.000Z", _seed: true,
@@ -20895,7 +20901,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Kitchen open",
     description: "Recipes, plating, service rush — food content performs on World.",
     topic: "Food", country: "Global",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 59, super_count: 14, views: 2200, comments_count: 0,
     created_at: "2026-08-01T00:07:05.000Z", _seed: true,
@@ -20906,7 +20912,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Table for citizens",
     description: "Tag the dish, the place, the story. Then watch Supers come in.",
     topic: "Food", country: "Global",
-    video_url: "https://www.w3schools.com/html/mov_bbb.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 44, super_count: 10, views: 1600, comments_count: 0,
     created_at: "2026-08-01T00:07:10.000Z", _seed: true,
@@ -20919,7 +20925,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Move with purpose",
     description: "Workouts, form checks, recovery — fitness reels build followings fast.",
     topic: "Fitness", country: "Global",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-20s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 126, super_count: 34, views: 6700, comments_count: 0,
     created_at: "2026-08-01T00:08:00.000Z", _seed: true,
@@ -20930,7 +20936,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Train in public",
     description: "Park runs, gym floors, desert trails — document the work.",
     topic: "Fitness", country: "United Arab Emirates",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 70, super_count: 18, views: 2900, comments_count: 0,
     created_at: "2026-08-01T00:08:05.000Z", _seed: true,
@@ -20941,7 +20947,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Consistency over hype",
     description: "Short form progress beats long form excuses. Post the set.",
     topic: "Fitness", country: "Global",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-10s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 51, super_count: 13, views: 2000, comments_count: 0,
     created_at: "2026-08-01T00:08:10.000Z", _seed: true,
@@ -20965,7 +20971,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Post your first reel",
     description: "Tap Post, pick a video (max 60s) from any folder on your phone, add a title, and publish. No setup page required.",
     topic: "Innovation", country: "Global",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 112, super_count: 29, views: 5400, comments_count: 0,
     created_at: "2026-08-01T00:09:05.000Z", _seed: true,
@@ -20976,7 +20982,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Ideas need motion",
     description: "Pitch, prototype, or proof-of-concept — innovation is easier to trust when you can see it.",
     topic: "Innovation", country: "Global",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_960x540.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 86, super_count: 25, views: 3800, comments_count: 0,
     created_at: "2026-08-01T00:09:10.000Z", _seed: true,
@@ -20989,7 +20995,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Founder mode",
     description: "Launch clips, customer wins, team culture — investors scroll World too.",
     topic: "Startups", country: "Global",
-    video_url: "https://www.w3schools.com/html/mov_bbb.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 97, super_count: 30, views: 4800, comments_count: 0,
     created_at: "2026-08-01T00:10:00.000Z", _seed: true,
@@ -21000,7 +21006,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Traction in 60s",
     description: "Show the metric, the product, the face. Then open Passport for the conversation.",
     topic: "Startups", country: "United Arab Emirates",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-15s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 68, super_count: 17, views: 2700, comments_count: 0,
     created_at: "2026-08-01T00:10:05.000Z", _seed: true,
@@ -21011,7 +21017,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Build in public",
     description: "Ship weekly, film the win, let citizens Super the momentum.",
     topic: "Startups", country: "Global",
-    video_url: "https://filesamples.com/samples/video/mp4/sample_640x360.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 55, super_count: 14, views: 2100, comments_count: 0,
     created_at: "2026-08-01T00:10:10.000Z", _seed: true,
@@ -21024,7 +21030,7 @@ const MERVEIL_AI_SEED_REELS = [
     title: "Day in the life",
     description: "Routine, spaces, style — lifestyle reels make strangers feel local.",
     topic: "Lifestyle", country: "Global",
-    video_url: "https://samplelib.com/lib/preview/mp4/sample-30s.mp4",
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     media_type: "video", content_origin: "ai",
     likes_count: 139, super_count: 37, views: 7200, comments_count: 0,
     created_at: "2026-08-01T00:11:00.000Z", _seed: true,
