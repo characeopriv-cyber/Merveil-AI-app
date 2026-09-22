@@ -11183,13 +11183,24 @@ function ReelsView({ properties, liveViews, onChat, currentUserId, onRequireSign
   const shareReel = (item) => {
     const d = item?.data || {};
     const origin = typeof window !== "undefined" ? window.location.origin : "https://www.junction.technology";
-    const url = `${origin}/api/share?type=property&id=${encodeURIComponent(String(d.id || "").replace(/^db-/, ""))}`;
-    shareMerveilContent({
-      title: d.title || "Property on Merveil Pulse",
-      text: d.description || d.title || "See this listing on Merveil Pulse Reels",
-      url,
-      imageUrl: d.photo_url || d.photo || (Array.isArray(d.photos) ? d.photos[0] : null) || null,
-    });
+    const id = String(d.id || "").replace(/^db-/, "");
+    const url = `${origin}/api/share?type=property&id=${encodeURIComponent(id)}`;
+    const bits = [];
+    if (d.type || d.listing_type) bits.push(String(d.type || d.listing_type));
+    if (d.beds != null && d.beds !== "") bits.push(`${d.beds} bed`);
+    if (d.area || d.location) bits.push(String(d.area || d.location));
+    if (d.emirate) bits.push(String(d.emirate));
+    if (d.price != null && d.price !== "") bits.push(`${Number(d.price).toLocaleString()} AED`);
+    const summary = bits.filter(Boolean).join(" · ");
+    const title = d.title || summary || "Property on Merveil";
+    const text = [summary, (d.description || "").slice(0, 160)].filter(Boolean).join(" — ") || title;
+    const imageUrl =
+      d.photo_url ||
+      d.photo ||
+      (Array.isArray(d.photo_urls) ? d.photo_urls[0] : null) ||
+      (Array.isArray(d.photos) ? d.photos[0] : null) ||
+      `${origin}/icons/icon-512.png`;
+    shareMerveilContent({ title, text, url, imageUrl });
   };
 
   const messageLister = async (item) => {
@@ -13545,6 +13556,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
     const applyOpen = (d) => {
       const conversationId = d?.conversationId;
       if (!conversationId) return;
+      // Never divert a human chat into the AI assistant thread
+      if (String(conversationId) === String(MERVEIL_AI_THREAD_ID)) return;
       try { setConnectTab("messages"); } catch {}
       if (d.otherUserId) {
         try {
@@ -22176,65 +22189,120 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
   };
 
   const downloadWorldToDevice = async (post) => {
-    if (!post?.id) {
+    const mediaUrl = post?.video_url || post?.photo_url || (Array.isArray(post?.photo_urls) ? post.photo_urls[0] : null);
+    if (!post?.id && !mediaUrl) {
       try {
         window.dispatchEvent(new CustomEvent("merveil:toast", {
-          detail: { type: "error", message: "No media to save to gallery." },
+          detail: { type: "error", message: "No video to download." },
         }));
       } catch {}
       return;
     }
-    // Step 1: same-origin API proxy (avoids storage CORS)
-    try {
-      const res = await merveilFetch(`/api/world?action=download&postId=${encodeURIComponent(post.id)}`, {
-        credentials: "include",
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const ctype = res.headers.get("content-type") || "";
-        const ext = ctype.includes("video") ? "mp4" : ctype.includes("png") ? "png" : "jpg";
-        const name = `merveil-${String(post.id).slice(0, 12)}.${ext}`;
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = name;
-        a.rel = "noopener";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
-        try {
-          window.dispatchEvent(new CustomEvent("merveil:toast", {
-            detail: { type: "success", message: "Step complete — file in Downloads / Gallery." },
-          }));
-        } catch {}
-        return;
+
+    const toast = (type, message) => {
+      try {
+        window.dispatchEvent(new CustomEvent("merveil:toast", { detail: { type, message } }));
+      } catch {}
+    };
+
+    const isBadBlob = (blob, ctype) => {
+      const t = String(ctype || blob?.type || "").toLowerCase();
+      if (!blob || !blob.size) return true;
+      if (t.includes("json") || t.includes("text/html") || t.includes("text/plain")) return true;
+      // tiny JSON error bodies often < 2kb with wrong type
+      if (blob.size < 2048 && !t.includes("video") && !t.includes("image") && !t.includes("octet")) {
+        return true;
       }
-    } catch { /* fall through */ }
-    // Step 2: direct media URL
-    const mediaUrl = post?.video_url || post?.photo_url || (post?.photo_urls && post.photo_urls[0]);
-    if (!mediaUrl) return;
-    try {
-      const res = await fetch(mediaUrl, { mode: "cors" });
-      const blob = await res.blob();
+      return false;
+    };
+
+    const extFrom = (ctype, url, preferVideo) => {
+      const t = String(ctype || "").toLowerCase();
+      if (t.includes("mp4") || t.includes("video")) return "mp4";
+      if (t.includes("webm")) return "webm";
+      if (t.includes("png")) return "png";
+      if (t.includes("webp")) return "webp";
+      if (t.includes("jpeg") || t.includes("jpg")) return "jpg";
+      if (preferVideo || post?.video_url) return "mp4";
+      if (/\.mp4(\?|$)/i.test(url || "")) return "mp4";
+      if (/\.webm(\?|$)/i.test(url || "")) return "webm";
+      return "mp4";
+    };
+
+    const saveBlob = (blob, filename) => {
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = `merveil-${String(post.id).slice(0, 12)}.mp4`;
+      a.download = filename;
+      a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
-    } catch {
-      // Step 3: open for long-press save
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 8000);
+    };
+
+    toast("info", "Preparing download…");
+
+    // 1) Direct media URL first (real TikTok-style file — not API JSON)
+    if (mediaUrl) {
+      try {
+        const res = await fetch(mediaUrl, { mode: "cors", credentials: "omit" });
+        if (res.ok) {
+          const blob = await res.blob();
+          const ctype = res.headers.get("content-type") || blob.type || "";
+          if (!isBadBlob(blob, ctype)) {
+            const ext = extFrom(ctype, mediaUrl, !!post?.video_url);
+            const name = `merveil-reel-${String(post?.id || "clip").slice(0, 12)}.${ext}`;
+            saveBlob(blob, name);
+            toast("success", ext === "mp4" || ext === "webm" ? "Video saved to Downloads." : "Saved to Downloads.");
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("[merveil] direct download", e?.message || e);
+      }
+    }
+
+    // 2) Same-origin proxy (only for real DB posts — never seeds)
+    const postId = post?.id ? String(post.id) : "";
+    const isSeed = !postId || post?._seed || postId.startsWith("merveil-ai-seed");
+    if (!isSeed) {
+      try {
+        const q = new URLSearchParams({ action: "download", postId });
+        if (mediaUrl) q.set("mediaUrl", mediaUrl);
+        const res = await fetch(`/api/world?${q.toString()}`, { credentials: "include" });
+        const ctype = res.headers.get("content-type") || "";
+        if (res.ok && !ctype.includes("application/json")) {
+          const blob = await res.blob();
+          if (!isBadBlob(blob, ctype)) {
+            const ext = extFrom(ctype, mediaUrl, !!post?.video_url);
+            const name = `merveil-reel-${postId.slice(0, 12)}.${ext}`;
+            saveBlob(blob, name);
+            toast("success", "Video saved to Downloads.");
+            return;
+          }
+        }
+        // If JSON error body, surface it
+        if (ctype.includes("json")) {
+          const err = await res.json().catch(() => null);
+          console.warn("[merveil] download api", err);
+        }
+      } catch (e) {
+        console.warn("[merveil] proxy download", e?.message || e);
+      }
+    }
+
+    // 3) Last resort: open media in new tab for long-press save
+    if (mediaUrl) {
       try {
         window.open(mediaUrl, "_blank", "noopener,noreferrer");
-        window.dispatchEvent(new CustomEvent("merveil:toast", {
-          detail: { type: "info", message: "Long-press the video → Save to gallery." },
-        }));
+        toast("info", "Long-press the video → Download / Save video.");
+        return;
       } catch {}
     }
+    toast("error", "Could not download this video. Try again or open the reel and long-press.");
   };
+;
 
   // Explicit download from ⋯ menu
   useEffect(() => {
