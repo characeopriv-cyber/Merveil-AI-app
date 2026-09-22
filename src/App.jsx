@@ -12660,11 +12660,11 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall, onProfile })
                 }}
               >
                 <div className="flex items-center gap-2.5 mb-2">
-                  <button type="button" className="shrink-0 rounded-full" onClick={() => onProfile?.({ id: post.author_id || author.id, name, avatar_url: author.avatar_url })}>
+                  <button type="button" className="shrink-0 rounded-full" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name: name || author?.name || 'Citizen', avatar_url: author?.avatar_url || null }); })()}>
                     <Avatar name={name} src={author.avatar_url} size={40} />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <button type="button" className="text-left w-full min-w-0" onClick={() => onProfile?.({ id: post.author_id || author.id, name, avatar_url: author.avatar_url })}>
+                    <button type="button" className="text-left w-full min-w-0" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name: name || author?.name || 'Citizen', avatar_url: author?.avatar_url || null }); })()}>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
                         <PresenceDot status={post.author_status || "offline"} size={10} />
@@ -27482,6 +27482,7 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
 
   useEffect(() => {
     setLoading(true);
+    setProfile(null);
     // Seed / system AI reels have no real profile row
     if (!userId || String(userId) === "merveil-ai" || String(userId).startsWith("merveil-ai")) {
       setProfile({
@@ -27496,30 +27497,36 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
       setLoading(false);
       return;
     }
+    // Immediate skeleton so UI never lands on "Citizen not found" while network runs
+    let hint = {};
+    try { hint = JSON.parse(sessionStorage.getItem("merveil_creator_hint_" + String(userId)) || "{}"); } catch {}
+    const skeleton = {
+      id: String(userId),
+      name: hint.name || "Merveil Citizen",
+      avatar_url: hint.avatar_url || null,
+      bio: "",
+      passport_tier: "core",
+      account_type: "citizen",
+    };
+    setProfile(skeleton);
     let cancelled = false;
     const load = () => {
-      merveilFetch(`/api/people?action=profile&userId=${encodeURIComponent(userId)}`)
-        .then((r) => (r.ok ? r.json() : r.json().catch(() => null).then((b) => ({ _fail: true, status: r.status, body: b }))))
+      merveilFetch(`/api/people?action=profile&userId=${encodeURIComponent(String(userId))}`)
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) return { _fail: true, status: r.status, body };
+          return body;
+        })
         .then((data) => {
           if (cancelled) return;
           if (!data || data._fail || !data.profile) {
-            // Never dead-end: show a usable card so Group / Pulse taps always open a profile
-            let hint = {};
-            try { hint = JSON.parse(sessionStorage.getItem("merveil_creator_hint_" + String(userId)) || "{}"); } catch {}
-            setProfile((prev) => prev || {
-              id: userId,
-              name: hint.name || "Merveil Citizen",
-              avatar_url: hint.avatar_url || null,
-              bio: "",
-              passport_tier: "core",
-              account_type: "citizen",
-            });
+            setProfile((prev) => ({ ...skeleton, ...(prev || {}), name: (prev && prev.name) || skeleton.name }));
             setWorldPosts([]);
             setListings([]);
             setGroupPosts([]);
             return;
           }
-          setProfile(data.profile || null);
+          setProfile(data.profile);
           setWorldPosts(data.worldPosts || []);
           setListings(data.listings || []);
           setGroupPosts(data.groupPosts || []);
@@ -27535,7 +27542,16 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
             }
           } catch {}
         })
-        .catch(() => {})
+        .catch(() => {
+          if (!cancelled) {
+            setProfile((prev) => prev || {
+              id: String(userId),
+              name: "Merveil Citizen",
+              passport_tier: "core",
+              account_type: "citizen",
+            });
+          }
+        })
         .finally(() => { if (!cancelled) setLoading(false); });
     };
     load();
@@ -27745,10 +27761,13 @@ function CreatorProfileModal({ userId, currentUser, onClose, onChat, onPlayPost,
         <div className="w-9" />
       </div>
 
-      {loading ? (
+      {loading && !profile ? (
         <div className="flex-1 flex items-center justify-center"><Loader2 size={24} className="animate-spin" color={CREATOR_ACCENT} /></div>
       ) : !profile ? (
-        <div className="flex-1 flex items-center justify-center text-sm" style={{ color: CREATOR_SUB }}>Citizen not found.</div>
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+          <div className="text-sm" style={{ color: CREATOR_SUB }}>Loading citizen…</div>
+          <button type="button" onClick={onClose} className="text-xs font-semibold px-3 py-2 rounded-full" style={{ background: CREATOR_ACCENT, color: "#fff" }}>Close</button>
+        </div>
       ) : (
         <div ref={pageScrollRef} className="flex-1 overflow-y-auto overscroll-contain"
           style={{ WebkitOverflowScrolling: "touch", paddingBottom: "calc(24px + var(--safe-bottom))" }}>
@@ -28313,7 +28332,10 @@ function PublicProfileModal({ userId, currentUser, onClose, onChat, onCall }) {
       {loading ? (
         <div className="h-full flex items-center justify-center"><Loader2 size={24} className="animate-spin" color={T.signal} /></div>
       ) : !profile ? (
-        <div className="h-full flex items-center justify-center text-sm" style={{ color: "#9CA3AF" }}>Citizen not found.</div>
+        <div className="h-full flex flex-col items-center justify-center gap-2 text-sm" style={{ color: "#9CA3AF" }}>
+          <div>Citizen profile unavailable</div>
+          <button type="button" onClick={onClose} className="text-xs font-semibold px-3 py-1.5 rounded-full" style={{ background: "#0E9AA7", color: "#fff" }}>Close</button>
+        </div>
       ) : (
         <div className="h-full overflow-y-auto pb-28">
           {/* Passport identity header — single source of truth for this citizen */}
@@ -34240,22 +34262,29 @@ function AppInner() {
             <div className="px-3 pt-1 pb-3 border-t" style={{ borderColor: "#C4BAAC" }}>
               <div className="text-[10px] font-bold tracking-[0.16em] uppercase mb-2 px-1" style={{ color: "#0E9AA7" }}>Ecosystem</div>
               {[
-                { label: "Developer Platform", path: "/developer", sub: "APIs · apps · build" },
-                { label: "Interface", path: "/interface", sub: "Org · family · community" },
+                { label: "Developer Platform", path: "/developer", sub: "APIs · apps · build", soon: true },
+                { label: "Interface", path: "/interface", sub: "Org · family · community", soon: true },
               ].map((room) => (
                 <button
                   key={room.path}
                   type="button"
                   onClick={() => {
                     setShowPlusMenu(false);
+                    if (room.soon) {
+                      try { window.dispatchEvent(new CustomEvent("merveil:toast", { detail: { message: `${room.label} — Coming soon` } })); } catch { alert(`${room.label} — Coming soon`); }
+                      return;
+                    }
                     window.location.assign(room.path);
                   }}
                   className="w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2"
-                  style={{ background: "transparent" }}
+                  style={{ background: "transparent", opacity: room.soon ? 0.85 : 1 }}
                 >
                   <div className="min-w-0">
-                    <div className="text-[13px] font-semibold" style={{ color: "#252321" }}>{room.label}</div>
-                    <div className="text-[11px]" style={{ color: "#625D56" }}>{room.sub}</div>
+                    <div className="text-[13px] font-semibold" style={{ color: "#252321" }}>
+                      {room.label}
+                      {room.soon ? <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(14,154,167,0.15)", color: "#0E9AA7" }}>Coming soon</span> : null}
+                    </div>
+                    <div className="text-[11px]" style={{ color: "#625D56" }}>{room.soon ? "Not open for investors yet — citizen app is live" : room.sub}</div>
                   </div>
                   <ChevronRight size={16} style={{ color: "#0E9AA7" }} />
                 </button>
