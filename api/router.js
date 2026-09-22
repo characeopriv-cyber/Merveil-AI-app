@@ -14,6 +14,7 @@ import {
   getRefreshToken,
   forgetSession,
 } from "../lib/supabaseServer.js";
+import { generate as generateMerveilIntelligence } from "../server/merveil-v1/intelligence-router.js";
 
 // Server-side FCM (native) + Web Push (PWA). Path works when pushSend.js
 // sits next to the API router or under lib/.
@@ -3106,7 +3107,7 @@ export default async function handler(req, res) {
         const authorIds = [...new Set((posts || []).map((p) => p.author_id).filter(Boolean))];
         let profiles = {};
         if (authorIds.length) {
-          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, kyc_status, account_type, rera_number, trust_score, trust_level, trust_label").in("id", authorIds);
+          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, account_type, city, country").in("id", authorIds);
           for (const pr of profs || []) profiles[pr.id] = pr;
         }
         let presenceMap = {};
@@ -3420,7 +3421,6 @@ export default async function handler(req, res) {
               photo_url: (mediaUrls && mediaUrls[0]) || null,
               source_group_id: groupId,
               source_group_post_id: post.id,
-              from_group_label: fromLabel,
             }).select("id").maybeSingle();
             if (!insProp.error && insProp.data?.id) {
               pulseBridged = true;
@@ -6245,13 +6245,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
     // action=sponsored below, inside the /api/console block.
 
     // ------------------------------------------------------ /api/assistant
-    // Merveil AI chat — YOUR API (Grok or OpenAI). Not Claude.
-    // Env (server only):
-    //   AI_API_URL  — e.g. https://api.x.ai/v1  or https://your-host/v1
-    //                 or full .../chat/completions
-    //   AI_API_KEY  — Bearer token
-    //   AI_MODEL    — model id (optional)
-    // Aliases: XAI_API_URL / XAI_API_KEY / XAI_MODEL
+    // Merveil AI chat — shared intelligence router with provider fallback.
     if (resource === "assistant" && method === "POST") {
       if (!user) return sendJson(res, 401, { error: "Sign in required." });
       const body = await readBody(req);
@@ -6267,75 +6261,33 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         });
       }
 
-      const apiUrl = (process.env.AI_API_URL || process.env.XAI_API_URL || "").replace(/\/$/, "");
-      const apiKey = process.env.AI_API_KEY || process.env.XAI_API_KEY || "";
-      const model = process.env.AI_MODEL || process.env.XAI_MODEL || "grok-2-latest";
-
-      if (!apiUrl || !apiKey) {
-        return sendJson(res, 500, {
-          error:
-            "Merveil AI is not configured. Set AI_API_URL and AI_API_KEY (or XAI_API_URL / XAI_API_KEY) on the server, then redeploy.",
-        });
-      }
-
-      const systemText =
-        typeof system === "string" && system.trim()
-          ? system.slice(0, 12000)
-          : "You are Merveil AI, a helpful assistant inside the Merveil UAE super-app for real estate, jobs, services, and networking. Be concise and useful. Never pretend to be a human.";
-
       const safeMessages = messages
         .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
         .slice(-20)
         .map((m) => ({ role: m.role, content: String(m.content).slice(0, 8000) }));
-      if (!safeMessages.length) {
-        return sendJson(res, 400, { error: "No valid user/assistant messages." });
-      }
+      if (!safeMessages.length) return sendJson(res, 400, { error: "No valid user/assistant messages." });
 
-      const chatMessages = [{ role: "system", content: systemText }, ...safeMessages];
-      const endpoint = apiUrl.includes("/chat/completions") ? apiUrl : `${apiUrl}/chat/completions`;
+      const systemText =
+        typeof system === "string" && system.trim()
+          ? system.slice(0, 12000)
+          : "You are Merveil AI, a helpful assistant inside Merveil. Be concise, useful and context-aware. Never pretend to be a human.";
 
       try {
-        const upstream = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages: chatMessages,
-            max_tokens: Math.min(Number(maxTokens) || 600, 2048),
-            temperature: 0.7,
-          }),
+        const result = await generateMerveilIntelligence({
+          messages: [{ role: "system", content: systemText }, ...safeMessages],
+          maxTokens: Math.min(Number(maxTokens) || 600, 2048),
+          temperature: 0.7,
+          capability: "general",
         });
-
-        if (!upstream.ok) {
-          const errText = await upstream.text();
-          console.error("AI API error:", upstream.status, errText.slice(0, 500));
-          return sendJson(res, upstream.status >= 500 ? 502 : upstream.status, {
-            error:
-              upstream.status === 429
-                ? "Merveil AI is busy — try again in a moment."
-                : `Merveil AI error (${upstream.status}). Check AI_API_URL / AI_API_KEY / model.`,
-          });
-        }
-
-        const data = await upstream.json();
-        let reply =
-          data?.choices?.[0]?.message?.content ||
-          data?.reply ||
-          data?.content ||
-          data?.message ||
-          "";
-        if (typeof reply !== "string") reply = JSON.stringify(reply);
-        reply = String(reply).trim();
-
         await sb.rpc("increment_ai_usage", { uid: user.id }).catch(() => {});
-
-        return sendJson(res, 200, { reply: reply || "I didn't catch that — try asking again." });
+        return sendJson(res, 200, {
+          reply: result.reply || "I didn't catch that — try asking again.",
+          provider: result.provider,
+          model: result.model,
+        });
       } catch (err) {
-        console.error("Assistant request failed:", err.message);
-        return sendJson(res, 500, { error: `Couldn't reach Merveil AI — ${err.message}` });
+        console.error("Merveil AI router failed:", err?.message || err);
+        return sendJson(res, 503, { error: "Merveil AI is temporarily unavailable. Please try again in a moment." });
       }
     }
 
@@ -9634,12 +9586,27 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         let peopleClient;
         try { peopleClient = adminClient(); } catch { peopleClient = anonClient(); }
         // Do not select agent_verified/company_verified — may be missing on older prod schemas
-        const { data, error } = await peopleClient
+        let data = null;
+        let profileError = null;
+        const primary = await peopleClient
           .from("profiles")
           .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought, role_label, kyc_status, rera_number")
           .eq("id", userId)
           .maybeSingle();
-        if (error) return sendJson(res, 400, { error: error.message });
+        data = primary.data || null;
+        profileError = primary.error || null;
+        // Older production schemas may miss an optional Passport/reputation column.
+        // A valid creator tap must never become a dead profile page because of that.
+        if (profileError) {
+          const fallback = await peopleClient
+            .from("profiles")
+            .select("id, name, avatar_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages")
+            .eq("id", userId)
+            .maybeSingle();
+          data = fallback.data || null;
+          profileError = fallback.error || null;
+        }
+        if (profileError) return sendJson(res, 400, { error: profileError.message });
         // Always return a public card — never blank the creator page for investors / group taps
         if (!data) {
           return sendJson(res, 200, {
