@@ -11868,6 +11868,38 @@ function MyCircleTab({ currentUser, connectionPeople, presenceMap, onMessage, on
 // ============================================================
 // AREA GROUPS — public Emirates RE lead channels (WhatsApp-style)
 // ============================================================
+
+function TopGroupPostersStrip() {
+  const [leaders, setLeaders] = useState([]);
+  useEffect(() => {
+    merveilFetch("/api/groups?action=leaderboard")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setLeaders(d?.leaders || []))
+      .catch(() => {});
+  }, []);
+  if (!leaders.length) return null;
+  return (
+    <div className="mt-2 rounded-xl border p-2.5" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
+      <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: "#8A7B6C" }}>
+        Top real-lead posters · boost credits
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {leaders.slice(0, 8).map((u, i) => (
+          <div key={u.user_id} className="shrink-0 flex flex-col items-center w-14">
+            <div className="relative">
+              <Avatar name={u.name} src={u.avatar_url} size={36} />
+              <span className="absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center text-white"
+                style={{ background: i < 3 ? "#0E9AA7" : "#8A7B6C" }}>{i + 1}</span>
+            </div>
+            <div className="text-[9px] font-semibold truncate w-full text-center mt-0.5" style={{ color: "#1A1612" }}>{u.name}</div>
+            <div className="text-[8px]" style={{ color: "#8A7B6C" }}>{u.real_leads || 0} leads</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -11933,8 +11965,13 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
     merveilFetch("/api/groups?action=catalog")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        setCatalog(d?.emirates || []);
+        const ems = d?.emirates || [];
+        setCatalog(ems);
         if (d?.note) setNote(d.note);
+        try {
+          const total = ems.reduce((n, em) => n + (em.areas || []).reduce((a, ar) => a + (ar.unread_count || 0), 0), 0);
+          window.dispatchEvent(new CustomEvent("merveil:group-unread", { detail: { total } }));
+        } catch {}
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -12030,6 +12067,13 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Couldn't post — try again");
+      if (data.hidden) {
+        setNote(data.warning || "Lead hidden by Merveil AI.");
+        setDraft("");
+        setMediaUrls([]);
+        return;
+      }
+      if (data.warning) setNote(data.warning);
       setDraft("");
       setMediaUrls([]);
       if (data.post) {
@@ -12145,11 +12189,125 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
     return { bg: "linear-gradient(145deg,#D97706,#B45309)", chipBg: "rgba(217,119,6,0.18)", chipFg: "#B45309" };
   };
 
-  // —— Inside a group (Explore or Member) ——
+  const requireConnectedThen = async (person, kind) => {
+    if (!person?.id) return;
+    if (!currentUser?.id) { onSignIn?.(); return; }
+    if (String(person.id) === String(currentUser.id)) return;
+    const st = await fetchConnectionStatus(person.id);
+    if (st.status === "accepted") {
+      if (kind === "call") onCall?.(person, "voice");
+      else onMessage?.(person);
+      return;
+    }
+    if (st.status === "pending") {
+      alert("Connection request pending — wait until they accept to call or message.");
+      return;
+    }
+    const go = window.confirm("You're not connected yet. Send a connection request first?");
+    if (!go) return;
+    const result = await requestMerveilConnection(person.id);
+    if (result.status === "error") {
+      alert(result.error || "Couldn't send connection request.");
+      return;
+    }
+    if (result.status === "accepted" || result.alreadyConnected) {
+      if (kind === "call") onCall?.(person, "voice");
+      else onMessage?.(person);
+    } else {
+      alert("Connection request sent. You can call or message after they accept.");
+    }
+  };
+
+  const toggleFavorite = async (g) => {
+    if (!currentUser?.id) { onSignIn?.(); return; }
+    try {
+      const res = await merveilFetch(`/api/groups/${g.id}?action=favorite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNote(data.error || "Favorite failed");
+        return;
+      }
+      // refresh catalog favorite flags
+      loadCatalog();
+      if (group && String(group.id) === String(g.id)) {
+        setGroup((prev) => prev ? { ...prev, is_favorite: !!data.favorited } : prev);
+      }
+    } catch (e) {
+      setNote(e.message || "Favorite failed");
+    }
+  };
+
+  const reportPost = async (post) => {
+    if (!currentUser?.id) { onSignIn?.(); return; }
+    const category = window.prompt("Report reason: spam | scam | harassment | hate | violence | fake | other", "spam");
+    if (!category) return;
+    try {
+      const res = await merveilFetch(`/api/groups/${group.id}?action=report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id, category: category.trim().toLowerCase() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Report failed");
+      setNote(data.autoHidden ? "Reported — Merveil AI removed this lead." : "Report sent. Merveil AI is reviewing.");
+      if (data.autoHidden) setPosts((prev) => prev.filter((p) => p.id !== post.id));
+      setTimeout(() => setNote(""), 4000);
+    } catch (e) {
+      setNote(e.message || "Report failed");
+    }
+  };
+
+  const openPulseArea = () => {
+    if (!group?.area) return;
+    try {
+      window.dispatchEvent(new CustomEvent("merveil:open-pulse-area", {
+        detail: { emirate: group.emirate, area: group.area },
+      }));
+      // Deep link fallback
+      window.location.href = `/?tab=pulse&community=1&emirate=${encodeURIComponent(group.emirate || "")}&area=${encodeURIComponent(group.area || "")}`;
+    } catch {
+      window.location.href = "/?tab=pulse";
+    }
+  };
+
+  const pinPost = async (post) => {
+    if (!group?.i_member) { setNote("Enter the group to pin leads."); return; }
+    try {
+      const res = await merveilFetch(`/api/groups/${group.id}?action=pin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Pin failed");
+      setPosts((prev) => {
+        const next = prev.map((p) => p.id === post.id
+          ? { ...p, pinned_at: data.pinned ? new Date().toISOString() : null }
+          : p);
+        return [...next].sort((a, b) => {
+          const pa = a.pinned_at ? 1 : 0;
+          const pb = b.pinned_at ? 1 : 0;
+          if (pb !== pa) return pb - pa;
+          return (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0);
+        });
+      });
+    } catch (e) {
+      setNote(e.message || "Pin failed");
+    }
+  };
+
+  // —— Inside a group: FULL SCREEN (hide Connect chrome + bottom nav)
   if (group) {
     const inGroup = !!group.i_member;
     return (
-      <div className="flex flex-col h-full min-h-0" style={{ background: "#F5F0E8" }}>
+      <div
+        className="fixed inset-0 z-[160] flex flex-col"
+        style={{ background: "#F5F0E8", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)" }}
+      >
         <div className="px-2 py-2 flex items-center gap-1.5 border-b shrink-0 relative overflow-hidden" style={{ borderColor: "rgba(0,0,0,0.06)", background: "#FFFFFF" }}>
           <div className="absolute inset-x-0 top-0 h-1 pointer-events-none" aria-hidden style={{
             background: "linear-gradient(90deg,#000 0 25%,#00732F 25% 50%,#FFFFFF 50% 75%,#FF0000 75% 100%)",
@@ -12163,10 +12321,20 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
             <div className="text-sm font-bold truncate" style={{ color: "#1A1612" }}>{group.title || group.area}</div>
             <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
               🇦🇪 {group.emirate} · Public · {(group.member_count || 0)} in group
-              {inGroup ? " · Member" : " · Exploring"}
+              {inGroup ? " · Member" : " · Exploring"} · Guarded by Merveil AI
             </div>
           </div>
-          <div className="flex items-center gap-1.5 relative z-10 shrink-0">
+          <div className="flex items-center gap-1 relative z-10 shrink-0">
+            <button type="button" onClick={openPulseArea} title="Open area in Pulse Community"
+              className="text-[10px] font-bold px-2 py-1.5 rounded-full"
+              style={{ background: "rgba(14,154,167,0.12)", color: "#0A6B75" }}>
+              Pulse
+            </button>
+            <button type="button" onClick={() => toggleFavorite(group)} title="Favorite"
+              className="w-9 h-9 rounded-full flex items-center justify-center text-base"
+              style={{ background: group.is_favorite ? "rgba(14,154,167,0.15)" : "rgba(0,0,0,0.04)" }}>
+              {group.is_favorite ? "★" : "☆"}
+            </button>
             {inGroup ? (
               <button type="button" onClick={leaveGroup} className="text-[11px] font-bold px-2.5 py-1.5 rounded-full"
                 style={{ background: "rgba(224,85,76,0.12)", color: "#C0392B" }}>Leave</button>
@@ -12179,13 +12347,14 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 relative">
-          <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-[0.14]" aria-hidden>
-            {[0, 1, 2, 3].map((i) => (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-[0.16]" aria-hidden>
+            {Array.from({ length: 14 }).map((_, i) => (
               <span key={i} className="absolute text-2xl" style={{
-                left: `${10 + i * 22}%`,
-                top: `${6 + (i % 2) * 42}%`,
-                animation: `merveilFlagFloat ${5 + i}s ease-in-out infinite`,
-                animationDelay: `${i * 0.6}s`,
+                left: `${(i * 17 + 5) % 92}%`,
+                top: `${(i * 23 + 8) % 88}%`,
+                animation: `merveilFlagFloat ${4.5 + (i % 5)}s ease-in-out infinite`,
+                animationDelay: `${(i % 7) * 0.45}s`,
+                fontSize: `${18 + (i % 4) * 4}px`,
               }}>🇦🇪</span>
             ))}
           </div>
@@ -12235,11 +12404,11 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" onClick={() => onCall?.({ id: post.author_id, name, avatar_url: author.avatar_url }, "voice")}
+                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id, name, avatar_url: author.avatar_url }, "call")}
                       className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
                       <Phone size={14} color="#0E9AA7" />
                     </button>
-                    <button type="button" onClick={() => onMessage?.({ id: post.author_id, name, avatar_url: author.avatar_url })}
+                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id, name, avatar_url: author.avatar_url }, "message")}
                       className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
                       <MessageCircle size={14} color="#1FA64A" />
                     </button>
@@ -12278,6 +12447,25 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
                     ★ Super {post.super_count || 0}
                   </button>
                   <button type="button" onClick={() => sharePost(post)} className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#5C5346" }}>Share</button>
+                  {inGroup && (
+                    <button type="button" onClick={() => pinPost(post)}
+                      className="text-[11px] font-bold px-2 py-1 rounded-full"
+                      style={{ color: post.pinned_at ? "#0E9AA7" : "#5C5346" }}>
+                      {post.pinned_at ? "📌 Pinned" : "Pin"}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => reportPost(post)}
+                    className="text-[11px] font-bold px-2 py-1 rounded-full" style={{ color: "#C0392B" }}>
+                    Report
+                  </button>
+                  {post.duplicate_rank >= 2 && (
+                    <span className="text-[9px] font-semibold" style={{ color: "#8A7B6C" }}>
+                      Similar · #{post.duplicate_rank}
+                    </span>
+                  )}
+                  {post.pinned_at && (
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: "rgba(14,154,167,0.12)", color: "#0A6B75" }}>Top</span>
+                  )}
                   {mine && inGroup && (
                     <>
                       <button type="button" onClick={() => { setEditingId(post.id); setEditText(post.body || ""); }}
@@ -12389,31 +12577,37 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
           {groups.map((g) => {
             const st = intentStyle(g.intent);
             return (
-              <button key={g.id} type="button" onClick={() => openGroup(g)}
-                className="w-full text-left rounded-2xl border p-3.5 flex items-center gap-3"
+              <div key={g.id} className="w-full rounded-2xl border p-3.5 flex items-center gap-2"
                 style={{ borderColor: "rgba(0,0,0,0.06)", background: "#fff" }}>
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold text-white shadow-sm"
-                  style={{ background: st.bg }}>
-                  {g.intent === "sell" ? "S" : g.intent === "buy" ? "B" : "R"}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{g.title}</div>
-                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full"
-                      style={{ background: st.chipBg, color: st.chipFg }}>{g.intent}</span>
-                    {(g.unread_count || 0) > 0 && (
-                      <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-white" style={{ background: "#0E9AA7" }}>
-                        {g.unread_count > 99 ? "99+" : g.unread_count}
-                      </span>
-                    )}
+                <button type="button" onClick={() => openGroup(g)} className="flex-1 min-w-0 text-left flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold text-white shadow-sm"
+                    style={{ background: st.bg }}>
+                    {g.intent === "sell" ? "S" : g.intent === "buy" ? "B" : "R"}
                   </div>
-                  <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
-                    {(g.member_count || 0)} members · {(g.post_count || 0)} leads
-                    {g.i_member ? " · Joined" : " · Public"}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="text-[13px] font-bold" style={{ color: "#1A1612" }}>{g.title}</div>
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full"
+                        style={{ background: st.chipBg, color: st.chipFg }}>{g.intent}</span>
+                      {(g.unread_count || 0) > 0 && (
+                        <span className="text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-white" style={{ background: "#0E9AA7" }}>
+                          {g.unread_count > 99 ? "99+" : g.unread_count}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
+                      {(g.member_count || 0)} members · {(g.post_count || 0)} leads
+                      {g.i_member ? " · Joined" : " · Public"}
+                    </div>
                   </div>
-                </div>
-                <ChevronRight size={16} color="#C4B8A8" />
-              </button>
+                </button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); toggleFavorite(g); }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-base"
+                  style={{ background: g.is_favorite ? "rgba(14,154,167,0.12)" : "transparent" }}
+                  aria-label="Favorite">
+                  {g.is_favorite ? "★" : "☆"}
+                </button>
+              </div>
             );
           })}
         </div>
@@ -12459,9 +12653,10 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
       <div className="px-4 pt-3 pb-2">
         <div className="text-sm font-bold" style={{ color: "#1A1612" }}>Area Groups</div>
         <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: "#8A7B6C" }}>
-          Explore any area freely. Enter a group only when you want to post. Dubai first.
+          Explore freely · Enter to post · Moderated by Merveil AI · Top posters earn boost credits
         </p>
         {note && <p className="text-[10px] mt-1" style={{ color: "#B45309" }}>{note}</p>}
+        <TopGroupPostersStrip />
       </div>
       <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
         {loading && <div className="text-xs text-center py-10" style={{ color: "#8A7B6C" }}>Loading emirates…</div>}
@@ -12738,6 +12933,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
   // Accepted connections = My Circle
   const [connectionPeople, setConnectionPeople] = useState([]);
+  const [groupUnreadTotal, setGroupUnreadTotal] = useState(0);
   useEffect(() => {
     const onBump = (e) => {
       const uid = String(e?.detail?.userId || "");
@@ -12810,6 +13006,15 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
       return changed ? next : prev;
     });
   }, [threads, currentUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onGroupUnread = (e) => {
+      const n = Number(e?.detail?.total || 0);
+      if (!Number.isNaN(n)) setGroupUnreadTotal(n);
+    };
+    window.addEventListener("merveil:group-unread", onGroupUnread);
+    return () => window.removeEventListener("merveil:group-unread", onGroupUnread);
+  }, []);
+
   useEffect(() => {
     reloadConnections();
     const onEvt = () => reloadConnections();
@@ -13762,7 +13967,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             { id: "circle", label: t("connect.circle"), activeBg: "#1FA64A", activeFg: "#FFFFFF", idle: "#7DDB9A", badge: newCircle },
             { id: "messages", label: t("connect.messages"), activeBg: "#F5EDE3", activeFg: "#1E1814", idle: "#B8A99A", border: true, badge: msgUnread },
             { id: "ai-call", label: "AI Call", isNew: true, activeBg: "#5C534A", activeFg: "#F5EDE3", idle: "#8A7B6C", badge: 0 },
-            { id: "groups", label: "Groups", isNew: true, activeBg: "#0E9AA7", activeFg: "#FFFFFF", idle: "#7EC8D0", badge: 0 },
+            { id: "groups", label: "Groups", isNew: true, activeBg: "#0E9AA7", activeFg: "#FFFFFF", idle: "#7EC8D0", badge: groupUnreadTotal || 0 },
           ];
           })().map((tabItem) => {
             const on = connectTab === tabItem.id;
@@ -27596,6 +27801,10 @@ function PublicProfileModal({ userId, currentUser, onClose, onChat, onCall }) {
 
   const doMessage = async () => {
     if (!currentUser) return;
+    if (conn.status !== "accepted") {
+      alert("Send a connection request first — then you can message.");
+      return;
+    }
     try {
       await merveilFetch("/api/conversations", {
         method: "POST",
@@ -27633,8 +27842,10 @@ function PublicProfileModal({ userId, currentUser, onClose, onChat, onCall }) {
     }
   };
 
+  const connCount = Number(stats?.connectionsCount || stats?.connections_count || 0);
   const connLabel =
-    conn.status === "accepted" ? "● Connected"
+    conn.status === "accepted"
+      ? (connCount > 0 ? `● Connected · ${connCount}` : "● Connected")
       : conn.status === "pending" && conn.direction === "outgoing" ? "Pending"
         : conn.status === "pending" && conn.direction === "incoming" ? "Accept request"
           : "＋ Connect";
