@@ -14984,7 +14984,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           </div>
         )}
 
-        <div className="overflow-y-auto flex-1 min-h-0 overscroll-contain">
+        <div className="flex-1 min-h-0 flex flex-col overscroll-contain">
           <IncomingConnectionRequests currentUser={currentUser} />
 
           <div className="flex items-center gap-1.5 px-3 pb-2 pt-1">
@@ -15109,7 +15109,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                 items={rows}
                 itemHeight={76}
                 overscan={12}
-                style={{ maxHeight: "min(65vh, 560px)", minHeight: 120 }}
+                style={{ flex: "1 1 0%", minHeight: 120, maxHeight: "none" }}
                 getKey={(r) => r.userId}
                 renderItem={(r) => {
               const status = r.status || "offline";
