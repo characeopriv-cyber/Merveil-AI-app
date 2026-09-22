@@ -51,6 +51,7 @@ const ECOSYSTEM_ROOMS = [
     sub: "APIs · apps · build on Merveil",
     path: "/developer",
     icon: Code2,
+    comingSoon: true,
   },
   {
     id: "interface",
@@ -58,6 +59,7 @@ const ECOSYSTEM_ROOMS = [
     sub: "Org · family · community surfaces",
     path: "/interface",
     icon: Layout,
+    comingSoon: true,
   },
 ];
 
@@ -160,6 +162,16 @@ function trackEcosystemEnter(roomId, path, source) {
  * Uses assign so Back can return to the citizen room.
  */
 function enterEcosystemRoom(room, source) {
+  if (room?.comingSoon) {
+    try {
+      window.dispatchEvent(new CustomEvent("merveil:toast", {
+        detail: { message: `${room.label} — Coming soon. Citizen app is the live product.` },
+      }));
+    } catch {
+      alert(`${room.label} — Coming soon`);
+    }
+    return;
+  }
   trackEcosystemEnter(room.id, room.path, source);
   // Tiny beat so the beacon can leave before navigation
   setTimeout(() => {
