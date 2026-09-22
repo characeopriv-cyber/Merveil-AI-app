@@ -12031,16 +12031,60 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
 
   const uploadMedia = async (file) => {
     if (!file) return;
+    if (mediaUrls.length >= 8) {
+      setNote("Max 8 HD photos or clips per lead.");
+      return;
+    }
     setUploading(true);
     setNote("");
     try {
+      const isVideo = String(file.type || "").startsWith("video/");
+      const isImage = String(file.type || "").startsWith("image/");
+      if (isVideo) {
+        const dur = await new Promise((resolve) => {
+          const v = document.createElement("video");
+          v.preload = "metadata";
+          v.onloadedmetadata = () => {
+            const d = v.duration;
+            URL.revokeObjectURL(v.src);
+            resolve(d);
+          };
+          v.onerror = () => resolve(0);
+          v.src = URL.createObjectURL(file);
+        });
+        if (dur > 60.5) {
+          throw new Error("Video max 60 seconds (HD). Trim shorter, then re-upload.");
+        }
+        if (file.size < 200 * 1024) {
+          throw new Error("Video looks too low quality — upload HD (or ask Merveil AI to enhance with boost credits).");
+        }
+      }
+      if (isImage) {
+        const dims = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            resolve({ w: img.naturalWidth, h: img.naturalHeight });
+            URL.revokeObjectURL(img.src);
+          };
+          img.onerror = () => resolve({ w: 0, h: 0 });
+          img.src = URL.createObjectURL(file);
+        });
+        if (dims.w > 0 && dims.w < 720 && dims.h < 720) {
+          throw new Error("Only HD photos (min ~720px). Ask Merveil AI to enhance with boost credits, or pick a sharper photo.");
+        }
+      }
       const fd = new FormData();
       fd.append("file", file);
       fd.append("folder", "group-leads");
       const res = await fetch("/api/people?action=upload", { method: "POST", credentials: "include", body: fd });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.url) throw new Error(data.error || "Upload failed");
-      setMediaUrls((u) => [...u, data.url].slice(0, 6));
+      if (!res.ok || !data.url) {
+        if (data.code === "HD_REQUIRED" && data.enhance_available) {
+          throw new Error((data.error || "HD required") + " — Merveil AI enhance uses boost credits or Passport.");
+        }
+        throw new Error(data.error || "Upload failed");
+      }
+      setMediaUrls((u) => [...u, data.url].slice(0, 8));
     } catch (e) {
       setNote(e.message || "Upload failed");
     } finally {
@@ -12074,6 +12118,8 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
         return;
       }
       if (data.warning) setNote(data.warning);
+      if (data.passport_reminder) setNote(data.passport_reminder);
+      else if (data.pulse_bridged) setNote("Also live on Pulse Discover — open Pulse to refine the listing.");
       setDraft("");
       setMediaUrls([]);
       if (data.post) {
@@ -12395,9 +12441,21 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall }) {
                 <div className="flex items-center gap-2.5 mb-2">
                   <Avatar name={name} src={author.avatar_url} size={40} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
                       <PresenceDot status={post.author_status || "offline"} size={10} />
+                      {post.source === "pulse" && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(14,154,167,0.12)", color: "#0A6B75" }}>From Pulse</span>
+                      )}
+                      {post.bridged_to_pulse && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(31,166,74,0.12)", color: "#15803D" }}>On Pulse</span>
+                      )}
+                    </div>
+                    <div className="text-[9px] font-semibold mt-0.5" style={{
+                      color: post.passport_verified && post.re_verified ? "#0E9AA7"
+                        : post.passport_verified ? "#B45309" : "#8A7B6C",
+                    }}>
+                      {post.verify_label || (post.passport_verified ? "Passport verified" : "Unverified")}
                     </div>
                     <div className="text-[10px]" style={{ color: "#8A7B6C" }}>
                       {post.created_at ? timeAgo(post.created_at) : ""}
