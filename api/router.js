@@ -82,6 +82,141 @@ function requireParticipantActor(actor, participantIds, res, message = "Not a pa
   }
   return actor;
 }
+
+// ================================================================
+// MERVEIL AI — Group moderation (automated, no human queue required)
+// Policy: no insults, fake listings, extremist/religious hate, terror.
+// Sanctions: warn → 30d → 60d → 90d by severity / repeat.
+// ================================================================
+function merveilNormalizeLeadText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[\u0600-\u06FF]+/g, " ") // keep arabic lightly — strip for hash compare of numbers
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function merveilLeadContentHash(text) {
+  const n = merveilNormalizeLeadText(text);
+  // Prefer numbers + size tokens for RE duplicate detection
+  const nums = (n.match(/\d+/g) || []).join("-");
+  const keys = n.split(" ").filter((w) => w.length > 3).slice(0, 24).join(" ");
+  const raw = `${nums}|${keys}`.slice(0, 400);
+  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 32);
+}
+function merveilAiScanLead(text) {
+  const t = String(text || "");
+  const lower = t.toLowerCase();
+  const flags = [];
+  let score = 0;
+
+  // Terror / violence recruitment (high)
+  const terror = [
+    /\b(isis|isil|daesh|al[- ]?qaeda|taliban|jihad\s*recruit|martyrdom\s*operation)\b/i,
+    /\b(make\s*a\s*bomb|build\s*a\s*bomb|pipe\s*bomb|school\s*shooting)\b/i,
+    /\b(kill\s*(all|them|infidels)|attack\s*the\s*(mosque|church|synagogue))\b/i,
+  ];
+  for (const re of terror) {
+    if (re.test(t)) { flags.push("terror_violence"); score += 90; break; }
+  }
+
+  // Extremist / religious hate
+  const extremism = [
+    /\b(death\s*to\s*(jews|christians|muslims|hindus|shi[a]?|sunni))\b/i,
+    /\b(exterminate|genocide)\s+(jews|muslims|christians)\b/i,
+    /\b(infidels?\s*must\s*die|burn\s*the\s*quran|burn\s*the\s*bible)\b/i,
+  ];
+  for (const re of extremism) {
+    if (re.test(t)) { flags.push("extremist_hate"); score += 85; break; }
+  }
+
+  // Insults / harassment
+  const insults = [
+    /\b(fuck\s*you|motherfucker|son\s*of\s*a\s*bitch|go\s*die|kill\s*yourself)\b/i,
+    /\b(idiot|stupid\s*bitch|whore|slut)\b/i,
+  ];
+  for (const re of insults) {
+    if (re.test(t)) { flags.push("insult"); score += 35; break; }
+  }
+
+  // Scam / fake listing patterns
+  const scam = [
+    /\b(guaranteed\s*returns?|risk[- ]?free\s*investment|send\s*(me\s*)?(money|bitcoin|usdt)|western\s*union\s*only)\b/i,
+    /\b(whatsapp\s*only\s*\+?\d{8,}|click\s*this\s*link\s*to\s*claim)\b/i,
+    /\b(100%\s*genuine\s*documents?\s*forged|fake\s*ejari|forged\s*title)\b/i,
+  ];
+  for (const re of scam) {
+    if (re.test(t)) { flags.push("scam_fake"); score += 55; break; }
+  }
+
+  // Spam: repeated same line / excessive caps / link dump
+  if (/(.)\1{8,}/.test(t)) { flags.push("spam_repeat_chars"); score += 25; }
+  const links = (t.match(/https?:\/\/\S+/gi) || []).length;
+  if (links >= 4) { flags.push("spam_links"); score += 30; }
+  const letters = t.replace(/[^a-zA-Z]/g, "");
+  if (letters.length > 40) {
+    const caps = (letters.match(/[A-Z]/g) || []).length;
+    if (caps / letters.length > 0.75) { flags.push("spam_caps"); score += 15; }
+  }
+
+  score = Math.min(100, score);
+  let decision = "allow"; // allow | warn | hide | suspend
+  if (score >= 80) decision = "suspend";
+  else if (score >= 55) decision = "hide";
+  else if (score >= 30) decision = "warn";
+
+  return { score, flags: [...new Set(flags)], decision };
+}
+function merveilSanctionDays(flags, priorCount) {
+  const severe = flags.some((f) => f === "terror_violence" || f === "extremist_hate");
+  if (severe) return priorCount >= 1 ? 90 : 60;
+  if (flags.includes("scam_fake")) return priorCount >= 2 ? 90 : priorCount >= 1 ? 60 : 30;
+  if (flags.includes("insult")) return priorCount >= 2 ? 60 : 30;
+  return 30;
+}
+async function merveilNotifyCitizen(svc, userId, bodyText, meta = {}) {
+  if (!userId) return;
+  try {
+    // Prefer system message into a 1:1 with Merveil AI if conversation exists pattern;
+    // always push + best-effort insert into messages if AI conversation available.
+    await notifyUser(userId, {
+      title: meta.title || "Merveil AI Safety",
+      body: String(bodyText || "").slice(0, 180),
+      url: meta.url || "/?tab=connect",
+      tag: meta.tag || `mod-${Date.now()}`,
+    });
+  } catch (_) {}
+  try {
+    // Store durable notice on profiles thought/feeling is wrong — use mod_events only
+    await svc.from("area_group_mod_events").insert({
+      user_id: userId,
+      action: "notify",
+      detail: { body: bodyText, ...meta },
+    });
+  } catch (_) {}
+}
+async function merveilAwardBoostCredits(svc, userId, amount, reason) {
+  if (!userId || !amount) return;
+  try {
+    const { data: prof } = await svc.from("profiles").select("boost_credits").eq("id", userId).maybeSingle();
+    const bal = (Number(prof?.boost_credits) || 0) + amount;
+    await svc.from("profiles").update({ boost_credits: bal }).eq("id", userId);
+    await svc.from("merveil_boost_credits").insert({
+      user_id: userId,
+      amount,
+      balance_after: bal,
+      reason,
+      source: "top_poster",
+    });
+    await merveilNotifyCitizen(svc, userId,
+      `You earned ${amount} boost credits: ${reason}. Use them to boost a Pulse listing, Passport, or World reel.`,
+      { title: "Merveil Boost Credits", tag: "boost-credit" });
+  } catch (e) {
+    console.error("[boost credits]", e.message);
+  }
+}
+
+
 function sameActorId(a, b) {
   if (a == null || b == null) return false;
   return String(a) === String(b);
@@ -2408,23 +2543,37 @@ export default async function handler(req, res) {
         let lastByConvo = {};
         let unreadByConvo = {};
         if (ids.length) {
-          // Deeper batch: high limit so quiet threads still get a true last message.
-          // (Global order+limit was dropping last_body → UI showed only "Message".)
-          const { data: recentMsgs } = await listClient
-            .from("messages")
-            .select("conversation_id, body, created_at, sender_id, read_by, read_at, type, is_e2ee, media_url")
-            .in("conversation_id", ids)
-            .order("created_at", { ascending: false })
-            .limit(Math.min(Math.max(ids.length * 80, 500), 8000));
+          // Prefer distinct-on RPC (supabase-optimize-v1.sql); fall back to batch scan
+          let recentMsgs = null;
+          try {
+            const rpc = await listClient.rpc("merveil_last_messages", { p_conversation_ids: ids });
+            if (!rpc.error && rpc.data) recentMsgs = rpc.data;
+          } catch (_) {}
+          if (!recentMsgs) {
+            const q = await listClient
+              .from("messages")
+              .select("conversation_id, body, created_at, sender_id, read_by, read_at, type, is_e2ee, media_url")
+              .in("conversation_id", ids)
+              .order("created_at", { ascending: false })
+              .limit(Math.min(Math.max(ids.length * 80, 500), 8000));
+            recentMsgs = q.data || [];
+          }
           for (const m of recentMsgs || []) {
             const cid = m.conversation_id;
             if (!lastByConvo[cid]) lastByConvo[cid] = m;
+          }
+          // Unread still needs a wider scan (or read_by arrays)
+          const { data: unreadScan } = await listClient
+            .from("messages")
+            .select("conversation_id, sender_id, read_by, read_at")
+            .in("conversation_id", ids)
+            .neq("sender_id", listId)
+            .order("created_at", { ascending: false })
+            .limit(Math.min(Math.max(ids.length * 40, 300), 4000));
+          for (const m of unreadScan || []) {
             const readBy = (m.read_by || []).map(String);
-            const isUnread =
-              String(m.sender_id) !== String(listId) &&
-              !readBy.includes(String(listId)) &&
-              !m.read_at;
-            if (isUnread) unreadByConvo[cid] = (unreadByConvo[cid] || 0) + 1;
+            const isUnread = !readBy.includes(String(listId)) && !m.read_at;
+            if (isUnread) unreadByConvo[m.conversation_id] = (unreadByConvo[m.conversation_id] || 0) + 1;
           }
         }
         const previewOf = (last, fallback) => {
@@ -2551,12 +2700,17 @@ export default async function handler(req, res) {
           });
         }
         let memberMap = {}; // group_id -> { joined_at, last_read_at }
+        let favSet = new Set();
         if (actor?.id) {
           const { data: mems } = await svcG
             .from("area_group_members")
             .select("group_id, joined_at, last_read_at")
             .eq("user_id", actor.id);
           for (const m of mems || []) memberMap[m.group_id] = m;
+          try {
+            const { data: favs } = await svcG.from("area_group_favorites").select("group_id").eq("user_id", actor.id);
+            for (const f of favs || []) favSet.add(f.group_id);
+          } catch (_) {}
         }
         // Unread = posts after last_read_at (or joined_at) for memberships only
         let unreadByGroup = {};
@@ -2586,6 +2740,7 @@ export default async function handler(req, res) {
             ...g,
             i_member: !!mem,
             unread_count: unreadByGroup[g.id] || 0,
+            is_favorite: !!(favSet && favSet.has(g.id)),
           });
         }
         // Emirates ordered by area count (Dubai first), then name
@@ -2652,13 +2807,39 @@ export default async function handler(req, res) {
               .eq("group_id", groupId).eq("user_id", actor.id);
           }
         }
-        const { data: posts, error } = await svcG
-          .from("area_group_posts")
-          .select("*")
-          .eq("group_id", groupId)
-          .order("created_at", { ascending: false })
-          .limit(limit);
+        let posts = null;
+        let error = null;
+        {
+          const q1 = await svcG
+            .from("area_group_posts")
+            .select("*")
+            .eq("group_id", groupId)
+            .order("pinned_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false })
+            .limit(limit);
+          if (q1.error) {
+            const q2 = await svcG
+              .from("area_group_posts")
+              .select("*")
+              .eq("group_id", groupId)
+              .order("created_at", { ascending: false })
+              .limit(limit);
+            posts = q2.data;
+            error = q2.error;
+          } else {
+            posts = q1.data;
+            // Client-side pin sort if DB ignores second order
+            posts = [...(posts || [])].sort((a, b) => {
+              const pa = a.pinned_at ? new Date(a.pinned_at).getTime() : 0;
+              const pb = b.pinned_at ? new Date(b.pinned_at).getTime() : 0;
+              if (pb !== pa) return pb - pa;
+              return (new Date(b.created_at).getTime() || 0) - (new Date(a.created_at).getTime() || 0);
+            });
+          }
+        }
         if (error) return sendJson(res, 400, { error: error.message });
+        // Hide AI-removed leads from feed (authors still notified)
+        posts = (posts || []).filter((p) => !p.hidden_at);
         const authorIds = [...new Set((posts || []).map((p) => p.author_id).filter(Boolean))];
         let profiles = {};
         if (authorIds.length) {
@@ -2707,13 +2888,104 @@ export default async function handler(req, res) {
 
         // Must already be a member — no silent auto-join (Explore vs Enter)
         const { data: mem } = await svcG.from("area_group_members")
-          .select("user_id")
+          .select("user_id, role")
           .eq("group_id", groupId)
           .eq("user_id", actor.id)
           .maybeSingle();
         if (!mem) {
           return sendJson(res, 403, { error: "Enter this group before posting.", code: "ENTER_REQUIRED" });
         }
+
+        // Active suspension? (group or all_groups)
+        try {
+          const nowIso = new Date().toISOString();
+          const { data: bans } = await svcG.from("area_group_sanctions")
+            .select("id, ends_at, reason, days, scope, kind")
+            .eq("user_id", actor.id)
+            .in("kind", ["suspend", "mute"])
+            .gte("ends_at", nowIso)
+            .order("ends_at", { ascending: false })
+            .limit(5);
+          const active = (bans || []).find((b) =>
+            b.scope === "all_groups" || String(b.group_id || groupId) === String(groupId) || !b.group_id
+          );
+          // Re-query with group filter if column exists
+          if (bans?.length) {
+            const hit = bans.find((b) => b.scope === "all_groups") || bans[0];
+            if (hit) {
+              return sendJson(res, 403, {
+                error: `Merveil AI suspended posting until ${new Date(hit.ends_at).toLocaleDateString()}. Reason: ${hit.reason}`,
+                code: "SUSPENDED",
+                ends_at: hit.ends_at,
+                days: hit.days,
+              });
+            }
+          }
+        } catch (_) {}
+
+        // Rate limit posts
+        const okRate = await checkRateLimit(anonClient(), `group_post_${actor.id}`, 20);
+        if (!okRate) {
+          return sendJson(res, 429, { error: "Too many leads — wait a few minutes." });
+        }
+
+        // Merveil AI content scan
+        const ai = merveilAiScanLead(text);
+        const contentHash = text ? merveilLeadContentHash(text) : null;
+        let duplicateRank = 0;
+        let duplicateOf = null;
+        if (contentHash) {
+          try {
+            const { count } = await svcG.from("area_group_posts")
+              .select("*", { count: "exact", head: true })
+              .eq("content_hash", contentHash)
+              .is("hidden_at", null);
+            duplicateRank = (count || 0) + 1;
+            if (count > 0) {
+              const { data: first } = await svcG.from("area_group_posts")
+                .select("id").eq("content_hash", contentHash).order("created_at", { ascending: true }).limit(1);
+              duplicateOf = first?.[0]?.id || null;
+            }
+          } catch (_) {}
+        }
+
+        if (ai.decision === "suspend" || ai.decision === "hide") {
+          // Still store as hidden for audit, or reject
+          const prior = await svcG.from("area_group_sanctions").select("id", { count: "exact", head: true }).eq("user_id", actor.id);
+          const days = merveilSanctionDays(ai.flags, prior.count || 0);
+          const ends = new Date(Date.now() + days * 864e5).toISOString();
+          if (ai.decision === "suspend") {
+            try {
+              await svcG.from("area_group_sanctions").insert({
+                user_id: actor.id,
+                group_id: groupId,
+                scope: ai.flags.some((f) => f === "terror_violence" || f === "extremist_hate") ? "all_groups" : "group",
+                kind: "suspend",
+                days,
+                ends_at: ends,
+                reason: `Policy: ${ai.flags.join(", ") || "unsafe content"}`,
+                policy_codes: ai.flags,
+                issued_by: "merveil_ai",
+              });
+            } catch (e) { console.error("[sanction]", e.message); }
+            await merveilNotifyCitizen(svcG, actor.id,
+              `Your lead was blocked by Merveil AI (${ai.flags.join(", ")}). Posting suspended for ${days} days until ${new Date(ends).toLocaleDateString()}. No insults, scams, hate, or violent content.`,
+              { title: "Merveil AI · Suspension", tag: "suspend" });
+            try {
+              await svcG.from("area_group_mod_events").insert({
+                group_id: groupId, user_id: actor.id, action: "auto_suspend",
+                detail: { ai, days, ends },
+              });
+            } catch (_) {}
+            return sendJson(res, 403, {
+              error: `Merveil AI blocked this lead and suspended posting for ${days} days.`,
+              code: "AI_BLOCK",
+              flags: ai.flags,
+              days,
+            });
+          }
+        }
+
         try {
           await svcG.from("area_group_members").update({ last_read_at: new Date().toISOString() })
             .eq("group_id", groupId).eq("user_id", actor.id);
@@ -2723,24 +2995,116 @@ export default async function handler(req, res) {
         if (mediaUrls.length && text) mediaType = "mixed";
         else if (mediaUrls.length) mediaType = String(body.mediaType || "image");
 
-        const { data: post, error } = await svcG.from("area_group_posts").insert({
-          group_id: groupId,
-          author_id: actor.id,
-          body: text || null,
-          media_urls: mediaUrls,
-          media_type: mediaType,
-          price_hint: body.priceHint || body.price || null,
-          property_type: body.propertyType || null,
-        }).select().maybeSingle();
-        if (error) {
-          console.error("[groups/post]", error.message);
-          return sendJson(res, 400, { error: error.message || "Could not publish lead." });
+        const hideNow = ai.decision === "hide";
+        let publishedPost = null;
+        {
+          const ins = await svcG.from("area_group_posts").insert({
+            group_id: groupId,
+            author_id: actor.id,
+            body: text || null,
+            media_urls: mediaUrls,
+            media_type: mediaType,
+            price_hint: body.priceHint || body.price || null,
+            property_type: body.propertyType || null,
+            content_hash: contentHash,
+            duplicate_rank: duplicateRank || null,
+            duplicate_of: duplicateOf,
+            ai_risk_score: ai.score,
+            ai_flags: ai.flags,
+            hidden_at: hideNow ? new Date().toISOString() : null,
+            hidden_by: hideNow ? actor.id : null,
+            hide_reason: hideNow ? `merveil_ai:${ai.flags.join(",")}` : null,
+          }).select().maybeSingle();
+          if (ins.error) {
+            console.error("[groups/post]", ins.error.message);
+            const ins2 = await svcG.from("area_group_posts").insert({
+              group_id: groupId,
+              author_id: actor.id,
+              body: text || null,
+              media_urls: mediaUrls,
+              media_type: mediaType,
+              price_hint: body.priceHint || body.price || null,
+              property_type: body.propertyType || null,
+            }).select().maybeSingle();
+            if (ins2.error) return sendJson(res, 400, { error: ins2.error.message || "Could not publish lead." });
+            publishedPost = ins2.data;
+          } else {
+            publishedPost = ins.data;
+          }
         }
+        if (!publishedPost) return sendJson(res, 400, { error: "Could not publish lead." });
+
+        if (hideNow) {
+          await merveilNotifyCitizen(svcG, actor.id,
+            `Merveil AI hid your lead for review (${ai.flags.join(", ")}). Fix the content and post again. Policy: no scams, insults, or harmful content.`,
+            { title: "Merveil AI · Lead hidden", tag: `hide-${publishedPost.id}` });
+          return sendJson(res, 200, {
+            post: null,
+            hidden: true,
+            warning: "Lead hidden by Merveil AI safety.",
+            flags: ai.flags,
+            group: g,
+          });
+        }
+
+        if (ai.decision === "warn") {
+          await merveilNotifyCitizen(svcG, actor.id,
+            `Merveil AI warning: your lead was published but flagged (${ai.flags.join(", ")}). Repeat issues can lead to 30–90 day suspensions.`,
+            { title: "Merveil AI · Warning", tag: `warn-${publishedPost.id}` });
+        }
+
+        if (duplicateRank >= 2) {
+          const ord = duplicateRank === 2 ? "2nd" : duplicateRank === 3 ? "3rd" : `${duplicateRank}th`;
+          await merveilNotifyCitizen(svcG, actor.id,
+            `Merveil AI notice: you are the ${ord} citizen posting a very similar lead. Allowed for shared inventory — avoid flooding the group.`,
+            { title: "Similar lead detected", tag: `dup-${contentHash}` });
+        }
+
+        try {
+          const { data: st } = await svcG.from("area_group_contributor_stats").select("*").eq("user_id", actor.id).maybeSingle();
+          const real_leads = (st?.real_leads || 0) + 1;
+          const quality_score = real_leads * 2 + (st?.calls_completed || 0) * 3 + (st?.deals_closed || 0) * 10;
+          await svcG.from("area_group_contributor_stats").upsert({
+            user_id: actor.id,
+            real_leads,
+            inbox_messages: st?.inbox_messages || 0,
+            calls_completed: st?.calls_completed || 0,
+            deals_closed: st?.deals_closed || 0,
+            quality_score,
+            credits_awarded: st?.credits_awarded || 0,
+            updated_at: new Date().toISOString(),
+          });
+          if (real_leads > 0 && real_leads % 10 === 0) {
+            await merveilAwardBoostCredits(svcG, actor.id, 5, `${real_leads} real group leads`);
+            await svcG.from("area_group_contributor_stats").update({
+              credits_awarded: (st?.credits_awarded || 0) + 5,
+            }).eq("user_id", actor.id);
+          }
+        } catch (_) {}
+
+        const post = publishedPost;
         try {
           const { count } = await svcG.from("area_group_posts").select("*", { count: "exact", head: true }).eq("group_id", groupId);
           const { count: mc } = await svcG.from("area_group_members").select("*", { count: "exact", head: true }).eq("group_id", groupId);
           await svcG.from("area_groups").update({ post_count: count || 0, member_count: mc || 0 }).eq("id", groupId);
         } catch {}
+        // Push to other members who Entered this group (not explorers)
+        try {
+          const { data: members } = await svcG.from("area_group_members").select("user_id").eq("group_id", groupId);
+          const preview = (text || "New lead").slice(0, 80);
+          const title = g.area ? `${g.area} · ${g.intent || "lead"}` : "Merveil Group";
+          for (const m of members || []) {
+            if (String(m.user_id) === String(actor.id)) continue;
+            notifyUser(m.user_id, {
+              title: title,
+              body: preview,
+              url: `/?tab=connect&group=${groupId}`,
+              tag: `group-post-${post?.id || groupId}`,
+            }).catch(() => {});
+          }
+        } catch (e) {
+          console.error("[groups/post notify]", e.message);
+        }
         return sendJson(res, 200, { post, group: g });
       }
 
@@ -2824,7 +3188,174 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { views_count: post?.views_count || 0 });
       }
 
-      return sendJson(res, 404, { error: "Unknown groups action." });
+      
+      // Favorite group (max 10 per citizen)
+      if (method === "POST" && groupId && groupAction === "favorite") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const { data: existing } = await svcG.from("area_group_favorites")
+          .select("group_id").eq("user_id", actor.id).eq("group_id", groupId).maybeSingle();
+        if (existing) {
+          await svcG.from("area_group_favorites").delete().eq("user_id", actor.id).eq("group_id", groupId);
+          return sendJson(res, 200, { favorited: false });
+        }
+        const { count } = await svcG.from("area_group_favorites").select("*", { count: "exact", head: true }).eq("user_id", actor.id);
+        if ((count || 0) >= 10) {
+          return sendJson(res, 400, { error: "Max 10 favorite groups. Unfavorite one first.", code: "FAV_LIMIT" });
+        }
+        const { error } = await svcG.from("area_group_favorites").insert({ user_id: actor.id, group_id: groupId });
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { favorited: true });
+      }
+
+      // List favorites
+      if (method === "GET" && groupAction === "favorites" && !groupId) {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const { data: favs } = await svcG.from("area_group_favorites").select("group_id, created_at").eq("user_id", actor.id).order("created_at", { ascending: false });
+        const ids = (favs || []).map((f) => f.group_id);
+        let groups = [];
+        if (ids.length) {
+          const { data: gs } = await svcG.from("area_groups").select("*").in("id", ids);
+          groups = gs || [];
+        }
+        return sendJson(res, 200, { favorites: groups, ids });
+      }
+
+      // Pin / unpin lead (any member can pin; only author or pinner can unpin own pin — keep simple: members)
+      if (method === "POST" && groupId && groupAction === "pin") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const body = await readBody(req) || {};
+        const postId = body.postId || body.id;
+        if (!postId) return sendJson(res, 400, { error: "postId required." });
+        const { data: mem } = await svcG.from("area_group_members").select("user_id").eq("group_id", groupId).eq("user_id", actor.id).maybeSingle();
+        if (!mem) return sendJson(res, 403, { error: "Enter the group to pin leads." });
+        const { data: existing } = await svcG.from("area_group_posts").select("id, group_id, pinned_at").eq("id", postId).maybeSingle();
+        if (!existing || String(existing.group_id) !== String(groupId)) {
+          return sendJson(res, 404, { error: "Post not found in this group." });
+        }
+        if (existing.pinned_at) {
+          await svcG.from("area_group_posts").update({ pinned_at: null, pinned_by: null }).eq("id", postId);
+          return sendJson(res, 200, { pinned: false });
+        }
+        await svcG.from("area_group_posts").update({ pinned_at: new Date().toISOString(), pinned_by: actor.id }).eq("id", postId);
+        return sendJson(res, 200, { pinned: true });
+      }
+
+
+      // Report lead → Trust & Safety pipeline (Merveil AI also re-scans)
+      if (method === "POST" && groupId && groupAction === "report") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const body = await readBody(req) || {};
+        const postId = body.postId || body.id;
+        const category = body.category || "spam";
+        if (!postId) return sendJson(res, 400, { error: "postId required." });
+        const { data: existing } = await svcG.from("area_group_posts").select("*").eq("id", postId).maybeSingle();
+        if (!existing || String(existing.group_id) !== String(groupId)) {
+          return sendJson(res, 404, { error: "Post not found." });
+        }
+        const ai = merveilAiScanLead(existing.body || "");
+        let svcR = svcG;
+        const riskByCat = { spam: 25, scam: 55, harassment: 45, hate: 50, violence: 70, fake: 45, other: 20 };
+        const riskScore = Math.max(riskByCat[String(category).toLowerCase()] || 25, ai.score);
+        const { data: insRep, error } = await svcR.from("reports").insert({
+          reporter_id: actor.id,
+          target_type: "area_group_post",
+          target_id: String(postId),
+          category,
+          description: body.description || (existing.body || "").slice(0, 200),
+          status: "open",
+          risk_score: riskScore,
+        }).select("id").maybeSingle();
+        if (error) return sendJson(res, 400, { error: error.message });
+        try {
+          await svcR.from("admin_cases").insert({
+            case_code: `GRP-${Date.now().toString(36).toUpperCase()}`,
+            risk_level: riskScore >= 70 ? "critical" : riskScore >= 50 ? "high" : "medium",
+            platforms: ["app"],
+            entities: [{ type: "area_group_post", id: postId, group_id: groupId }],
+            status: riskScore >= 55 ? "pending_review" : "open",
+            agent_id: "merveil_ai_groups",
+          });
+        } catch (_) {}
+        // Auto-hide if high risk
+        if (riskScore >= 55 || ai.decision === "hide" || ai.decision === "suspend") {
+          await svcG.from("area_group_posts").update({
+            hidden_at: new Date().toISOString(),
+            hidden_by: actor.id,
+            hide_reason: `report:${category};ai:${ai.flags.join(",")}`,
+          }).eq("id", postId);
+          await merveilNotifyCitizen(svcG, existing.author_id,
+            `A lead you posted was removed by Merveil AI after a community report (${category}). Review community guidelines.`,
+            { title: "Lead removed", tag: `rm-${postId}` });
+          if (ai.decision === "suspend" || riskScore >= 70) {
+            const prior = await svcG.from("area_group_sanctions").select("id", { count: "exact", head: true }).eq("user_id", existing.author_id);
+            const days = merveilSanctionDays(ai.flags.length ? ai.flags : ["scam_fake"], prior.count || 0);
+            const ends = new Date(Date.now() + days * 864e5).toISOString();
+            await svcG.from("area_group_sanctions").insert({
+              user_id: existing.author_id,
+              group_id: groupId,
+              scope: riskScore >= 80 ? "all_groups" : "group",
+              kind: "suspend",
+              days,
+              ends_at: ends,
+              reason: `Report + AI: ${category}`,
+              policy_codes: ai.flags,
+              issued_by: "merveil_ai",
+            });
+            await merveilNotifyCitizen(svcG, existing.author_id,
+              `Merveil AI suspended group posting for ${days} days. Reason: ${category}.`,
+              { title: "Merveil AI · Suspension", tag: `sus-${postId}` });
+          }
+        }
+        await svcG.from("area_group_mod_events").insert({
+          post_id: postId, group_id: groupId, user_id: actor.id, action: "report",
+          detail: { category, riskScore, ai },
+        });
+        return sendJson(res, 200, { ok: true, reportId: insRep?.id, autoHidden: riskScore >= 55 });
+      }
+
+      // Remove lead (author, or AI already handled — members can flag via report)
+      if (method === "POST" && groupId && groupAction === "remove-post") {
+        if (!requireCitizenActor(actor, res, "Sign in required.")) return;
+        const body = await readBody(req) || {};
+        const postId = body.postId || body.id;
+        const { data: existing } = await svcG.from("area_group_posts").select("*").eq("id", postId).maybeSingle();
+        if (!existing || String(existing.group_id) !== String(groupId)) {
+          return sendJson(res, 404, { error: "Post not found." });
+        }
+        const isAuthor = String(existing.author_id) === String(actor.id);
+        if (!isAuthor) {
+          return sendJson(res, 403, { error: "Only the poster can remove — or use Report so Merveil AI reviews." });
+        }
+        await svcG.from("area_group_posts").update({
+          hidden_at: new Date().toISOString(),
+          hidden_by: actor.id,
+          hide_reason: "author_removed",
+        }).eq("id", postId);
+        return sendJson(res, 200, { ok: true });
+      }
+
+      // Top posters leaderboard
+      if (method === "GET" && groupAction === "leaderboard" && !groupId) {
+        const { data: rows } = await svcG.from("area_group_contributor_stats")
+          .select("user_id, real_leads, inbox_messages, calls_completed, deals_closed, quality_score, credits_awarded")
+          .order("quality_score", { ascending: false })
+          .limit(20);
+        const ids = (rows || []).map((r) => r.user_id);
+        let profiles = {};
+        if (ids.length) {
+          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url").in("id", ids);
+          for (const pr of profs || []) profiles[pr.id] = pr;
+        }
+        return sendJson(res, 200, {
+          leaders: (rows || []).map((r) => ({
+            ...r,
+            name: profiles[r.user_id]?.name || "Citizen",
+            avatar_url: profiles[r.user_id]?.avatar_url || null,
+          })),
+        });
+      }
+
+return sendJson(res, 404, { error: "Unknown groups action." });
     }
 
     // -------------------------------------------------------- /api/circles
