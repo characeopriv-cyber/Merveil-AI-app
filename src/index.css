@@ -98,10 +98,18 @@ button, a, input, textarea, select {
 [data-tab="messages"] .merveil-living-mark {
   display: none !important;
 }
+/* Connect — Merveil AI stays under the thread list, never overlays rows */
+.connect-ai-footer {
+  position: relative !important;
+  z-index: 2;
+  flex-shrink: 0;
+  margin-top: auto;
+}
 .connect-ai-row {
   position: relative !important;
   z-index: 1 !important;
 }
+
 
 
 .merveil-header-plus-menu,
