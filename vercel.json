@@ -217,6 +217,16 @@
       "destination": "/developer-portal/onboarding.html"
     },
     {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "professional-service.junction.technology"
+        }
+      ],
+      "destination": "/professional-service-junction/index.html"
+    },
+    {
       "source": "/onboarding/",
       "has": [
         {
