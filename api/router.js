@@ -14,7 +14,7 @@ import {
   getRefreshToken,
   forgetSession,
 } from "../lib/supabaseServer.js";
-import { generate as generateMerveilIntelligence } from "../server/merveil-v1/intelligence-router.js";
+import { handlePackagesOnlineOffice } from "./api/packagesOnlineOfficeApi.js";
 
 // Server-side FCM (native) + Web Push (PWA). Path works when pushSend.js
 // sits next to the API router or under lib/.
@@ -3107,7 +3107,7 @@ export default async function handler(req, res) {
         const authorIds = [...new Set((posts || []).map((p) => p.author_id).filter(Boolean))];
         let profiles = {};
         if (authorIds.length) {
-          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, account_type, city, country").in("id", authorIds);
+          const { data: profs } = await svcG.from("profiles").select("id, name, avatar_url, profession, passport_tier, kyc_status, account_type, rera_number, trust_score, trust_level, trust_label").in("id", authorIds);
           for (const pr of profs || []) profiles[pr.id] = pr;
         }
         let presenceMap = {};
@@ -3421,6 +3421,7 @@ export default async function handler(req, res) {
               photo_url: (mediaUrls && mediaUrls[0]) || null,
               source_group_id: groupId,
               source_group_post_id: post.id,
+              from_group_label: fromLabel,
             }).select("id").maybeSingle();
             if (!insProp.error && insProp.data?.id) {
               pulseBridged = true;
@@ -6245,7 +6246,13 @@ return sendJson(res, 404, { error: "Unknown groups action." });
     // action=sponsored below, inside the /api/console block.
 
     // ------------------------------------------------------ /api/assistant
-    // Merveil AI chat — shared intelligence router with provider fallback.
+    // Merveil AI chat — YOUR API (Grok or OpenAI). Not Claude.
+    // Env (server only):
+    //   AI_API_URL  — e.g. https://api.x.ai/v1  or https://your-host/v1
+    //                 or full .../chat/completions
+    //   AI_API_KEY  — Bearer token
+    //   AI_MODEL    — model id (optional)
+    // Aliases: XAI_API_URL / XAI_API_KEY / XAI_MODEL
     if (resource === "assistant" && method === "POST") {
       if (!user) return sendJson(res, 401, { error: "Sign in required." });
       const body = await readBody(req);
@@ -6261,33 +6268,75 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         });
       }
 
-      const safeMessages = messages
-        .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-        .slice(-20)
-        .map((m) => ({ role: m.role, content: String(m.content).slice(0, 8000) }));
-      if (!safeMessages.length) return sendJson(res, 400, { error: "No valid user/assistant messages." });
+      const apiUrl = (process.env.AI_API_URL || process.env.XAI_API_URL || "").replace(/\/$/, "");
+      const apiKey = process.env.AI_API_KEY || process.env.XAI_API_KEY || "";
+      const model = process.env.AI_MODEL || process.env.XAI_MODEL || "grok-2-latest";
+
+      if (!apiUrl || !apiKey) {
+        return sendJson(res, 500, {
+          error:
+            "Merveil AI is not configured. Set AI_API_URL and AI_API_KEY (or XAI_API_URL / XAI_API_KEY) on the server, then redeploy.",
+        });
+      }
 
       const systemText =
         typeof system === "string" && system.trim()
           ? system.slice(0, 12000)
-          : "You are Merveil AI, a helpful assistant inside Merveil. Be concise, useful and context-aware. Never pretend to be a human.";
+          : "You are Merveil AI, a helpful assistant inside the Merveil UAE super-app for real estate, jobs, services, and networking. Be concise and useful. Never pretend to be a human.";
+
+      const safeMessages = messages
+        .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+        .slice(-20)
+        .map((m) => ({ role: m.role, content: String(m.content).slice(0, 8000) }));
+      if (!safeMessages.length) {
+        return sendJson(res, 400, { error: "No valid user/assistant messages." });
+      }
+
+      const chatMessages = [{ role: "system", content: systemText }, ...safeMessages];
+      const endpoint = apiUrl.includes("/chat/completions") ? apiUrl : `${apiUrl}/chat/completions`;
 
       try {
-        const result = await generateMerveilIntelligence({
-          messages: [{ role: "system", content: systemText }, ...safeMessages],
-          maxTokens: Math.min(Number(maxTokens) || 600, 2048),
-          temperature: 0.7,
-          capability: "general",
+        const upstream = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: chatMessages,
+            max_tokens: Math.min(Number(maxTokens) || 600, 2048),
+            temperature: 0.7,
+          }),
         });
+
+        if (!upstream.ok) {
+          const errText = await upstream.text();
+          console.error("AI API error:", upstream.status, errText.slice(0, 500));
+          return sendJson(res, upstream.status >= 500 ? 502 : upstream.status, {
+            error:
+              upstream.status === 429
+                ? "Merveil AI is busy — try again in a moment."
+                : `Merveil AI error (${upstream.status}). Check AI_API_URL / AI_API_KEY / model.`,
+          });
+        }
+
+        const data = await upstream.json();
+        let reply =
+          data?.choices?.[0]?.message?.content ||
+          data?.reply ||
+          data?.content ||
+          data?.message ||
+          "";
+        if (typeof reply !== "string") reply = JSON.stringify(reply);
+        reply = String(reply).trim();
+
         await sb.rpc("increment_ai_usage", { uid: user.id }).catch(() => {});
-        return sendJson(res, 200, {
-          reply: result.reply || "I didn't catch that — try asking again.",
-          provider: result.provider,
-          model: result.model,
-        });
+
+        return sendJson(res, 200, { reply: reply || "I didn't catch that — try asking again." });
       } catch (err) {
-        console.error("Merveil AI router failed:", err?.message || err);
-        return sendJson(res, 503, { error: "Merveil AI is temporarily unavailable. Please try again in a moment." });
+        console.error("Assistant request failed:", err.message);
+        return sendJson(res, 500, { error: `Couldn't reach Merveil AI — ${err.message}` });
       }
     }
 
@@ -6958,6 +7007,26 @@ return sendJson(res, 404, { error: "Unknown groups action." });
       }
 
       return sendJson(res, 404, { error: "Not found" });
+    }
+
+
+    // -------------------------------------------------- /api/packages
+    // Packages 599/899/1299 · Online Office · Worker · World boosts · Custom quotes
+    if (resource === "packages") {
+      let svc = sb;
+      try { svc = adminClient(); } catch { /* user client */ }
+      const actorId = user?.id || citizen?.id || jwtSub || null;
+      let body = {};
+      if (method !== "GET" && method !== "HEAD") {
+        try { body = await readBody(req); } catch { body = {}; }
+      }
+      return handlePackagesOnlineOffice(req, res, {
+        adminClient: svc,
+        jwtSub: actorId,
+        userId: actorId,
+        user: user || citizen || null,
+        body: body || {},
+      });
     }
 
     // -------------------------------------------------- /api/creator-studio
@@ -9586,27 +9655,12 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         let peopleClient;
         try { peopleClient = adminClient(); } catch { peopleClient = anonClient(); }
         // Do not select agent_verified/company_verified — may be missing on older prod schemas
-        let data = null;
-        let profileError = null;
-        const primary = await peopleClient
+        const { data, error } = await peopleClient
           .from("profiles")
           .select("id, name, avatar_url, cover_video_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages, feeling, thought, role_label, kyc_status, rera_number")
           .eq("id", userId)
           .maybeSingle();
-        data = primary.data || null;
-        profileError = primary.error || null;
-        // Older production schemas may miss an optional Passport/reputation column.
-        // A valid creator tap must never become a dead profile page because of that.
-        if (profileError) {
-          const fallback = await peopleClient
-            .from("profiles")
-            .select("id, name, avatar_url, junction_id, passport_tier, country, bio, created_at, account_type, company_name, city, profession, languages")
-            .eq("id", userId)
-            .maybeSingle();
-          data = fallback.data || null;
-          profileError = fallback.error || null;
-        }
-        if (profileError) return sendJson(res, 400, { error: profileError.message });
+        if (error) return sendJson(res, 400, { error: error.message });
         // Always return a public card — never blank the creator page for investors / group taps
         if (!data) {
           return sendJson(res, 200, {
@@ -12199,9 +12253,9 @@ return sendJson(res, 404, { error: "Unknown groups action." });
           products = pr.data || [];
         } catch {
           products = [
-            { product_id: "passport:professional", category: "passport", display_name: "Professional Passport", amount: 11, currency: "AED" },
-            { product_id: "passport:company", category: "passport", display_name: "Company Passport", amount: 29, currency: "AED" },
-            { product_id: "passport:investor", category: "passport", display_name: "Investor Passport", amount: 37, currency: "AED" },
+            { product_id: "passport:professional", category: "passport", display_name: "Professional Package", amount: 599, currency: "AED" },
+            { product_id: "passport:company", category: "passport", display_name: "Company Package", amount: 1299, currency: "AED" },
+            { product_id: "passport:investor", category: "passport", display_name: "Investor Package", amount: 899, currency: "AED" },
           ];
         }
         return sendJson(res, 200, {
@@ -12264,9 +12318,9 @@ return sendJson(res, 404, { error: "Unknown groups action." });
           // Fallback catalog if SQL not applied
           if (amount == null) {
             const FALLBACK = {
-              "passport:professional": { amount: 11, currency: "AED" },
-              "passport:company": { amount: 29, currency: "AED" },
-              "passport:investor": { amount: 37, currency: "AED" },
+              "passport:professional": { amount: 599, currency: "AED" },
+              "passport:company": { amount: 1299, currency: "AED" },
+              "passport:investor": { amount: 899, currency: "AED" },
             };
             if (FALLBACK[productId]) {
               amount = FALLBACK[productId].amount;
