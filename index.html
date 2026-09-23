@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
+
+    <!-- Host-level safety redirect: this domain is a standalone Professional Service surface. -->
+    <script>
+      if (window.location.hostname === "professional-service.junction.technology") {
+        window.location.replace("/professional-service-junction/index.html" + window.location.search + window.location.hash);
+      }
+    </script>
+
     <title>Merveil AI — Identity, network &amp; opportunity</title>
     <meta
       name="description"
