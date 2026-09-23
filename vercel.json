@@ -1,16 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
-      "has": [
-        {
-          "type": "host",
-          "value": "professional-service.junction.technology"
-        }
-      ],
-      "destination": "/professional-service-junction/index.html"
-    },
-    {
       "source": "/interface",
       "destination": "/interface/index.html"
     },
@@ -381,6 +371,17 @@
     }
   ],
   "redirects": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "professional-service.junction.technology"
+        }
+      ],
+      "destination": "/professional-service-junction/index.html",
+      "permanent": false
+    },
     {
       "source": "/dev",
       "destination": "/developer",
