@@ -21155,7 +21155,7 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
           {/* LEFT rail — Super · Comments · More (raised so profile stays clear at bottom) */}
           <div
             className="absolute left-2 flex flex-col items-center gap-3.5 pointer-events-auto"
-            style={{ bottom: "calc(200px + var(--safe-bottom, 0px))", zIndex: 50 }}
+            style={{ bottom: "calc(248px + var(--safe-bottom, 0px))", zIndex: 50 }}
             onClick={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -21182,7 +21182,7 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
           </div>
 
           {showMoreTools && (
-            <div className="absolute left-16 z-30 rounded-xl overflow-hidden shadow-xl" style={{ bottom: "calc(200px + var(--safe-bottom, 0px))", background: "rgba(17,24,39,0.96)", border: "1px solid rgba(14,154,167,0.35)", minWidth: 168 }}
+            <div className="absolute left-16 z-30 rounded-xl overflow-hidden shadow-xl" style={{ bottom: "calc(248px + var(--safe-bottom, 0px))", background: "rgba(17,24,39,0.96)", border: "1px solid rgba(14,154,167,0.35)", minWidth: 168 }}
               onClick={(e) => e.stopPropagation()}>
               <button type="button" className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/10"
                 onClick={() => { setShowMoreTools(false); share(); }}>
@@ -21272,9 +21272,9 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
           )}
 
           <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none"
-            style={{ padding: "16px 16px calc(20px + var(--safe-bottom, 0px))", background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 50%, transparent 100%)" }}>
+            style={{ padding: "16px 16px calc(72px + var(--nav-h, 56px) * 0 + var(--safe-bottom, 0px))", background: "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.45) 55%, transparent 100%)", paddingBottom: "calc(72px + var(--safe-bottom, 0px))" }}>
             <div className="flex items-end gap-3 pointer-events-auto" style={{ maxWidth: "82%" }}>
-              {/* Profile + connection — clear bottom-left (normal place) */}
+              {/* Profile — raised above system nav / home indicator */}
               <div className="relative shrink-0 mb-1">
                 <button type="button" onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
                   className="block" aria-label="Open creator">
@@ -22861,36 +22861,62 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       return "anchor";
     };
 
-    /** Draw Merveil AI brand on a 2D canvas (TikTok-style signature). */
-    const stampMerveilMark = (ctx, w, h) => {
-      const pad = Math.max(12, Math.round(Math.min(w, h) * 0.03));
-      const fontPx = Math.max(14, Math.round(Math.min(w, h) * 0.045));
+    /**
+     * Draw floating circular 3D Merveil AI mark (same language as in-app MiniMark).
+     * t = 0..1 progress through video so the orb keeps moving — not a static corner label.
+     * Never a plain text bar at the bottom.
+     */
+    const stampMerveilMark = (ctx, w, h, t = 0) => {
+      const size = Math.max(36, Math.round(Math.min(w, h) * 0.09));
+      // Wander path (mirrors in-app CSS path) — always inside safe frame so crop can't strip it easily
+      const phase = ((Number(t) % 1) + 1) % 1;
+      const path = [
+        { x: 0.82, y: 0.16 },
+        { x: 0.14, y: 0.20 },
+        { x: 0.12, y: 0.44 },
+        { x: 0.84, y: 0.40 },
+        { x: 0.78, y: 0.22 },
+      ];
+      const seg = phase * path.length;
+      const i0 = Math.floor(seg) % path.length;
+      const i1 = (i0 + 1) % path.length;
+      const f = seg - Math.floor(seg);
+      const x = (path[i0].x + (path[i1].x - path[i0].x) * f) * w;
+      const y = (path[i0].y + (path[i1].y - path[i0].y) * f) * h;
+      const breathe = 0.92 + 0.08 * Math.sin(phase * Math.PI * 4);
+      const r = (size / 2) * breathe;
       ctx.save();
-      ctx.font = `800 ${fontPx}px "Space Grotesk", system-ui, sans-serif`;
-      ctx.textAlign = "right";
-      ctx.textBaseline = "bottom";
-      const label = "Merveil AI";
-      const tw = ctx.measureText(label).width;
-      const bx = w - pad;
-      const by = h - pad;
-      const bw = tw + pad * 1.2;
-      const bh = fontPx + pad * 0.9;
-      ctx.fillStyle = "rgba(0,0,0,0.42)";
+      ctx.globalAlpha = 0.88;
+      // outer glow
+      const glow = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * 1.6);
+      glow.addColorStop(0, "rgba(14,154,167,0.55)");
+      glow.addColorStop(1, "rgba(14,154,167,0)");
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.roundRect?.(bx - bw, by - bh, bw, bh, 10);
-      if (!ctx.roundRect) {
-        ctx.fillRect(bx - bw, by - bh, bw, bh);
-      } else {
-        ctx.fill();
-      }
+      ctx.arc(x, y, r * 1.55, 0, Math.PI * 2);
+      ctx.fill();
+      // 3D sphere
+      const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
+      g.addColorStop(0, "#5EEAD4");
+      g.addColorStop(0.45, "#0E9AA7");
+      g.addColorStop(1, "#0A5F6A");
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.lineWidth = Math.max(2, size * 0.05);
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.stroke();
+      // label inside orb only (not a bottom strip)
       ctx.fillStyle = "#FFFFFF";
-      ctx.shadowColor = "rgba(14,154,167,0.55)";
-      ctx.shadowBlur = 8;
-      ctx.fillText(label, bx - pad * 0.35, by - pad * 0.25);
-      // teal accent underline
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "#0E9AA7";
-      ctx.fillRect(bx - bw + 8, by - 6, Math.min(bw - 16, 48), 3);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `800 ${Math.max(8, Math.round(size * 0.16))}px "Space Grotesk", system-ui, sans-serif`;
+      ctx.shadowColor = "rgba(0,0,0,0.45)";
+      ctx.shadowBlur = 3;
+      ctx.fillText("Merveil", x, y - size * 0.06);
+      ctx.font = `700 ${Math.max(7, Math.round(size * 0.13))}px "Space Grotesk", system-ui, sans-serif`;
+      ctx.fillText("AI", x, y + size * 0.12);
       ctx.restore();
     };
 
@@ -22910,7 +22936,8 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         canvas.height = img.naturalHeight || img.height;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0);
-        stampMerveilMark(ctx, canvas.width, canvas.height);
+        // Floating circular mark (not a bottom text strip)
+        stampMerveilMark(ctx, canvas.width, canvas.height, 0.15);
         const out = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
         return out || blob;
       } catch {
@@ -22951,30 +22978,45 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
             ? "video/webm"
             : "";
         if (!mime || typeof MediaRecorder === "undefined") {
-          // Still frame fallback with watermark
           video.currentTime = Math.min(0.2, (video.duration || 1) * 0.1);
           await new Promise((r) => setTimeout(r, 200));
           ctx.drawImage(video, 0, 0, w, h);
-          stampMerveilMark(ctx, w, h);
+          stampMerveilMark(ctx, w, h, 0.2);
           const still = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
           return { blob: still || blob, ext: still ? "jpg" : "mp4", note: "preview" };
         }
+        // Try to copy audio track when browser allows
+        try {
+          const vStream = video.captureStream?.() || video.mozCaptureStream?.();
+          if (vStream) {
+            const aTracks = vStream.getAudioTracks?.() || [];
+            aTracks.forEach((t) => { try { stream.addTrack(t); } catch {} });
+          }
+        } catch {}
         const chunks = [];
-        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
+        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_800_000 });
         rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
         const done = new Promise((resolve) => { rec.onstop = () => resolve(); });
-        rec.start(200);
+        rec.start(100);
+        try { video.currentTime = 0; } catch {}
         await video.play().catch(() => {});
-        const maxMs = Math.min(60000, ((video.duration || 15) * 1000) || 15000);
+        const duration = Math.max(0.5, Number(video.duration) || 15);
+        const maxMs = Math.min(60000, duration * 1000 + 400);
         const start = performance.now();
         await new Promise((resolve) => {
           const tick = () => {
-            if (video.ended || video.paused || performance.now() - start > maxMs) {
+            const elapsed = performance.now() - start;
+            if (video.ended || elapsed > maxMs) {
               resolve();
               return;
             }
-            ctx.drawImage(video, 0, 0, w, h);
-            stampMerveilMark(ctx, w, h);
+            // Keep drawing even if browser pauses mid-encode
+            try {
+              ctx.drawImage(video, 0, 0, w, h);
+              const t = duration > 0 ? Math.min(0.999, (video.currentTime || elapsed / 1000) / duration) : (elapsed / maxMs);
+              // Floating circular 3D mark every frame — moves for full length, baked in
+              stampMerveilMark(ctx, w, h, t);
+            } catch {}
             requestAnimationFrame(tick);
           };
           tick();
@@ -22982,7 +23024,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
         try { video.pause(); } catch {}
         if (rec.state !== "inactive") rec.stop();
         await done;
-        const out = new Blob(chunks, { type: mime });
+        const out = new Blob(chunks, { type: mime.split(";")[0] || "video/webm" });
         if (out.size > 2048) return { blob: out, ext: "webm", note: "watermarked" };
         return { blob, ext: "mp4", note: "original" };
       } catch (e) {
@@ -23056,7 +23098,7 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
           how === "shared"
             ? "Use Share → Save / Gallery to keep the video."
             : stamped.note === "watermarked"
-              ? "Downloaded with Merveil AI signature."
+              ? "Saved with floating circular Merveil AI mark on every frame."
               : stamped.note === "preview"
                 ? "Saved branded still (video encode limited on this device)."
                 : "Download started — check Downloads or Gallery."
@@ -23072,8 +23114,8 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       toast(
         "success",
         how === "shared"
-          ? "Use Share → Save / Gallery to keep the photo."
-          : "Downloaded with Merveil AI signature."
+          ? "Share sheet → Save / Gallery (floating Merveil mark stays on the file)."
+          : "Saved with floating Merveil AI mark on the media."
       );
       return;
     }
