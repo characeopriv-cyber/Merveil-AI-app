@@ -14,7 +14,6 @@ import {
   getRefreshToken,
   forgetSession,
 } from "../lib/supabaseServer.js";
-import { handlePackagesOnlineOffice } from "./api/packagesOnlineOfficeApi.js";
 
 // Server-side FCM (native) + Web Push (PWA). Path works when pushSend.js
 // sits next to the API router or under lib/.
@@ -2074,13 +2073,36 @@ export default async function handler(req, res) {
       }
 
       if (method === "GET") {
-        const { data, error } = await anonClient().from("properties").select("*").order("created_at", { ascending: false }).limit(200);
-        if (error) return sendJson(res, 400, { error: error.message });
+        let data = [];
+        let error = null;
+        try {
+          let propClient;
+          try { propClient = adminClient(); } catch { propClient = anonClient(); }
+          const resP = await propClient.from("properties").select("*").order("created_at", { ascending: false }).limit(200);
+          data = resP.data || [];
+          error = resP.error;
+          // Fallback anon if admin path failed hard
+          if (error) {
+            try {
+              const res2 = await anonClient().from("properties").select("*").order("created_at", { ascending: false }).limit(200);
+              if (!res2.error) { data = res2.data || []; error = null; }
+            } catch {}
+          }
+        } catch (e) {
+          console.warn("[properties GET]", e?.message || e);
+          return sendJson(res, 200, { properties: [], ranked: false, error: String(e?.message || e) });
+        }
+        if (error) {
+          console.warn("[properties GET error]", error.message);
+          return sendJson(res, 200, { properties: [], ranked: false, error: error.message });
+        }
         const ownerIds = [...new Set((data || []).map((p) => p.owner_id).filter(Boolean))];
         let ownerMap = {};
         if (ownerIds.length) {
           try {
-            const { data: owners } = await anonClient()
+            let profClient;
+            try { profClient = adminClient(); } catch { profClient = anonClient(); }
+            const { data: owners } = await profClient
               .from("profiles")
               .select("id, name, avatar_url, role_label")
               .in("id", ownerIds);
@@ -7013,6 +7035,22 @@ return sendJson(res, 404, { error: "Unknown groups action." });
     // -------------------------------------------------- /api/packages
     // Packages 599/899/1299 · Online Office · Worker · World boosts · Custom quotes
     if (resource === "packages") {
+      let handler = null;
+      try {
+        const mod = await import("./packagesOnlineOfficeApi.js");
+        handler = mod.handlePackagesOnlineOffice || mod.default?.handlePackagesOnlineOffice;
+      } catch (e1) {
+        try {
+          const mod = await import("../api/packagesOnlineOfficeApi.js");
+          handler = mod.handlePackagesOnlineOffice || mod.default?.handlePackagesOnlineOffice;
+        } catch (e2) {
+          console.warn("[packages] load failed", e2?.message || e1?.message);
+          return sendJson(res, 503, { error: "packages_module_unavailable" });
+        }
+      }
+      if (typeof handler !== "function") {
+        return sendJson(res, 503, { error: "packages_handler_missing" });
+      }
       let svc = sb;
       try { svc = adminClient(); } catch { /* user client */ }
       const actorId = user?.id || citizen?.id || jwtSub || null;
@@ -7020,13 +7058,18 @@ return sendJson(res, 404, { error: "Unknown groups action." });
       if (method !== "GET" && method !== "HEAD") {
         try { body = await readBody(req); } catch { body = {}; }
       }
-      return handlePackagesOnlineOffice(req, res, {
-        adminClient: svc,
-        jwtSub: actorId,
-        userId: actorId,
-        user: user || citizen || null,
-        body: body || {},
-      });
+      try {
+        return await handler(req, res, {
+          adminClient: svc,
+          jwtSub: actorId,
+          userId: actorId,
+          user: user || citizen || null,
+          body: body || {},
+        });
+      } catch (e) {
+        console.warn("[packages]", e?.message || e);
+        return sendJson(res, 500, { error: e?.message || "packages_failed" });
+      }
     }
 
     // -------------------------------------------------- /api/creator-studio
