@@ -15014,7 +15014,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           </div>
         )}
 
-        <div className="overflow-y-auto flex-1 min-h-0 overscroll-contain">
+        <div className="flex flex-col flex-1 min-h-0 overscroll-contain" style={{ minHeight: 0 }}>
+          <div className="shrink-0">
           <IncomingConnectionRequests currentUser={currentUser} />
 
           <div className="flex items-center gap-1.5 px-3 pb-2 pt-1">
@@ -15030,7 +15031,9 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               </button>
             ))}
           </div>
+          </div>
 
+          <div className="flex flex-col flex-1 min-h-0" style={{ minHeight: 0 }}>
           {(() => {
             // MESSAGES — actual communication only. Citizens/My Circle
             // (people without a thread yet) live in their own tabs now;
@@ -15094,22 +15097,6 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                       ? "No favorites yet — tap the star on someone to pin them."
                       : "No archived conversations."}
                 </div>
-                {connectFilter === "all" && (
-                  <button type="button" onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
-                    className="connect-ai-row w-full text-left p-3 border-t flex items-center gap-3 mt-2"
-                    style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "transparent" }}>
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
-                      <Sparkles size={16} color="#fff" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
-                      </div>
-                      <span className="text-xs truncate block" style={{ color: T.sub }}>Optional · ask about listings, areas, anything</span>
-                    </div>
-                  </button>
-                )}
                 </>
               );
             }
@@ -15120,7 +15107,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                 items={rows}
                 itemHeight={76}
                 overscan={12}
-                style={{ maxHeight: "min(65vh, 560px)", minHeight: 120 }}
+                className="flex-1 min-h-0"
+                style={{ flex: "1 1 auto", minHeight: 0, maxHeight: "none", height: "100%" }}
                 getKey={(r) => r.userId}
                 renderItem={(r) => {
               const status = r.status || "offline";
@@ -15244,27 +15232,41 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               );
             }}
               />
-              {connectFilter === "all" && (
-                <button
-                  type="button"
-                  onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
-                  className="connect-ai-row w-full text-left p-3 border-t flex items-center gap-3 mt-1"
-                  style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "transparent" }}>
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
-                    <Sparkles size={16} color="#fff" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
-                    </div>
-                    <span className="text-xs truncate block" style={{ color: T.sub }}>Optional · ask about listings, areas, anything</span>
-                  </div>
-                </button>
-              )}
               </>
             );
           })()}
+          {/* Merveil AI — pinned fully BELOW conversations, never in the thread list / never overlapping */}
+          {connectFilter === "all" && (
+            <div
+              className="connect-ai-footer shrink-0"
+              style={{
+                borderTop: `1px solid ${T.line}`,
+                background: T.paper || "#EAE4DB",
+                paddingBottom: "max(4px, env(safe-area-inset-bottom, 0px))",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
+                className="connect-ai-row w-full text-left px-3 py-3 flex items-center gap-3"
+                style={{
+                  background: activeId === MERVEIL_AI_THREAD_ID ? "rgba(14,154,167,0.08)" : "transparent",
+                }}
+              >
+                <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
+                  <Sparkles size={16} color="#fff" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>Optional</span>
+                  </div>
+                  <span className="text-xs truncate block" style={{ color: T.sub }}>Ask about listings, areas, anything</span>
+                </div>
+              </button>
+            </div>
+          )}
+          </div>
         </div>
         </>
         )}
