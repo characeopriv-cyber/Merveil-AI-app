@@ -15235,37 +15235,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               </>
             );
           })()}
-          {/* Merveil AI — pinned fully BELOW conversations, never in the thread list / never overlapping */}
-          {connectFilter === "all" && (
-            <div
-              className="connect-ai-footer shrink-0"
-              style={{
-                borderTop: `1px solid ${T.line}`,
-                background: T.paper || "#EAE4DB",
-                paddingBottom: "max(4px, env(safe-area-inset-bottom, 0px))",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
-                className="connect-ai-row w-full text-left px-3 py-3 flex items-center gap-3"
-                style={{
-                  background: activeId === MERVEIL_AI_THREAD_ID ? "rgba(14,154,167,0.08)" : "transparent",
-                }}
-              >
-                <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
-                  <Sparkles size={16} color="#fff" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>Optional</span>
-                  </div>
-                  <span className="text-xs truncate block" style={{ color: T.sub }}>Ask about listings, areas, anything</span>
-                </div>
-              </button>
-            </div>
-          )}
+
           </div>
         </div>
         </>
@@ -21172,10 +21142,10 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
         </div>
       ) : (
         <>
-          {/* LEFT rail — Super · Comments · More (no Call). Profile + under content details. */}
+          {/* LEFT rail — Super · Comments · More (raised so profile stays clear at bottom) */}
           <div
-            className="absolute left-2 flex flex-col items-center gap-3 pointer-events-auto"
-            style={{ bottom: "calc(148px + var(--safe-bottom, 0px))", zIndex: 50 }}
+            className="absolute left-2 flex flex-col items-center gap-3.5 pointer-events-auto"
+            style={{ bottom: "calc(200px + var(--safe-bottom, 0px))", zIndex: 50 }}
             onClick={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -21191,7 +21161,7 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
                 <MessageSquare size={18} color="#fff" />
               </div>
               <span className="text-[10px] font-semibold text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{post.comments_count || 0}</span>
-              <span className="text-[8px] font-bold tracking-wide text-white/70">CHAT</span>
+              <span className="text-[8px] font-bold tracking-wide text-white/70">COMMENTS</span>
             </button>
             <button type="button" onClick={(e) => { e.stopPropagation(); setShowMoreTools((v) => !v); setShowOwnerMenu(false); setShowInterestMenu(false); }} className="flex flex-col items-center gap-0.5 pointer-events-auto">
               <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: showMoreTools ? "rgba(14,154,167,0.35)" : "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)" }}>
@@ -21202,7 +21172,7 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
           </div>
 
           {showMoreTools && (
-            <div className="absolute left-16 z-30 rounded-xl overflow-hidden shadow-xl" style={{ bottom: "calc(148px + var(--safe-bottom, 0px))", background: "rgba(17,24,39,0.96)", border: "1px solid rgba(14,154,167,0.35)", minWidth: 168 }}
+            <div className="absolute left-16 z-30 rounded-xl overflow-hidden shadow-xl" style={{ bottom: "calc(200px + var(--safe-bottom, 0px))", background: "rgba(17,24,39,0.96)", border: "1px solid rgba(14,154,167,0.35)", minWidth: 168 }}
               onClick={(e) => e.stopPropagation()}>
               <button type="button" className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/10"
                 onClick={() => { setShowMoreTools(false); share(); }}>
@@ -21291,16 +21261,16 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
             </div>
           )}
 
-          <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
-            style={{ padding: "12px 16px calc(16px + var(--safe-bottom, 0px))", background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.25) 55%, transparent 100%)" }}>
-            <div className="flex items-end gap-3 pointer-events-auto" style={{ maxWidth: "78%" }}>
-              {/* TikTok-style profile + → connection request */}
-              <div className="relative shrink-0">
+          <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none"
+            style={{ padding: "16px 16px calc(20px + var(--safe-bottom, 0px))", background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 50%, transparent 100%)" }}>
+            <div className="flex items-end gap-3 pointer-events-auto" style={{ maxWidth: "82%" }}>
+              {/* Profile + connection — clear bottom-left (normal place) */}
+              <div className="relative shrink-0 mb-1">
                 <button type="button" onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
                   className="block" aria-label="Open creator">
                   {post.owner_avatar
-                    ? <img src={post.owner_avatar} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: "2px solid #fff", boxShadow: "0 4px 14px rgba(0,0,0,0.35)" }} />
-                    : <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#0E9AA7,#0A5A62)", border: "2px solid #fff" }}>{(post.owner_name || "?")[0]}</div>}
+                    ? <img src={post.owner_avatar} alt="" className="w-14 h-14 rounded-full object-cover" style={{ border: "2.5px solid #fff", boxShadow: "0 4px 16px rgba(0,0,0,0.45)" }} />
+                    : <div className="w-14 h-14 rounded-full flex items-center justify-center text-base font-bold text-white" style={{ background: "linear-gradient(135deg,#0E9AA7,#0A5A62)", border: "2.5px solid #fff" }}>{(post.owner_name || "?")[0]}</div>}
                 </button>
                 {!(String(post.owner_id || "") === "merveil-ai" || post.content_origin === "ai" || post._seed) && (
                   <button
@@ -21329,7 +21299,8 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
               </div>
               <div className="min-w-0 flex-1 pb-0.5">
                 <button type="button" onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
-                  className="text-sm font-bold text-white inline-flex items-center gap-1.5 mb-0.5">
+                  className="text-[15px] font-bold text-white inline-flex items-center gap-1.5 mb-0.5"
+                  style={{ textShadow: "0 1px 4px rgba(0,0,0,0.75)" }}>
                   {post.owner_name
                     || (String(post.owner_id || "") === "merveil-ai" || post.content_origin === "ai" || post.content_origin === "seed" ? "Merveil AI" : null)
                     || "Citizen"}
@@ -22830,16 +22801,54 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       return false;
     };
 
-    const saveBlob = (blob, filename) => {
+    const saveBlob = async (blob, filename) => {
+      const mime = blob.type || (filename.endsWith(".mp4") ? "video/mp4" : filename.endsWith(".webm") ? "video/webm" : "image/jpeg");
+      const file = new File([blob], filename, { type: mime });
+
+      // 1) Mobile: system share sheet → Save to Gallery / Files (works on Android Chrome)
+      try {
+        if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: "Merveil AI",
+            text: "Saved from Merveil World",
+          });
+          return "shared";
+        }
+      } catch (e) {
+        if (e?.name === "AbortError") return "cancelled";
+        console.warn("[merveil] share save", e?.message || e);
+      }
+
+      // 2) Chromium: explicit save picker
+      try {
+        if (window.showSaveFilePicker) {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{ description: "Media", accept: { [mime]: ["." + (filename.split(".").pop() || "bin")] } }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return "picker";
+        }
+      } catch (e) {
+        if (e?.name === "AbortError") return "cancelled";
+        console.warn("[merveil] save picker", e?.message || e);
+      }
+
+      // 3) Classic download attribute
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
       a.download = filename;
       a.rel = "noopener";
+      a.style.display = "none";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 12000);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 20000);
+      return "anchor";
     };
 
     /** Draw Merveil AI brand on a 2D canvas (TikTok-style signature). */
@@ -22978,6 +22987,20 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
 
     const fetchMedia = async () => {
       if (mediaUrl) {
+        // Prefer same-origin proxy first (avoids CORS blocking CDN videos on mobile)
+        try {
+          const q = new URLSearchParams({ action: "download" });
+          if (post?.id) q.set("postId", String(post.id));
+          q.set("mediaUrl", mediaUrl);
+          const res = await fetch(`/api/world?${q.toString()}`, { credentials: "include" });
+          const ctype = res.headers.get("content-type") || "";
+          if (res.ok && !ctype.includes("application/json")) {
+            const blob = await res.blob();
+            if (!isBadBlob(blob, ctype)) return { blob, ctype: ctype || blob.type };
+          }
+        } catch (e) {
+          console.warn("[merveil] proxy-first download", e?.message || e);
+        }
         try {
           const res = await fetch(mediaUrl, { mode: "cors", credentials: "omit" });
           if (res.ok) {
@@ -22991,10 +23014,9 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       }
       const postId = post?.id ? String(post.id) : "";
       const isSeed = !postId || post?._seed || postId.startsWith("merveil-ai-seed");
-      if (!isSeed) {
+      if (!isSeed && postId) {
         try {
           const q = new URLSearchParams({ action: "download", postId });
-          if (mediaUrl) q.set("mediaUrl", mediaUrl);
           const res = await fetch(`/api/world?${q.toString()}`, { credentials: "include" });
           const ctype = res.headers.get("content-type") || "";
           if (res.ok && !ctype.includes("application/json")) {
@@ -23014,27 +23036,61 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       const idPart = String(post?.id || "clip").slice(0, 12);
       if (isVideo) {
         const stamped = await watermarkVideoBlob(got.blob);
-        saveBlob(stamped.blob, `merveil-ai-${idPart}.${stamped.ext}`);
+        const how = await saveBlob(stamped.blob, `merveil-ai-${idPart}.${stamped.ext || "mp4"}`);
+        if (how === "cancelled") {
+          toast("info", "Download cancelled.");
+          return;
+        }
         toast(
           "success",
-          stamped.note === "watermarked"
-            ? "Saved with Merveil AI signature."
-            : stamped.note === "preview"
-              ? "Saved branded still (video encode limited on this device)."
-              : "Saved · open Gallery to confirm."
+          how === "shared"
+            ? "Use Share → Save / Gallery to keep the video."
+            : stamped.note === "watermarked"
+              ? "Downloaded with Merveil AI signature."
+              : stamped.note === "preview"
+                ? "Saved branded still (video encode limited on this device)."
+                : "Download started — check Downloads or Gallery."
         );
         return;
       }
       const img = await watermarkImageBlob(got.blob);
-      saveBlob(img, `merveil-ai-${idPart}.jpg`);
-      toast("success", "Saved with Merveil AI signature.");
+      const how = await saveBlob(img, `merveil-ai-${idPart}.jpg`);
+      if (how === "cancelled") {
+        toast("info", "Download cancelled.");
+        return;
+      }
+      toast(
+        "success",
+        how === "shared"
+          ? "Use Share → Save / Gallery to keep the photo."
+          : "Downloaded with Merveil AI signature."
+      );
       return;
     }
 
+    // Last resort: try no-cors blob via video element capture is not reliable.
+    // Open media so user can long-press Save — then still try share if we can fetch via img/video.
     if (mediaUrl) {
       try {
+        // Attempt share of URL when files not available
+        if (navigator.share) {
+          await navigator.share({
+            title: post?.title || "Merveil AI",
+            text: "From Merveil World",
+            url: mediaUrl,
+          });
+          toast("info", "Shared link — open it and Save video to Gallery.");
+          return;
+        }
+      } catch (e) {
+        if (e?.name === "AbortError") {
+          toast("info", "Share cancelled.");
+          return;
+        }
+      }
+      try {
         window.open(mediaUrl, "_blank", "noopener,noreferrer");
-        toast("info", "Long-press the media → Download. Brand shows on in-app saves.");
+        toast("info", "Open the video → ⋮ or long-press → Download / Save.");
         return;
       } catch {}
     }
