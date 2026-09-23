@@ -1715,6 +1715,15 @@ const FONT_IMPORT = `
   -webkit-backdrop-filter: blur(16px);
   box-shadow: 0 -8px 28px rgba(37,35,33,0.06);
 }
+/* Hide main nav while any RealCallScreen is open (fixes hangup under nav) */
+body[data-merveil-call="1"] .m-shell-nav {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+body[data-merveil-call="1"] {
+  overscroll-behavior: none;
+}
 :root[data-theme="dark"] .m-shell-nav {
   background: linear-gradient(180deg, rgba(18,28,40,0.98) 0%, rgba(11,18,24,0.98) 100%);
   border-top: 1px solid rgba(14,154,167,0.12);
@@ -1773,30 +1782,30 @@ video { max-width: 100%; object-fit: cover; }
 /* Platform signature — 3D Mini “Merveil AI” drifts across safe zones (not stuck on poster) */
 .merveil-ai-mini {
   position: absolute;
-  z-index: 18;
+  z-index: 28;
   pointer-events: none;
-  width: 52px;
-  height: 52px;
-  filter: drop-shadow(0 4px 14px rgba(0,0,0,0.4));
+  width: 58px;
+  height: 58px;
+  filter: drop-shadow(0 4px 16px rgba(0,0,0,0.55));
   /* Path avoids bottom-left poster and right-rail tools */
   animation: merveil-mini-wander 28s ease-in-out infinite;
 }
 .merveil-ai-mini-orb {
-  width: 52px; height: 52px; border-radius: 50%;
+  width: 58px; height: 58px; border-radius: 50%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   background: radial-gradient(circle at 30% 28%, #5EEAD4 0%, #0E9AA7 42%, #0A5F6A 100%);
-  border: 1.5px solid rgba(255,255,255,0.55);
+  border: 2px solid rgba(255,255,255,0.7);
   box-shadow:
-    inset 0 2px 4px rgba(255,255,255,0.35),
+    inset 0 2px 4px rgba(255,255,255,0.4),
     inset 0 -3px 6px rgba(0,0,0,0.25),
-    0 6px 16px rgba(14,154,167,0.35);
+    0 8px 20px rgba(14,154,167,0.45);
   animation: merveil-mini-spin 6s ease-in-out infinite;
   transform-style: preserve-3d;
 }
 .merveil-ai-mini-text {
-  font-size: 7px; font-weight: 800; letter-spacing: 0.02em; color: #fff;
-  text-align: center; line-height: 1.05; max-width: 44px;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  font-size: 8px; font-weight: 800; letter-spacing: 0.02em; color: #fff;
+  text-align: center; line-height: 1.05; max-width: 50px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
   font-family: "Space Grotesk", system-ui, sans-serif;
 }
 .merveil-ai-mini-ai {
@@ -7593,6 +7602,19 @@ function useWebRtcStats(pcRef, active) {
 }
 
 function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = null }) {
+  // Always hide bottom nav + lift controls above Android system bar
+  useEffect(() => {
+    try {
+      document.body.dataset.merveilCall = "1";
+      document.documentElement.dataset.merveilCall = "1";
+    } catch {}
+    return () => {
+      try {
+        delete document.body.dataset.merveilCall;
+        delete document.documentElement.dataset.merveilCall;
+      } catch {}
+    };
+  }, []);
   const [status, setStatus] = useState(role === "caller" ? "calling" : "connecting");
   const [muted, setMuted] = useState(false);
   const [videoOn, setVideoOn] = useState(mode === "video");
@@ -8701,10 +8723,12 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
   };
 
   // Living Orbit end state — dark ink on cream (readable, not white-on-cream)
+  const portal = (node) => (typeof document !== "undefined" ? createPortal(node, document.body) : node);
+
   if (ending) {
     const selfAv = participants.find((p) => p.role === "self")?.avatar || null;
-    return (
-      <div className="fixed inset-0 z-[150] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #FFFBF6 0%, #F0E9DF 55%, #E5DCCE 100%)" }}>
+    return portal(
+      <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-4" style={{ background: "radial-gradient(circle at 50% 38%, #FFFBF6 0%, #F0E9DF 55%, #E5DCCE 100%)" }}>
         <div className="text-[11px] font-bold tracking-widest" style={{ color: "#0E9AA7" }}>CONNECTION COMPLETE</div>
         <div className="text-lg font-semibold" style={{ color: "#1A1612" }}>{otherName}</div>
         <div className="text-sm" style={{ color: "#6B6158" }}>{mm}:{ss} · {mode === "video" ? "Video" : "Voice"} · {participants.length} participant{participants.length !== 1 ? "s" : ""}</div>
@@ -8726,7 +8750,7 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
 
   // Minimized / background call — media keeps running; user can chat or leave Merveil and return
   if (minimized) {
-    return (
+    return portal(
       <>
         <audio ref={remoteAudioRef} autoPlay playsInline />
         {mode === "video" && (
@@ -8735,10 +8759,11 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         <div
           className="fixed z-[155] left-3 right-3 flex items-center gap-3 px-3 py-2.5 rounded-2xl shadow-lg"
           style={{
-            bottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
+            bottom: "max(16px, calc(env(safe-area-inset-bottom, 0px) + 12px))",
             background: "linear-gradient(135deg, #0E131A 0%, #121820 100%)",
             border: "1px solid rgba(14,154,167,0.35)",
             boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+            zIndex: 200,
           }}
         >
           <button type="button" onClick={() => setMinimized(false)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
@@ -8770,8 +8795,8 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
     );
   }
 
-  return (
-    <div className="fixed inset-0 z-[150] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 18%, #FFFBF6 0%, #F3EDE4 40%, #E8E0D4 75%, #DDD4C6 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
+  return portal(
+    <div className="fixed inset-0 z-[200] flex flex-col" style={{ background: "radial-gradient(ellipse at 50% 18%, #FFFBF6 0%, #F3EDE4 40%, #E8E0D4 75%, #DDD4C6 100%)", paddingTop: "var(--safe-top)", paddingBottom: "var(--safe-bottom)", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}>
       {/* Remote video: driven by THEIR camera (remoteVideoOn), never by ours */}
       <video
         ref={remoteVideoRef}
@@ -8964,14 +8989,14 @@ function RealCallScreen({ callId, role, mode, otherUser, onEnd, initialStream = 
         )}
       </div>
 
-      {/* Core controls — FIXED to viewport bottom so red End is never off-screen */}
+      {/* Core controls — above Android/iOS system nav + app chrome */}
       <div
-        className="fixed left-0 right-0 z-[160] flex items-center justify-center gap-3 sm:gap-4 pointer-events-none"
+        className="fixed left-0 right-0 z-[200] flex items-center justify-center gap-3 sm:gap-4 pointer-events-none"
         style={{
           bottom: 0,
-          paddingBottom: "max(20px, env(safe-area-inset-bottom, 0px))",
-          paddingTop: 12,
-          background: "linear-gradient(to top, rgba(243,237,228,0.96) 45%, rgba(243,237,228,0))",
+          paddingBottom: "max(36px, calc(env(safe-area-inset-bottom, 0px) + 28px))",
+          paddingTop: 16,
+          background: "linear-gradient(to top, rgba(243,237,228,0.98) 55%, rgba(243,237,228,0))",
         }}
       >
         <div className="flex items-center justify-center gap-3 sm:gap-4 pointer-events-auto">
@@ -10322,6 +10347,9 @@ function PulseIntelligenceReel({ items, activeIndex, onActiveChange, liked, like
           })}
         </div>
       </div>
+
+      {/* Platform signature on every Pulse reel */}
+      <MerveilAiMiniMark aiGenerated={false} />
 
       {/* Vertical progress affordance */}
       <div className="absolute left-3 z-20 flex flex-col items-center gap-1.5"
@@ -13175,10 +13203,8 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall, onProfile })
           )}
           {posts.map((post) => {
             const author = post.author || {};
-            const authorId = post.author_id || author.id || post.user_id || null;
-            const name = author.name || post.author_name || "Citizen";
-            const avatar = author.avatar_url || post.author_avatar || post.avatar_url || null;
-            const mine = post.is_mine || String(authorId) === String(currentUser?.id);
+            const name = author.name || "Citizen";
+            const mine = post.is_mine || String(post.author_id) === String(currentUser?.id);
             return (
               <div
                 key={post.id}
@@ -13197,11 +13223,11 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall, onProfile })
                 }}
               >
                 <div className="flex items-center gap-2.5 mb-2">
-                  <button type="button" className="shrink-0 rounded-full" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name, avatar_url: avatar || null }); })()}>
-                    <Avatar name={name} src={avatar} size={40} />
+                  <button type="button" className="shrink-0 rounded-full" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name: name || author?.name || 'Citizen', avatar_url: author?.avatar_url || null }); })()}>
+                    <Avatar name={name} src={author.avatar_url} size={40} />
                   </button>
                   <div className="min-w-0 flex-1">
-                    <button type="button" className="text-left w-full min-w-0" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name, avatar_url: avatar || null }); })()}>
+                    <button type="button" className="text-left w-full min-w-0" onClick={() => (() => { const pid = post.author_id || author?.id; if (!pid) { try { window.dispatchEvent(new CustomEvent('merveil:toast', { detail: { message: 'Profile not linked on this lead yet' } })); } catch {} return; } onProfile?.({ id: String(pid), name: name || author?.name || 'Citizen', avatar_url: author?.avatar_url || null }); })()}>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[13px] font-bold truncate" style={{ color: "#1A1612" }}>{name}</span>
                         <PresenceDot status={post.author_status || "offline"} size={10} />
@@ -13230,11 +13256,11 @@ function AreaGroupsView({ currentUser, onSignIn, onMessage, onCall, onProfile })
                   </div>
                   {!mine && (
                   <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: avatar }, "call")}
+                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: author.avatar_url }, "call")}
                       className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(14,154,167,0.1)" }}>
                       <Phone size={14} color="#0E9AA7" />
                     </button>
-                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: avatar }, "message")}
+                    <button type="button" onClick={() => requireConnectedThen({ id: post.author_id || author.id, name, avatar_url: author.avatar_url }, "message")}
                       className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(31,166,74,0.12)" }}>
                       <MessageCircle size={14} color="#1FA64A" />
                     </button>
@@ -14984,7 +15010,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
           </div>
         )}
 
-        <div className="flex-1 min-h-0 flex flex-col overscroll-contain">
+        <div className="overflow-y-auto flex-1 min-h-0 overscroll-contain">
           <IncomingConnectionRequests currentUser={currentUser} />
 
           <div className="flex items-center gap-1.5 px-3 pb-2 pt-1">
@@ -15086,30 +15112,11 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
 
             return (
               <>
-              {connectFilter === "all" && (
-                <button
-                  type="button"
-                  onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
-                  className="w-full text-left p-3 border-b flex items-center gap-3"
-                  style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "#FFFFFF" }}
-                >
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#0E9AA7)" }}>
-                    <Sparkles size={16} color="#fff" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
-                    </div>
-                    <span className="text-xs truncate block" style={{ color: T.sub }}>Your Merveil intelligence layer · always available</span>
-                  </div>
-                </button>
-              )}
               <VirtualWindow
                 items={rows}
                 itemHeight={76}
                 overscan={12}
-                style={{ flex: "1 1 0%", minHeight: 120, maxHeight: "none" }}
+                style={{ maxHeight: "min(65vh, 560px)", minHeight: 120 }}
                 getKey={(r) => r.userId}
                 renderItem={(r) => {
               const status = r.status || "offline";
@@ -15233,7 +15240,22 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
               );
             }}
               />
-
+              {connectFilter === "all" && (
+                <button onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
+                  className="w-full text-left p-3 border-t flex items-center gap-3 mt-1"
+                  style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "transparent" }}>
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
+                    <Sparkles size={16} color="#fff" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
+                    </div>
+                    <span className="text-xs truncate block" style={{ color: T.sub }}>Ask about listings, areas, anything</span>
+                  </div>
+                </button>
+              )}
               </>
             );
           })()}
@@ -20345,32 +20367,36 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
       el.playsInline = true;
       el.setAttribute("playsinline", "");
       el.setAttribute("webkit-playsinline", "");
-      // Prefer sound; satellites always muted. Browser may force mute — we handle that.
-      const shouldMute = !!forceMuted || muted;
-      el.muted = shouldMute;
-      el.defaultMuted = shouldMute;
-      const tryPlay = () => {
+      // TikTok-style: start MUTED for instant picture, then try sound.
+      // Prevents black screen when autoplay-with-sound is blocked.
+      el.muted = true;
+      el.defaultMuted = true;
+      const tryPlay = (withSound) => {
         try {
           el.playsInline = true;
           el.setAttribute("playsinline", "");
           el.setAttribute("webkit-playsinline", "");
         } catch {}
+        if (withSound && !forceMuted && !muted) {
+          el.muted = false;
+          el.defaultMuted = false;
+        } else {
+          el.muted = true;
+          el.defaultMuted = true;
+        }
         const attempt = el.play();
         if (attempt?.catch) {
           attempt.catch(() => {
-            // Autoplay blocked with sound — fall back to muted so picture still plays
-            if (!el.muted) {
-              el.muted = true;
-              el.defaultMuted = true;
-              setMuted(true);
-              el.play().catch(() => {});
-            }
+            el.muted = true;
+            el.defaultMuted = true;
+            setMuted(true);
+            el.play().catch(() => {});
           });
         }
       };
-      tryPlay();
-      const t = setTimeout(tryPlay, 200);
-      const t2 = setTimeout(tryPlay, 600);
+      tryPlay(false);
+      const t = setTimeout(() => tryPlay(false), 120);
+      const t2 = setTimeout(() => tryPlay(!forceMuted && !muted), 400);
       // Real World-reel views only (not property / passport). Skip seeds.
       // Optimistic local bump so VIEWS updates without waiting for a full reload.
       if (!compact && post?.id && !post?._seed) {
@@ -20497,8 +20523,8 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
           ref={videoRef}
           key={post.video_url}
           src={post.video_url}
-          className="absolute inset-0 w-full h-full object-cover bg-black"
-          style={{ opacity: videoError ? 0 : 1, background: "#000" }}
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ opacity: videoReady && !videoError ? 1 : 0, background: "transparent", transition: "opacity 160ms ease" }}
           loop
           muted={!!forceMuted || muted}
           playsInline
@@ -22194,139 +22220,6 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       .finally(() => setGalleryLoading(false));
   };
 
-  const addMerveilVideoWatermark = async (blob) => {
-    if (!blob || !String(blob.type || "").toLowerCase().startsWith("video/")) return null;
-    if (typeof document === "undefined" || typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement === "undefined") return null;
-    if (!HTMLCanvasElement.prototype.captureStream) return null;
-
-    const mimeCandidates = [
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm",
-    ];
-    const mime = mimeCandidates.find((m) => {
-      try { return MediaRecorder.isTypeSupported(m); } catch { return false; }
-    });
-    if (!mime) return null;
-
-    const sourceUrl = URL.createObjectURL(blob);
-    const video = document.createElement("video");
-    video.src = sourceUrl;
-    video.playsInline = true;
-    video.preload = "auto";
-    video.setAttribute("playsinline", "");
-    video.setAttribute("webkit-playsinline", "");
-
-    let sourceStream = null;
-    let recorder = null;
-    const chunks = [];
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { alpha: false });
-    if (!ctx) {
-      URL.revokeObjectURL(sourceUrl);
-      return null;
-    }
-
-    try {
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("Video metadata timeout")), 25000);
-        video.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
-        video.onerror = () => { clearTimeout(timeout); reject(new Error("Could not read video")); };
-        video.load();
-      });
-
-      const maxEdge = 1080;
-      const sourceW = video.videoWidth || 1080;
-      const sourceH = video.videoHeight || 1920;
-      const scale = Math.min(1, maxEdge / Math.max(sourceW, sourceH));
-      canvas.width = Math.max(2, Math.round(sourceW * scale) & ~1);
-      canvas.height = Math.max(2, Math.round(sourceH * scale) & ~1);
-
-      const stream = canvas.captureStream(30);
-
-      // Preserve original audio when the browser exposes an audio track.
-      try {
-        sourceStream = video.captureStream?.() || video.mozCaptureStream?.() || null;
-        sourceStream?.getAudioTracks?.().forEach((track) => {
-          try { stream.addTrack(track); } catch {}
-        });
-      } catch {}
-
-      try {
-        recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
-      } catch {
-        return null;
-      }
-
-      const stopped = new Promise((resolve, reject) => {
-        recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
-        recorder.onerror = () => reject(new Error("Watermark recording failed"));
-        recorder.onstop = resolve;
-      });
-
-      const draw = () => {
-        if (video.readyState >= 2) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const pad = Math.max(18, Math.round(canvas.width * 0.025));
-          const font = Math.max(18, Math.round(canvas.width * 0.026));
-          const markH = Math.round(font + pad * 1.15);
-          const markW = Math.round(font * 6.8 + pad * 1.8);
-          const x = Math.max(pad, canvas.width - markW - pad);
-          const y = Math.max(pad, canvas.height - markH - pad);
-
-          ctx.save();
-          ctx.fillStyle = "rgba(0,0,0,0.48)";
-          const radius = Math.min(markH / 2, 14);
-          ctx.beginPath();
-          ctx.roundRect(x, y, markW, markH, radius);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(x + pad + font * 0.42, y + markH / 2, font * 0.42, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(6,182,212,0.95)";
-          ctx.fill();
-          ctx.fillStyle = "#fff";
-          ctx.font = `700 ${font}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-          ctx.textBaseline = "middle";
-          ctx.fillText("M", x + pad + font * 0.22, y + markH / 2 + 0.5);
-          ctx.fillText("Merveil AI", x + pad * 1.45 + font * 0.84, y + markH / 2 + 0.5);
-          ctx.restore();
-        }
-        if (recorder?.state === "recording") requestAnimationFrame(draw);
-      };
-
-      const finish = () => {
-        try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch {}
-      };
-
-      video.addEventListener("ended", finish, { once: true });
-      recorder.start(250);
-      try {
-        await video.play();
-      } catch {
-        // The download tap is normally a user gesture. Retry muted only if
-        // the browser blocks audible playback; the video still gets branded.
-        video.muted = true;
-        await video.play();
-      }
-      draw();
-
-      const hardStopMs = Math.max(5000, Math.min(180000, ((Number(video.duration) || 60) * 1000) + 5000));
-      const hardStop = setTimeout(finish, hardStopMs);
-      await stopped;
-      clearTimeout(hardStop);
-
-      const output = new Blob(chunks, { type: mime });
-      return output.size ? output : null;
-    } catch {
-      try { if (recorder && recorder.state !== "inactive") recorder.stop(); } catch {}
-      return null;
-    } finally {
-      try { sourceStream?.getTracks?.().forEach((track) => track.stop()); } catch {}
-      try { video.pause(); } catch {}
-      URL.revokeObjectURL(sourceUrl);
-    }
-  };
-
   const downloadWorldToDevice = async (post) => {
     const mediaUrl = post?.video_url || post?.photo_url || (Array.isArray(post?.photo_urls) ? post.photo_urls[0] : null);
     if (!post?.id && !mediaUrl) {
@@ -22348,24 +22241,10 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       const t = String(ctype || blob?.type || "").toLowerCase();
       if (!blob || !blob.size) return true;
       if (t.includes("json") || t.includes("text/html") || t.includes("text/plain")) return true;
-      // tiny JSON error bodies often < 2kb with wrong type
       if (blob.size < 2048 && !t.includes("video") && !t.includes("image") && !t.includes("octet")) {
         return true;
       }
       return false;
-    };
-
-    const extFrom = (ctype, url, preferVideo) => {
-      const t = String(ctype || "").toLowerCase();
-      if (t.includes("mp4") || t.includes("video")) return "mp4";
-      if (t.includes("webm")) return "webm";
-      if (t.includes("png")) return "png";
-      if (t.includes("webp")) return "webp";
-      if (t.includes("jpeg") || t.includes("jpg")) return "jpg";
-      if (preferVideo || post?.video_url) return "mp4";
-      if (/\.mp4(\?|$)/i.test(url || "")) return "mp4";
-      if (/\.webm(\?|$)/i.test(url || "")) return "webm";
-      return "mp4";
     };
 
     const saveBlob = (blob, filename) => {
@@ -22377,81 +22256,208 @@ function WorldView({ currentUser, onSignIn, onChat, minPassportPct = 0 }) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 8000);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 12000);
     };
 
-    toast("info", "Preparing download…");
-
-    // 1) Direct media URL first (real TikTok-style file — not API JSON)
-    if (mediaUrl) {
-      try {
-        const res = await fetch(mediaUrl, { mode: "cors", credentials: "omit" });
-        if (res.ok) {
-          const blob = await res.blob();
-          const ctype = res.headers.get("content-type") || blob.type || "";
-          if (!isBadBlob(blob, ctype)) {
-            let outputBlob = blob;
-            if (post?.video_url) {
-              const branded = await addMerveilVideoWatermark(blob);
-              if (branded) outputBlob = branded;
-            }
-            const ext = post?.video_url && outputBlob.type.includes("webm") ? "webm" : extFrom(ctype, mediaUrl, !!post?.video_url);
-            const name = `merveil-reel-${String(post?.id || "clip").slice(0, 12)}.${ext}`;
-            saveBlob(outputBlob, name);
-            toast("success", ext === "mp4" || ext === "webm" ? "Video saved with Merveil AI mark." : "Saved to Downloads.");
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn("[merveil] direct download", e?.message || e);
+    /** Draw Merveil AI brand on a 2D canvas (TikTok-style signature). */
+    const stampMerveilMark = (ctx, w, h) => {
+      const pad = Math.max(12, Math.round(Math.min(w, h) * 0.03));
+      const fontPx = Math.max(14, Math.round(Math.min(w, h) * 0.045));
+      ctx.save();
+      ctx.font = `800 ${fontPx}px "Space Grotesk", system-ui, sans-serif`;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "bottom";
+      const label = "Merveil AI";
+      const tw = ctx.measureText(label).width;
+      const bx = w - pad;
+      const by = h - pad;
+      const bw = tw + pad * 1.2;
+      const bh = fontPx + pad * 0.9;
+      ctx.fillStyle = "rgba(0,0,0,0.42)";
+      ctx.beginPath();
+      ctx.roundRect?.(bx - bw, by - bh, bw, bh, 10);
+      if (!ctx.roundRect) {
+        ctx.fillRect(bx - bw, by - bh, bw, bh);
+      } else {
+        ctx.fill();
       }
+      ctx.fillStyle = "#FFFFFF";
+      ctx.shadowColor = "rgba(14,154,167,0.55)";
+      ctx.shadowBlur = 8;
+      ctx.fillText(label, bx - pad * 0.35, by - pad * 0.25);
+      // teal accent underline
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#0E9AA7";
+      ctx.fillRect(bx - bw + 8, by - 6, Math.min(bw - 16, 48), 3);
+      ctx.restore();
+    };
+
+    /** Image download with burned-in Merveil AI mark. */
+    const watermarkImageBlob = async (blob) => {
+      const url = URL.createObjectURL(blob);
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.crossOrigin = "anonymous";
+          i.onload = () => resolve(i);
+          i.onerror = reject;
+          i.src = url;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        stampMerveilMark(ctx, canvas.width, canvas.height);
+        const out = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+        return out || blob;
+      } catch {
+        return blob;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+
+    /**
+     * Video download with Merveil AI watermark burned via canvas + MediaRecorder.
+     * Falls back to original file if encode fails (still named merveil-ai-*).
+     */
+    const watermarkVideoBlob = async (blob) => {
+      const url = URL.createObjectURL(blob);
+      try {
+        const video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.crossOrigin = "anonymous";
+        video.src = url;
+        await new Promise((resolve, reject) => {
+          video.onloadeddata = resolve;
+          video.onerror = reject;
+          setTimeout(() => reject(new Error("video meta timeout")), 12000);
+        });
+        const w = video.videoWidth || 720;
+        const h = video.videoHeight || 1280;
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        const stream = canvas.captureStream(30);
+        // Prefer mp4 when available
+        const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+          ? "video/webm;codecs=vp9"
+          : MediaRecorder.isTypeSupported("video/webm")
+            ? "video/webm"
+            : "";
+        if (!mime || typeof MediaRecorder === "undefined") {
+          // Still frame fallback with watermark
+          video.currentTime = Math.min(0.2, (video.duration || 1) * 0.1);
+          await new Promise((r) => setTimeout(r, 200));
+          ctx.drawImage(video, 0, 0, w, h);
+          stampMerveilMark(ctx, w, h);
+          const still = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+          return { blob: still || blob, ext: still ? "jpg" : "mp4", note: "preview" };
+        }
+        const chunks = [];
+        const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
+        rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+        const done = new Promise((resolve) => { rec.onstop = () => resolve(); });
+        rec.start(200);
+        await video.play().catch(() => {});
+        const maxMs = Math.min(60000, ((video.duration || 15) * 1000) || 15000);
+        const start = performance.now();
+        await new Promise((resolve) => {
+          const tick = () => {
+            if (video.ended || video.paused || performance.now() - start > maxMs) {
+              resolve();
+              return;
+            }
+            ctx.drawImage(video, 0, 0, w, h);
+            stampMerveilMark(ctx, w, h);
+            requestAnimationFrame(tick);
+          };
+          tick();
+        });
+        try { video.pause(); } catch {}
+        if (rec.state !== "inactive") rec.stop();
+        await done;
+        const out = new Blob(chunks, { type: mime });
+        if (out.size > 2048) return { blob: out, ext: "webm", note: "watermarked" };
+        return { blob, ext: "mp4", note: "original" };
+      } catch (e) {
+        console.warn("[merveil] watermark video", e?.message || e);
+        return { blob, ext: "mp4", note: "original" };
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+
+    toast("info", "Preparing Merveil download…");
+
+    const fetchMedia = async () => {
+      if (mediaUrl) {
+        try {
+          const res = await fetch(mediaUrl, { mode: "cors", credentials: "omit" });
+          if (res.ok) {
+            const blob = await res.blob();
+            const ctype = res.headers.get("content-type") || blob.type || "";
+            if (!isBadBlob(blob, ctype)) return { blob, ctype };
+          }
+        } catch (e) {
+          console.warn("[merveil] direct download", e?.message || e);
+        }
+      }
+      const postId = post?.id ? String(post.id) : "";
+      const isSeed = !postId || post?._seed || postId.startsWith("merveil-ai-seed");
+      if (!isSeed) {
+        try {
+          const q = new URLSearchParams({ action: "download", postId });
+          if (mediaUrl) q.set("mediaUrl", mediaUrl);
+          const res = await fetch(`/api/world?${q.toString()}`, { credentials: "include" });
+          const ctype = res.headers.get("content-type") || "";
+          if (res.ok && !ctype.includes("application/json")) {
+            const blob = await res.blob();
+            if (!isBadBlob(blob, ctype)) return { blob, ctype };
+          }
+        } catch (e) {
+          console.warn("[merveil] proxy download", e?.message || e);
+        }
+      }
+      return null;
+    };
+
+    const got = await fetchMedia();
+    if (got?.blob) {
+      const isVideo = !!post?.video_url || String(got.ctype || "").includes("video");
+      const idPart = String(post?.id || "clip").slice(0, 12);
+      if (isVideo) {
+        const stamped = await watermarkVideoBlob(got.blob);
+        saveBlob(stamped.blob, `merveil-ai-${idPart}.${stamped.ext}`);
+        toast(
+          "success",
+          stamped.note === "watermarked"
+            ? "Saved with Merveil AI signature."
+            : stamped.note === "preview"
+              ? "Saved branded still (video encode limited on this device)."
+              : "Saved · open Gallery to confirm."
+        );
+        return;
+      }
+      const img = await watermarkImageBlob(got.blob);
+      saveBlob(img, `merveil-ai-${idPart}.jpg`);
+      toast("success", "Saved with Merveil AI signature.");
+      return;
     }
 
-    // 2) Same-origin proxy (only for real DB posts — never seeds)
-    const postId = post?.id ? String(post.id) : "";
-    const isSeed = !postId || post?._seed || postId.startsWith("merveil-ai-seed");
-    if (!isSeed) {
-      try {
-        const q = new URLSearchParams({ action: "download", postId });
-        if (mediaUrl) q.set("mediaUrl", mediaUrl);
-        const res = await fetch(`/api/world?${q.toString()}`, { credentials: "include" });
-        const ctype = res.headers.get("content-type") || "";
-        if (res.ok && !ctype.includes("application/json")) {
-          const blob = await res.blob();
-          if (!isBadBlob(blob, ctype)) {
-            let outputBlob = blob;
-            if (post?.video_url) {
-              const branded = await addMerveilVideoWatermark(blob);
-              if (branded) outputBlob = branded;
-            }
-            const ext = post?.video_url && outputBlob.type.includes("webm") ? "webm" : extFrom(ctype, mediaUrl, !!post?.video_url);
-            const name = `merveil-reel-${postId.slice(0, 12)}.${ext}`;
-            saveBlob(outputBlob, name);
-            toast("success", "Video saved with Merveil AI mark.");
-            return;
-          }
-        }
-        // If JSON error body, surface it
-        if (ctype.includes("json")) {
-          const err = await res.json().catch(() => null);
-          console.warn("[merveil] download api", err);
-        }
-      } catch (e) {
-        console.warn("[merveil] proxy download", e?.message || e);
-      }
-    }
-
-    // 3) Last resort: open media in new tab for long-press save
     if (mediaUrl) {
       try {
         window.open(mediaUrl, "_blank", "noopener,noreferrer");
-        toast("info", "Long-press the video → Download / Save video.");
+        toast("info", "Long-press the media → Download. Brand shows on in-app saves.");
         return;
       } catch {}
     }
-    toast("error", "Could not download this video. Try again or open the reel and long-press.");
+    toast("error", "Could not download. Try again or long-press the reel.");
   };
-;
+
 
   // Explicit download from ⋯ menu
   useEffect(() => {
@@ -32934,7 +32940,7 @@ function IntroScreen({ onEnter, userName, settings }) {
       i++;
       setWelcomeText(welcomeMsg.slice(0, i));
       if (i >= welcomeMsg.length) clearInterval(id);
-    }, 34);
+    }, 12);
     return () => clearInterval(id);
   }, [speaking]);
 
@@ -32949,7 +32955,7 @@ function IntroScreen({ onEnter, userName, settings }) {
       const utter = new SpeechSynthesisUtterance(welcomeMsg);
       // Personalized voice, from Settings → Merveil AI → Voice, when the
       // citizen has configured one; sensible defaults otherwise.
-      utter.rate = settings?.voiceRate || 1.03;
+      utter.rate = settings?.voiceRate || 1.18;
       utter.pitch = settings?.voicePitch || 1.02;
       utter.volume = 1;
       const langTag = { en: "en", ar: "ar", fr: "fr", es: "es", hi: "hi", ur: "ur" }[settings?.language] || "en";
@@ -32987,16 +32993,16 @@ function IntroScreen({ onEnter, userName, settings }) {
       if (voices.length > 0) trySpeak();
       else window.speechSynthesis.addEventListener("voiceschanged", trySpeak, { once: true });
     };
-    // Stage 2: the face constructs itself from circuit traces before it speaks —
-    // ring draws in, traces draw in, features pop in, logo completes the circuit last.
-    setTimeout(beginSpeech, 10000);
+    // Stage 2: short construct beat, then speak — was 10s (felt broken / laggy).
+    setTimeout(beginSpeech, 380);
   };
 
   const enter = (q) => {
     window.speechSynthesis?.cancel();
     recognitionRef.current?.stop();
     setClosing(true);
-    setTimeout(() => onEnter(q), 300);
+    // Enter app immediately — no artificial lag after TAP / ENTER
+    setTimeout(() => onEnter(q), 40);
   };
 
   // Real voice input for the splash — same browser SpeechRecognition used
@@ -35591,6 +35597,7 @@ function AppInner() {
           + (tabCounts.world > 0 ? `${tabCounts.world} new on World. ` : "")}
       </div>
       <div className={`fixed bottom-0 left-0 right-0 z-50 m-shell-nav ${(rootLiveCall || tab === "world") ? "hidden" : ""}`}
+        data-merveil-nav="1" 
         role="navigation"
         aria-label="Main"
         style={{
