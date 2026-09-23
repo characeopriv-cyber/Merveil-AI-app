@@ -9716,10 +9716,10 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         if(!job)return sendJson(res,404,{error:"Job not found for this worker."});
         const allowed=(job.status==="assigned"&&next==="in_progress")||(job.status==="in_progress"&&next==="completed")||(["pending","assigned","in_progress"].includes(job.status)&&next==="cancelled");
         if(!allowed)return sendJson(res,409,{error:"Invalid job transition."});
-        const patch={status:next};if(next==="completed")patch.completed_at=new Date().toISOString();
+        const patch={status:next};if(next==="completed")patch.completed_at=new Date().toISOString();if(next==="in_progress")await svc.from("ps_workers").update({current_status:"busy"}).eq("id",worker.id);if(next==="cancelled")await svc.from("ps_workers").update({current_status:"available"}).eq("id",worker.id);
         const {data:updated,error}=await svc.from("ps_jobs").update(patch).eq("id",job.id).select("*").single();
         if(error)return sendJson(res,400,{error:error.message});
-        if(next==="completed")await svc.from("ps_payouts").upsert({worker_id:worker.id,job_id:job.id,amount:job.worker_payout,status:"pending"},{onConflict:"job_id"});
+        if(next==="completed")await svc.from("ps_workers").update({current_status:"available"}).eq("id",worker.id), if(next==="completed")await svc.from("ps_payouts").upsert({worker_id:worker.id,job_id:job.id,amount:job.worker_payout,status:"pending"},{onConflict:"job_id"});
         return sendJson(res,200,{ok:true,job:updated});
       }
 
@@ -9731,6 +9731,24 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         const tier=["basic","pro"].includes(String(body.subscriptionTier||"basic"))?String(body.subscriptionTier||"basic"):"basic";
         const {data,error}=await svc.from("ps_partner_companies").insert({profile_id:citizenId,company_name:name,trade_license:String(body.tradeLicense||"").trim().slice(0,120)||null,subscription_tier:tier,subscription_status:"active"}).select("*").single();
         if(error)return sendJson(res,400,{error:error.message}); return sendJson(res,201,{ok:true,partner:data});
+      }
+
+      if (method === "POST" && psAction === "staff-add") {
+        const body=await readBody(req);
+        const profileId=String(body.profileId||"");
+        const {data:partner}=await svc.from("ps_partner_companies").select("id").eq("profile_id",citizenId).maybeSingle();
+        if(!partner)return sendJson(res,403,{error:"Partner access required."});
+        if(!profileId)return sendJson(res,400,{error:"Worker profile ID is required."});
+        const {data:profile}=await svc.from("profiles").select("id").eq("id",profileId).maybeSingle();
+        if(!profile)return sendJson(res,404,{error:"Merveil profile not found."});
+        const {data:existing}=await svc.from("ps_workers").select("*").eq("profile_id",profileId).maybeSingle();
+        if(existing){
+          if(existing.partner_id && existing.partner_id!==partner.id)return sendJson(res,409,{error:"Worker already belongs to another partner."});
+          const {data,error}=await svc.from("ps_workers").update({partner_id:partner.id}).eq("id",existing.id).select("*").single();
+          if(error)return sendJson(res,400,{error:error.message}); return sendJson(res,200,{ok:true,worker:data,existing:true});
+        }
+        const {data,error}=await svc.from("ps_workers").insert({profile_id:profileId,partner_id:partner.id,skills:Array.isArray(body.skills)?body.skills.slice(0,30):[],vehicle_type:"none",current_status:"offline"}).select("*").single();
+        if(error)return sendJson(res,400,{error:error.message}); return sendJson(res,201,{ok:true,worker:data});
       }
 
       if (method === "POST" && psAction === "assign-job") {
@@ -9750,8 +9768,10 @@ return sendJson(res, 404, { error: "Unknown groups action." });
       if (method === "POST" && psAction === "vehicle") {
         const body=await readBody(req),{data:partner}=await svc.from("ps_partner_companies").select("id").eq("profile_id",citizenId).maybeSingle();
         if(!partner)return sendJson(res,403,{error:"Partner access required."});
-        const type=String(body.type||"");if(!["ebike","motorcycle","car"].includes(type))return sendJson(res,400,{error:"Vehicle type must be ebike, motorcycle or car."});
-        const {data,error}=await svc.from("ps_vehicles").insert({type,plate_number:String(body.plateNumber||"").trim().slice(0,32)||null,gps_tracker_id:String(body.gpsTrackerId||"").trim().slice(0,120)||null,status:"active"}).select("*").single();
+        const type=String(body.type||""),workerId=String(body.workerId||"");if(!["ebike","motorcycle","car"].includes(type))return sendJson(res,400,{error:"Vehicle type must be ebike, motorcycle or car."});
+        const {data:worker}=await svc.from("ps_workers").select("id").eq("id",workerId).eq("partner_id",partner.id).maybeSingle();
+        if(!worker)return sendJson(res,404,{error:"Partner worker not found."});
+        const {data,error}=await svc.from("ps_vehicles").insert({type,assigned_to:workerId,plate_number:String(body.plateNumber||"").trim().slice(0,32)||null,gps_tracker_id:String(body.gpsTrackerId||"").trim().slice(0,120)||null,status:"active"}).select("*").single();
         if(error)return sendJson(res,400,{error:error.message});return sendJson(res,201,{ok:true,vehicle:data});
       }
 
