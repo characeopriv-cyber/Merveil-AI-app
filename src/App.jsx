@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback, startTransition, memo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback, useId, startTransition, memo } from "react";
 
 /** Prefer concurrent update when available (tab switches, soft list merges). */
 function merveilStartTransition(fn) {
@@ -13554,8 +13554,12 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
   const [threads, setThreads] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState([]);
   const [connectFilter, setConnectFilter] = useState("all"); // all | favorites | archived
-  // Default: no thread selected — citizens chat first; AI is optional at bottom of list
+  // Default: no thread selected — citizens chat first; AI is optional at bottom of list (never overlay).
   const [activeId, setActiveId] = useState(null);
+  // Guard: never keep AI selected when a human conversation is opened
+  const setActiveIdSafe = useCallback((id) => {
+    setActiveId(id == null ? null : id);
+  }, []);
   const [aiMessages, setAiMessages] = useState([{ from: "them", text: "Hi! I'm Merveil AI — ask me anything about listings, areas, or how the app works." }]);
   const [threadMessages, setThreadMessages] = useState([]);
   const activeThreadIdRef = useRef(null);
@@ -15091,8 +15095,8 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                       : "No archived conversations."}
                 </div>
                 {connectFilter === "all" && (
-                  <button onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
-                    className="w-full text-left p-3 border-t flex items-center gap-3 mt-2"
+                  <button type="button" onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
+                    className="connect-ai-row w-full text-left p-3 border-t flex items-center gap-3 mt-2"
                     style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "transparent" }}>
                     <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
                       <Sparkles size={16} color="#fff" />
@@ -15102,7 +15106,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                         <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
                       </div>
-                      <span className="text-xs truncate block" style={{ color: T.sub }}>Ask about listings, areas, anything</span>
+                      <span className="text-xs truncate block" style={{ color: T.sub }}>Optional · ask about listings, areas, anything</span>
                     </div>
                   </button>
                 )}
@@ -15241,8 +15245,10 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
             }}
               />
               {connectFilter === "all" && (
-                <button onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
-                  className="w-full text-left p-3 border-t flex items-center gap-3 mt-1"
+                <button
+                  type="button"
+                  onClick={() => { setActiveId(MERVEIL_AI_THREAD_ID); setMobileView("chat"); }}
+                  className="connect-ai-row w-full text-left p-3 border-t flex items-center gap-3 mt-1"
                   style={{ borderColor: T.line, background: activeId === MERVEIL_AI_THREAD_ID ? T.paper : "transparent" }}>
                   <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#06B6D4,#1F2937)" }}>
                     <Sparkles size={16} color="#fff" />
@@ -15252,7 +15258,7 @@ function MessagesView({ currentUser, onSignIn, onReadThread, acceptedCall, onAcc
                       <span className="text-sm font-semibold" style={{ color: T.ink }}>Merveil AI</span>
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#0E9AA722", color: "#0E9AA7" }}>AI</span>
                     </div>
-                    <span className="text-xs truncate block" style={{ color: T.sub }}>Ask about listings, areas, anything</span>
+                    <span className="text-xs truncate block" style={{ color: T.sub }}>Optional · ask about listings, areas, anything</span>
                   </div>
                 </button>
               )}
@@ -20341,6 +20347,577 @@ function WorldCard({ post, liked, onToggleLike, onOpen, onChat, onConnect, onOpe
   );
 }
 
+
+/** ═══════════════════════════════════════════════════════════════
+ * DUBAI BOY 3D GUIDE + AR TOUR — Merveil onboarding
+ * CSS/SVG 3D character · mood animations · camera AR overlay · WebXR probe
+ * Tours: World · Pulse · Connect · Passport (once per device, replay in Settings)
+ * ═══════════════════════════════════════════════════════════════ */
+
+const MERVEIL_COACH_CSS = `
+@keyframes mvBoyFloat {
+  0%, 100% { transform: translate3d(0,0,0) rotateY(-12deg) rotateX(6deg) rotateZ(-2deg); }
+  33% { transform: translate3d(0,-12px,8px) rotateY(10deg) rotateX(4deg) rotateZ(2deg); }
+  66% { transform: translate3d(0,-4px,4px) rotateY(-6deg) rotateX(8deg) rotateZ(-1deg); }
+}
+@keyframes mvBoyOrbit {
+  0% { transform: rotateY(0deg) translateZ(0); }
+  100% { transform: rotateY(360deg) translateZ(0); }
+}
+@keyframes mvBoyPoint {
+  0%, 100% { transform: rotate(-8deg) translateY(0); }
+  40% { transform: rotate(-32deg) translateY(-4px); }
+  70% { transform: rotate(-18deg) translateY(-2px); }
+}
+@keyframes mvBoyNod {
+  0%, 100% { transform: rotateX(0deg); }
+  40% { transform: rotateX(18deg); }
+  70% { transform: rotateX(-6deg); }
+}
+@keyframes mvBoyCelebrate {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-16px) scale(1.06); }
+}
+@keyframes mvBoyBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.08); }
+}
+@keyframes mvBoyWave {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-28deg); }
+  50% { transform: rotate(16deg); }
+  75% { transform: rotate(-12deg); }
+}
+@keyframes mvBoyGlow {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(1.12); }
+}
+@keyframes mvRingSpin {
+  from { transform: rotateX(70deg) rotateZ(0deg); }
+  to { transform: rotateX(70deg) rotateZ(360deg); }
+}
+@keyframes mvParticle {
+  0% { transform: translate3d(0,8px,0) scale(0.6); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translate3d(var(--dx), -40px, 0) scale(1); opacity: 0; }
+}
+@keyframes mvCoachIn {
+  from { opacity: 0; transform: translateY(32px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes mvCoachTip {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes mvArPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(14,154,167,0.5); }
+  50% { box-shadow: 0 0 0 12px rgba(14,154,167,0); }
+}
+.mv-boy-stage {
+  perspective: 720px;
+  perspective-origin: 50% 40%;
+  width: 96px; height: 112px;
+  display: flex; align-items: flex-end; justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+}
+.mv-boy-3d {
+  width: 88px; height: 104px;
+  transform-style: preserve-3d;
+  animation: mvBoyFloat 4s ease-in-out infinite;
+  position: relative;
+}
+.mv-boy-3d.mood-point { animation: mvBoyFloat 4s ease-in-out infinite; }
+.mv-boy-3d.mood-point .mv-boy-hand { animation: mvBoyPoint 1.4s ease-in-out infinite; }
+.mv-boy-3d.mood-nod .mv-boy-head { animation: mvBoyNod 1.6s ease-in-out infinite; transform-origin: 50% 80%; transform-box: fill-box; }
+.mv-boy-3d.mood-celebrate { animation: mvBoyCelebrate 0.9s ease-in-out infinite; }
+.mv-boy-3d.mood-ar { animation: mvBoyFloat 2.8s ease-in-out infinite; }
+.mv-boy-ring {
+  position: absolute; left: 50%; top: 58%;
+  width: 78px; height: 78px; margin: -39px 0 0 -39px;
+  border: 1.5px solid rgba(94,234,212,0.45);
+  border-radius: 50%;
+  transform-style: preserve-3d;
+  animation: mvRingSpin 8s linear infinite;
+  pointer-events: none;
+}
+.mv-boy-ring-2 {
+  width: 96px; height: 96px; margin: -48px 0 0 -48px;
+  border-color: rgba(14,154,167,0.28);
+  animation-duration: 12s;
+  animation-direction: reverse;
+}
+.mv-boy-aura {
+  position: absolute; inset: 4px 0 0; border-radius: 50%;
+  background: radial-gradient(circle, rgba(14,154,167,0.4) 0%, transparent 68%);
+  animation: mvBoyGlow 2.6s ease-in-out infinite;
+  z-index: 0;
+}
+.mv-boy-body { position: relative; z-index: 2; width: 100%; height: 100%; filter: drop-shadow(0 10px 16px rgba(10,90,98,0.4)); }
+.mv-boy-hand { transform-origin: 70% 55%; animation: mvBoyWave 2.1s ease-in-out infinite; }
+.mv-boy-eye { transform-origin: center; animation: mvBoyBlink 4.2s ease-in-out infinite; }
+.mv-boy-particle {
+  position: absolute; width: 5px; height: 5px; border-radius: 50%;
+  background: #5EEAD4; pointer-events: none; z-index: 3;
+  animation: mvParticle 2.4s ease-out infinite;
+}
+.mv-coach-sheet { animation: mvCoachIn 400ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.mv-coach-tip { animation: mvCoachTip 280ms ease-out both; }
+.mv-ar-frame {
+  position: relative; overflow: hidden; border-radius: 20px;
+  background: #0B1220; border: 1px solid rgba(94,234,212,0.35);
+}
+.mv-ar-frame video {
+  width: 100%; height: 180px; object-fit: cover; display: block;
+  transform: scaleX(-1);
+}
+.mv-ar-hud {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(11,18,32,0.35) 0%, transparent 30%, transparent 60%, rgba(11,18,32,0.55) 100%);
+}
+.mv-ar-boy-float {
+  position: absolute; right: 12px; bottom: 12px;
+  animation: mvBoyFloat 3s ease-in-out infinite;
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.45));
+}
+.mv-ar-badge {
+  position: absolute; top: 10px; left: 10px;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+  padding: 4px 10px; border-radius: 999px;
+  background: rgba(14,154,167,0.9); color: #fff;
+  animation: mvArPulse 2s ease-in-out infinite;
+}
+.mv-ar-reticle {
+  position: absolute; left: 50%; top: 42%; width: 56px; height: 56px;
+  margin: -28px 0 0 -28px; border: 2px solid rgba(94,234,212,0.85);
+  border-radius: 12px; box-shadow: 0 0 0 1px rgba(14,154,167,0.4);
+}
+.mv-ar-reticle::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px;
+  margin: -4px 0 0 -4px; border-radius: 50%; background: #5EEAD4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mv-boy-3d, .mv-boy-hand, .mv-boy-eye, .mv-boy-aura, .mv-boy-ring, .mv-boy-particle,
+  .mv-ar-boy-float, .mv-ar-badge { animation: none !important; }
+  .mv-coach-sheet, .mv-coach-tip { animation: none !important; }
+}
+`;
+
+function DubaiBoy3D({ size = 96, mood = "wave" }) {
+  const uid = useId().replace(/:/g, "");
+  const gK = `mvKand_${uid}`;
+  const gG = `mvGhutra_${uid}`;
+  const gS = `mvSkin_${uid}`;
+  const gA = `mvAccent_${uid}`;
+  const moodClass = mood && mood !== "wave" ? `mood-${mood}` : "";
+  const particles = [
+    { left: "18%", delay: "0s", dx: "-12px" },
+    { left: "48%", delay: "0.7s", dx: "6px" },
+    { left: "72%", delay: "1.3s", dx: "14px" },
+  ];
+  return (
+    <div className="mv-boy-stage" style={{ width: size, height: size * 1.16 }}>
+      <div className={`mv-boy-3d ${moodClass}`} style={{ width: size * 0.92, height: size * 1.08 }}>
+        <div className="mv-boy-aura" />
+        <div className="mv-boy-ring" aria-hidden />
+        <div className="mv-boy-ring mv-boy-ring-2" aria-hidden />
+        {particles.map((p, i) => (
+          <span
+            key={i}
+            className="mv-boy-particle"
+            style={{ left: p.left, bottom: "28%", animationDelay: p.delay, ["--dx"]: p.dx }}
+          />
+        ))}
+        <svg className="mv-boy-body" viewBox="0 0 100 112" width="100%" height="100%" aria-hidden>
+          <defs>
+            <linearGradient id={gK} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#FFFFFF" />
+              <stop offset="45%" stopColor="#F1F5F9" />
+              <stop offset="100%" stopColor="#CBD5E1" />
+            </linearGradient>
+            <linearGradient id={gG} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#2EC4D0" />
+              <stop offset="50%" stopColor="#0E9AA7" />
+              <stop offset="100%" stopColor="#0A5A62" />
+            </linearGradient>
+            <linearGradient id={gS} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#F5D0A9" />
+              <stop offset="100%" stopColor="#D4A574" />
+            </linearGradient>
+            <linearGradient id={gA} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#5EEAD4" />
+              <stop offset="100%" stopColor="#0E9AA7" />
+            </linearGradient>
+            <filter id={`mvSoft_${uid}`} x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="1.2" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+          <ellipse cx="50" cy="106" rx="26" ry="5" fill="rgba(14,154,167,0.22)" />
+          <path d="M30 54 Q50 46 70 54 L74 100 Q50 106 26 100 Z" fill={`url(#${gK})`} stroke="#94A3B8" strokeWidth="0.8" />
+          <path d="M30 56 L18 78 L28 80 L34 60 Z" fill={`url(#${gK})`} stroke="#94A3B8" strokeWidth="0.6" />
+          <g className="mv-boy-hand">
+            <path d="M70 56 L84 72 L76 78 L66 60 Z" fill={`url(#${gK})`} stroke="#94A3B8" strokeWidth="0.6" />
+            <circle cx="86" cy="70" r="7" fill={`url(#${gS})`} />
+            <path d="M82 68 Q86 64 90 68" fill="none" stroke="#B45309" strokeWidth="1" opacity="0.4" />
+          </g>
+          <rect x="44" y="48" width="12" height="8" rx="3" fill={`url(#${gS})`} />
+          <g className="mv-boy-head">
+            <circle cx="50" cy="36" r="18" fill={`url(#${gS})`} filter={`url(#mvSoft_${uid})`} />
+            <path d="M30 30 Q50 6 70 30 L70 40 Q50 32 30 40 Z" fill={`url(#${gG})`} />
+            <path d="M32 34 Q50 22 68 34" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2" />
+            <rect x="32" y="34" width="36" height="5.5" rx="2" fill="#0A3D44" />
+            <rect x="34" y="35" width="32" height="2" rx="1" fill="#0E9AA7" opacity="0.7" />
+            <g className="mv-boy-eye">
+              <ellipse cx="43" cy="38" rx="2.4" ry="2.8" fill="#1A1612" />
+              <ellipse cx="57" cy="38" rx="2.4" ry="2.8" fill="#1A1612" />
+              <circle cx="43.6" cy="37.2" r="0.7" fill="#fff" opacity="0.85" />
+              <circle cx="57.6" cy="37.2" r="0.7" fill="#fff" opacity="0.85" />
+            </g>
+            <path d="M46 44 Q50 47.5 54 44" fill="none" stroke="#B45309" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="39" cy="42" r="2.5" fill="#E8A87C" opacity="0.35" />
+            <circle cx="61" cy="42" r="2.5" fill="#E8A87C" opacity="0.35" />
+          </g>
+          <circle cx="50" cy="72" r="7" fill={`url(#${gA})`} stroke="#fff" strokeWidth="1.2" />
+          <text x="50" y="75" textAnchor="middle" fontSize="8" fontWeight="800" fill="#fff" fontFamily="system-ui">M</text>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+const MERVEIL_COACH_TOURS = {
+  world: {
+    title: "World Reels",
+    subtitle: "Your city, vertical",
+    accent: "#0E9AA7",
+    steps: [
+      { icon: "↑", mood: "wave", tip: "Swipe up for the next reel — continuous, full-screen feed of the UAE.", arHint: "Point your camera at the screen while you swipe — the guide stays with you." },
+      { icon: "👤", mood: "point", tip: "Tap the profile photo to open the creator page — reels and Passport card.", arHint: "Aim at the avatar area; + is right under the photo." },
+      { icon: "+", mood: "point", tip: "Tap the teal + under the photo to send a connection request.", arHint: "No Call on reels — connect is the + only." },
+      { icon: "⚡", mood: "nod", tip: "Left rail: Super, Comments, and More (share · download · repost).", arHint: "Actions live on the left, under your thumb when holding the phone." },
+      { icon: "M", mood: "celebrate", tip: "The floating Merveil AI mark is our signature — on screen and on downloads.", arHint: "AR mode locks the guide over your World feed so steps feel spatial." },
+    ],
+  },
+  pulse: {
+    title: "Pulse",
+    subtitle: "Property · Invest · Market",
+    accent: "#0E9AA7",
+    steps: [
+      { icon: "⌂", mood: "wave", tip: "Discover is the property feed — Sale, Rent, Buy, Hotel.", arHint: "Scan a listing card; Super and Message sit on the card actions." },
+      { icon: "↗", mood: "point", tip: "Invest, Market, and Community are Pulse sub-tabs.", arHint: "Top segmented tabs — not the bottom nav." },
+      { icon: "✎", mood: "nod", tip: "Post a listing when ready — Merveil AI can help fill details.", arHint: "Look for Post on Pulse header after sign-in." },
+      { icon: "↔", mood: "point", tip: "Message or Connect from any card to talk to the lister.", arHint: "Connection requests appear in Connect → requests." },
+      { icon: "★", mood: "celebrate", tip: "SUPER boosts quality inventory in ranking — more than a like.", arHint: "Use Super on leads you trust." },
+    ],
+  },
+  messages: {
+    title: "Connect",
+    subtitle: "People · presence · trust",
+    accent: "#0F9A4A",
+    steps: [
+      { icon: "◎", mood: "wave", tip: "Citizens = directory. My Circle = network. Messages = real chats.", arHint: "Tabs under Connect header." },
+      { icon: "⌂", mood: "point", tip: "Groups are area leads — join, post, Super, earn boost credits.", arHint: "Groups tab shows NEW when area feeds are live." },
+      { icon: "☎", mood: "nod", tip: "AI Call under Connect — talk to Merveil about the city by voice.", arHint: "Open AI Call from the Connect sub-tabs." },
+      { icon: "✦", mood: "point", tip: "Merveil AI at the bottom of Messages is optional — never replaces human chats.", arHint: "Human threads stay above the AI row." },
+      { icon: "●", mood: "celebrate", tip: "Green presence dots mean online — message or call when they light up.", arHint: "Presence is live across Citizens and Circle." },
+    ],
+  },
+  passport: {
+    title: "Passport",
+    subtitle: "Identity · trust · wallet",
+    accent: "#C4841D",
+    steps: [
+      { icon: "ID", mood: "wave", tip: "Your power center — name, photo, bio, and tier.", arHint: "Open Passport from the bottom nav." },
+      { icon: "✎", mood: "point", tip: "Edit profile so Connect and World show a professional card.", arHint: "Avatar and bio edit live on the main Passport sheet." },
+      { icon: "✓", mood: "nod", tip: "Verify (KYC) + Wallet unlock paid capabilities — Core still covers social.", arHint: "Verify and Wallet tabs inside Passport." },
+      { icon: "⚙", mood: "point", tip: "Settings: language, voice, privacy, and Dubai Boy guide replay.", arHint: "Replay tours anytime from Settings." },
+      { icon: "◆", mood: "celebrate", tip: "Capabilities list what each tier unlocks — prices are server-side on activate.", arHint: "Activate only after KYC when going paid." },
+    ],
+  },
+};
+
+function probeWebXrSupport() {
+  try {
+    if (typeof navigator === "undefined" || !navigator.xr) return { ar: false, reason: "no_xr" };
+    return { ar: true, reason: "webxr_api" }; // async isSessionSupported checked on demand
+  } catch {
+    return { ar: false, reason: "error" };
+  }
+}
+
+function MerveilArTourLayer({ tourKey, step, tip, onClose }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [camError, setCamError] = useState(null);
+  const [xrStatus, setXrStatus] = useState("checking"); // checking | available | unavailable | session
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (navigator.xr?.isSessionSupported) {
+          const ok = await navigator.xr.isSessionSupported("immersive-ar");
+          if (!cancelled) setXrStatus(ok ? "available" : "unavailable");
+        } else if (!cancelled) setXrStatus("unavailable");
+      } catch {
+        if (!cancelled) setXrStatus("unavailable");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let stream = null;
+    const start = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setCamError("Camera not available — guide still works without AR.");
+          return;
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+      } catch (e) {
+        setCamError(e?.name === "NotAllowedError"
+          ? "Camera permission needed for AR tour. You can continue without it."
+          : (e?.message || "Could not open camera."));
+      }
+    };
+    start();
+    return () => {
+      try { streamRef.current?.getTracks?.().forEach((t) => t.stop()); } catch {}
+      streamRef.current = null;
+    };
+  }, []);
+
+  const startWebXr = async () => {
+    try {
+      if (!navigator.xr) return;
+      // Request immersive-ar when the device supports it (Quest / ARCore browsers).
+      // Merveil falls back to camera overlay if session fails.
+      const session = await navigator.xr.requestSession("immersive-ar", {
+        requiredFeatures: ["hit-test"],
+        optionalFeatures: ["dom-overlay", "local-floor"],
+      }).catch(() => null);
+      if (!session) {
+        setCamError("Immersive AR not available on this device — using camera overlay.");
+        return;
+      }
+      setXrStatus("session");
+      session.addEventListener("end", () => setXrStatus("available"));
+      // Minimal session: end after user backs out; full scene graph is Phase 2 (Three.js + hit-test anchors).
+      try { await session.end(); } catch {}
+      setCamError("WebXR session probed OK. Full spatial anchors ship in AR Phase 2 — camera overlay is active now.");
+      setXrStatus("available");
+    } catch (e) {
+      setCamError(e?.message || "WebXR request failed — camera overlay remains.");
+    }
+  };
+
+  return (
+    <div className="px-4 pb-2">
+      <div className="mv-ar-frame">
+        <video ref={videoRef} playsInline muted autoPlay />
+        <div className="mv-ar-hud" />
+        <span className="mv-ar-badge">AR TOUR · {String(tourKey || "").toUpperCase()}</span>
+        <div className="mv-ar-reticle" aria-hidden />
+        <div className="mv-ar-boy-float">
+          <DubaiBoy3D size={72} mood={step?.mood || "ar"} />
+        </div>
+        <div className="absolute left-3 right-3 bottom-3 rounded-xl px-3 py-2" style={{ background: "rgba(11,18,32,0.78)", border: "1px solid rgba(94,234,212,0.3)" }}>
+          <div className="text-[10px] font-bold tracking-wide" style={{ color: "#99F6E4" }}>DUBAI BOY · LIVE</div>
+          <div className="text-[12px] text-white font-medium leading-snug mt-0.5">{step?.arHint || tip}</div>
+        </div>
+      </div>
+      {camError && (
+        <p className="text-[11px] mt-2 leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>{camError}</p>
+      )}
+      <div className="flex gap-2 mt-2">
+        {xrStatus === "available" && (
+          <button type="button" onClick={startWebXr}
+            className="flex-1 text-[11px] font-bold py-2 rounded-xl"
+            style={{ background: "rgba(94,234,212,0.2)", color: "#5EEAD4", border: "1px solid rgba(94,234,212,0.35)" }}>
+            Try WebXR AR
+          </button>
+        )}
+        <button type="button" onClick={onClose}
+          className="flex-1 text-[11px] font-bold py-2 rounded-xl"
+          style={{ background: "rgba(255,255,255,0.1)", color: "#E0F2F1" }}>
+          Close AR view
+        </button>
+      </div>
+      <p className="text-[10px] mt-1.5 text-center" style={{ color: "rgba(255,255,255,0.4)" }}>
+        Camera overlay AR · WebXR {xrStatus === "available" ? "ready on this device" : xrStatus === "checking" ? "checking…" : "not on this browser"} · full hit-test anchors Phase 2
+      </p>
+    </div>
+  );
+}
+
+function MerveilCoachGuide({ tourKey, onDone }) {
+  const tour = MERVEIL_COACH_TOURS[tourKey];
+  const [step, setStep] = useState(0);
+  const [visible, setVisible] = useState(true);
+  const [arMode, setArMode] = useState(false);
+  const xrProbe = useMemo(() => probeWebXrSupport(), []);
+  if (!tour) return null;
+  const s = tour.steps[step] || tour.steps[0];
+  const last = step >= tour.steps.length - 1;
+  const progress = ((step + 1) / tour.steps.length) * 100;
+
+  const finish = () => {
+    setVisible(false);
+    setArMode(false);
+    setTimeout(() => onDone?.(), 180);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[180] flex flex-col justify-end"
+      style={{ background: "rgba(11,18,32,0.58)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${tour.title} guide`}
+    >
+      <style>{MERVEIL_COACH_CSS}</style>
+      <button type="button" className="flex-1 min-h-[12vh] w-full cursor-default" aria-label="Dismiss overlay" onClick={finish} />
+      <div
+        className="mv-coach-sheet mx-3 mb-3 rounded-[28px] overflow-hidden"
+        style={{
+          background: "linear-gradient(165deg, #0E9AA7 0%, #0C7A85 38%, #0A4A52 72%, #0B1220 100%)",
+          border: "1.5px solid rgba(94,234,212,0.4)",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.12)",
+          paddingBottom: "max(10px, env(safe-area-inset-bottom))",
+          opacity: visible ? 1 : 0,
+          transition: "opacity 180ms ease",
+          maxHeight: "92vh",
+          overflowY: "auto",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-end gap-2 px-4 pt-4 pb-2">
+          <DubaiBoy3D size={96} mood={s.mood || "wave"} />
+          <div className="flex-1 min-w-0 pb-2">
+            <div className="text-[10px] font-bold tracking-[0.16em] uppercase" style={{ color: "#99F6E4" }}>
+              Dubai Boy 3D · Merveil AI
+            </div>
+            <div className="text-xl font-bold text-white leading-tight" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>
+              {tour.title}
+            </div>
+            <div className="text-[12px] mt-0.5" style={{ color: "rgba(255,255,255,0.7)" }}>{tour.subtitle}</div>
+          </div>
+          <button type="button" onClick={finish}
+            className="mb-2 text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0"
+            style={{ color: "#99F6E4", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(94,234,212,0.25)" }}>
+            Skip
+          </button>
+        </div>
+
+        <div className="px-4 pt-1">
+          <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.12)" }}>
+            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${progress}%`, background: "linear-gradient(90deg,#5EEAD4,#2EC4D0)" }} />
+          </div>
+        </div>
+
+        {arMode ? (
+          <MerveilArTourLayer
+            tourKey={tourKey}
+            step={s}
+            tip={s.tip}
+            onClose={() => setArMode(false)}
+          />
+        ) : (
+          <div className="px-4 pb-3 pt-2">
+            <div key={step} className="mv-coach-tip rounded-2xl p-3.5 flex gap-3 items-start"
+              style={{ background: "rgba(11,18,32,0.45)", border: "1px solid rgba(94,234,212,0.2)" }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-base font-bold"
+                style={{ background: "linear-gradient(135deg,#5EEAD4,#0E9AA7)", color: "#0B1220", boxShadow: "0 4px 14px rgba(14,154,167,0.4)" }}>
+                {s.icon}
+              </div>
+              <p className="text-[14px] leading-relaxed text-white font-medium pt-1.5">{s.tip}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setArMode(true)}
+              className="w-full mt-3 py-2.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2"
+              style={{ background: "rgba(94,234,212,0.15)", color: "#5EEAD4", border: "1px solid rgba(94,234,212,0.35)" }}
+            >
+              <span aria-hidden>◎</span> Open AR tour (camera)
+              {xrProbe.ar ? <span className="text-[9px] opacity-80">· WebXR capable</span> : null}
+            </button>
+
+            <div className="flex gap-2 mt-3">
+              {step > 0 && (
+                <button type="button" onClick={() => setStep((x) => Math.max(0, x - 1))}
+                  className="px-4 py-3 rounded-2xl text-sm font-bold"
+                  style={{ background: "rgba(255,255,255,0.1)", color: "#E0F2F1", border: "1px solid rgba(255,255,255,0.12)" }}>
+                  Back
+                </button>
+              )}
+              <button type="button" onClick={() => { if (last) finish(); else setStep((x) => x + 1); }}
+                className="flex-1 py-3 rounded-2xl text-sm font-bold"
+                style={{ background: "linear-gradient(135deg,#F0FDFA 0%,#CCFBF1 100%)", color: "#0A5A62", boxShadow: "0 8px 24px rgba(94,234,212,0.25)" }}>
+                {last ? "Got it — explore Merveil" : `Next · ${step + 2}/${tour.steps.length}`}
+              </button>
+            </div>
+            <p className="text-center text-[10px] mt-2.5 mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+              Step {step + 1} of {tour.steps.length} · 3D + AR · replay in Passport → Settings
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function useMerveilCoach(tourKey, enabled = true) {
+  const storageKey = tourKey ? `merveil_coach_v2_${tourKey}` : "";
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!enabled || !tourKey) return;
+    try {
+      if (localStorage.getItem(storageKey) === "1") return;
+      const t = setTimeout(() => setOpen(true), 520);
+      return () => clearTimeout(t);
+    } catch {
+      setOpen(true);
+    }
+  }, [tourKey, enabled, storageKey]);
+  useEffect(() => {
+    const onForce = (e) => {
+      const key = e?.detail?.tourKey;
+      if (key && tourKey && key !== tourKey) return;
+      if (tourKey) {
+        try { localStorage.removeItem(`merveil_coach_v2_${tourKey}`); } catch {}
+        setOpen(true);
+      }
+    };
+    window.addEventListener("merveil:coach-force", onForce);
+    return () => window.removeEventListener("merveil:coach-force", onForce);
+  }, [tourKey]);
+  const dismiss = useCallback(() => {
+    setOpen(false);
+    if (storageKey) {
+      try { localStorage.setItem(storageKey, "1"); } catch {}
+    }
+  }, [storageKey]);
+  const replay = useCallback(() => {
+    if (storageKey) {
+      try { localStorage.removeItem(storageKey); } catch {}
+    }
+    setOpen(true);
+  }, [storageKey]);
+  return { open, dismiss, replay };
+}
+
+
 function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike, onToggleSuper, onToggleSave, onCall, onOpenCreator, onChat, forceMuted, compact, currentUser, onRequireSignIn, onEdit, onDelete, onNotInterested }) {
   const videoRef = useRef(null);
   const songRef = useRef(null);
@@ -20593,56 +21170,37 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
         </div>
       ) : (
         <>
-          {/* Right rail — max 4 tools: Super, Comments, Connect, Call; rest in … */}
+          {/* LEFT rail — Super · Comments · More (no Call). Profile + under content details. */}
           <div
-            className="absolute right-2 flex flex-col items-center gap-3 pointer-events-auto"
-            style={{ bottom: "calc(88px + var(--safe-bottom, 0px))", zIndex: 50 }}
+            className="absolute left-2 flex flex-col items-center gap-3 pointer-events-auto"
+            style={{ bottom: "calc(148px + var(--safe-bottom, 0px))", zIndex: 50 }}
             onClick={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
             <button type="button" onClick={(e) => { e.stopPropagation(); onToggleSuper?.(post); }} className="flex flex-col items-center gap-0.5 pointer-events-auto">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: supered ? "rgba(6,182,212,0.35)" : "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)", border: supered ? "1.5px solid #06B6D4" : "1px solid transparent" }}>
-                <Zap size={20} color={supered ? "#06B6D4" : "#fff"} fill={supered ? "#06B6D4" : "none"} />
+              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: supered ? "rgba(14,154,167,0.4)" : "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)", border: supered ? "1.5px solid #0E9AA7" : "1px solid transparent" }}>
+                <Zap size={20} color={supered ? "#5EEAD4" : "#fff"} fill={supered ? "#5EEAD4" : "none"} />
               </div>
               <span className="text-[10px] font-semibold text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{post.super_count || 0}</span>
-              <span className="text-[8px] font-bold tracking-wide" style={{ color: supered ? "#67E8F9" : "rgba(255,255,255,0.7)" }}>SUPER</span>
+              <span className="text-[8px] font-bold tracking-wide" style={{ color: supered ? "#5EEAD4" : "rgba(255,255,255,0.7)" }}>SUPER</span>
             </button>
-            <div className="flex flex-col items-center gap-0.5 pointer-events-none" aria-label="Views">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)" }}>
-                <Eye size={18} color="#fff" />
-              </div>
-              <span className="text-[10px] font-semibold text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{(Number(post.views) || Number(post.views_count) || 0).toLocaleString()}</span>
-              <span className="text-[8px] font-bold tracking-wide text-white/70">VIEWS</span>
-            </div>
             <button type="button" onClick={(e) => { e.stopPropagation(); currentUser ? setShowComments(true) : onRequireSignIn?.(); }} className="flex flex-col items-center gap-0.5 pointer-events-auto">
               <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)" }}>
                 <MessageSquare size={18} color="#fff" />
               </div>
               <span className="text-[10px] font-semibold text-white" style={{ textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{post.comments_count || 0}</span>
-              <span className="text-[8px] font-bold tracking-wide text-white/70">COMMENTS</span>
+              <span className="text-[8px] font-bold tracking-wide text-white/70">CHAT</span>
             </button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); currentUser ? onChat?.() : onRequireSignIn?.(); }} className="flex flex-col items-center gap-0.5 pointer-events-auto">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)" }}>
-                <UserPlus size={18} color="#fff" />
-              </div>
-              <span className="text-[8px] font-bold tracking-wide text-white/70">CONNECT</span>
-            </button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); currentUser ? onCall?.("voice") : onRequireSignIn?.(); }} className="flex flex-col items-center gap-0.5 pointer-events-auto">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: "rgba(6,182,212,0.95)" }}>
-                <AnimatedPhone size={18} color="#fff"/>
-              </div>
-              <span className="text-[8px] font-bold tracking-wide text-white/90">CALL</span>
-            </button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); setShowMoreTools((v) => !v); setShowInterestMenu(false); setShowOwnerMenu(false); }} className="flex flex-col items-center gap-0.5 pointer-events-auto">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: showMoreTools ? "rgba(14,154,167,0.45)" : "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)" }}>
-                <MoreHorizontal size={18} color="#fff" />
+            <button type="button" onClick={(e) => { e.stopPropagation(); setShowMoreTools((v) => !v); setShowOwnerMenu(false); setShowInterestMenu(false); }} className="flex flex-col items-center gap-0.5 pointer-events-auto">
+              <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: showMoreTools ? "rgba(14,154,167,0.35)" : "rgba(0,0,0,0.45)", backdropFilter: "blur(8px)" }}>
+                <MoreVertical size={18} color="#fff" />
               </div>
               <span className="text-[8px] font-bold tracking-wide text-white/70">MORE</span>
             </button>
           </div>
 
           {showMoreTools && (
-            <div className="absolute right-16 z-30 rounded-xl overflow-hidden shadow-xl" style={{ bottom: "calc(88px + var(--safe-bottom, 0px))", background: "rgba(17,24,39,0.96)", border: "1px solid rgba(255,255,255,0.12)", minWidth: 168 }}
+            <div className="absolute left-16 z-30 rounded-xl overflow-hidden shadow-xl" style={{ bottom: "calc(148px + var(--safe-bottom, 0px))", background: "rgba(17,24,39,0.96)", border: "1px solid rgba(14,154,167,0.35)", minWidth: 168 }}
               onClick={(e) => e.stopPropagation()}>
               <button type="button" className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-white hover:bg-white/10"
                 onClick={() => { setShowMoreTools(false); share(); }}>
@@ -20731,34 +21289,57 @@ function WorldReelCardImpl({ post, isActive, liked, supered, saved, onToggleLike
             </div>
           )}
 
-          <div className="absolute bottom-0 left-0 right-0 p-4 z-10" style={{ paddingRight: 80 }}>
-            <button onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
-              className="flex items-center gap-1.5 mb-2">
-              <span className="relative inline-flex shrink-0">
-                {post.owner_avatar
-                  ? <img src={post.owner_avatar} alt="" className="w-8 h-8 rounded-full object-cover border-2" style={{ borderColor: "#fff" }}/>
-                  : <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white border-2" style={{ background: "#06B6D4", borderColor: "#fff" }}>{(post.owner_name||"?")[0]}</div>}
-                {(post.owner_status === "online" || post.owner_status === "busy" || post._ownerOnline) && (
-                  <span className="absolute -bottom-0.5 -right-0.5">
-                    <PresenceDot status={post.owner_status || "online"} size={9} />
-                  </span>
+          <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none"
+            style={{ padding: "12px 16px calc(16px + var(--safe-bottom, 0px))", background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.25) 55%, transparent 100%)" }}>
+            <div className="flex items-end gap-3 pointer-events-auto" style={{ maxWidth: "78%" }}>
+              {/* TikTok-style profile + → connection request */}
+              <div className="relative shrink-0">
+                <button type="button" onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
+                  className="block" aria-label="Open creator">
+                  {post.owner_avatar
+                    ? <img src={post.owner_avatar} alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: "2px solid #fff", boxShadow: "0 4px 14px rgba(0,0,0,0.35)" }} />
+                    : <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#0E9AA7,#0A5A62)", border: "2px solid #fff" }}>{(post.owner_name || "?")[0]}</div>}
+                </button>
+                {!(String(post.owner_id || "") === "merveil-ai" || post.content_origin === "ai" || post._seed) && (
+                  <button
+                    type="button"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!currentUser) { onRequireSignIn?.(); return; }
+                      if (!post.owner_id) return;
+                      try {
+                        const result = await requestMerveilConnection(post.owner_id);
+                        const msg = result?.alreadyConnected || result?.status === "accepted"
+                          ? "Already connected"
+                          : "Connection request sent";
+                        try { window.dispatchEvent(new CustomEvent("merveil:toast", { detail: { type: "success", message: msg } })); } catch {}
+                      } catch (err) {
+                        try { window.dispatchEvent(new CustomEvent("merveil:toast", { detail: { type: "error", message: err?.message || "Could not connect" } })); } catch {}
+                      }
+                    }}
+                    className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{ background: "#0E9AA7", border: "2px solid #fff", boxShadow: "0 2px 8px rgba(14,154,167,0.5)" }}
+                    aria-label="Connect with creator"
+                  >
+                    <Plus size={12} color="#fff" strokeWidth={3} />
+                  </button>
                 )}
-              </span>
-              <span className="text-sm font-semibold text-white inline-flex items-center gap-1">
-                {post.owner_name
-                  || (String(post.owner_id || "") === "merveil-ai" || post.content_origin === "ai" || post.content_origin === "seed" ? "Merveil AI" : null)
-                  || "Citizen"}
-                {isNewCitizen({ created_at: post.owner_created_at }) && <NewEmojiBadge show />}
-              </span>
-            </button>
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-block mb-1.5" style={{ background: "#0EA5E933", color: "#7DD3FC" }}>{post.topic}</span>
-            <div className="text-base font-bold text-white mb-1">{post.title}</div>
-            {post.description && <p className="text-xs mb-3 line-clamp-2" style={{ color: "rgba(255,255,255,.85)" }}>{post.description}</p>}
-            <button onClick={(e) => { e.stopPropagation(); onChat?.(); }}
-              className="text-xs font-semibold px-3.5 py-2 rounded-full flex items-center gap-1.5"
-              style={{ background: "#06B6D4", color: "#fff" }}>
-              <span aria-hidden style={{ fontSize: 13, lineHeight: 1 }}>💌</span> Chat
-            </button>
+              </div>
+              <div className="min-w-0 flex-1 pb-0.5">
+                <button type="button" onClick={(e) => { e.stopPropagation(); onOpenCreator?.(post.owner_id); }}
+                  className="text-sm font-bold text-white inline-flex items-center gap-1.5 mb-0.5">
+                  {post.owner_name
+                    || (String(post.owner_id || "") === "merveil-ai" || post.content_origin === "ai" || post.content_origin === "seed" ? "Merveil AI" : null)
+                    || "Citizen"}
+                  {isNewCitizen({ created_at: post.owner_created_at }) && <NewEmojiBadge show />}
+                </button>
+                {post.topic && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-block mb-1" style={{ background: "rgba(14,154,167,0.35)", color: "#99F6E4" }}>{post.topic}</span>
+                )}
+                <div className="text-[15px] font-bold text-white leading-snug line-clamp-2">{post.title}</div>
+                {post.description && <p className="text-[11px] mt-0.5 line-clamp-2" style={{ color: "rgba(255,255,255,.88)" }}>{post.description}</p>}
+              </div>
+            </div>
           </div>
 
           {showComments && (
@@ -23671,6 +24252,40 @@ function SettingsView({ settings, setSettings }) {
             onChange={(v) => update("textSize", v)}
           />
         </Row>
+      </Card>
+
+      <SectionNumber n="01b" title="Dubai Boy guide" sub="Replay the 3D walkthrough for any surface" />
+      <Card>
+        <div className="p-3 space-y-2">
+          <p className="text-xs leading-relaxed" style={{ color: T.sub }}>
+            The Dubai Boy guide explains World, Pulse, Connect, and Passport step by step. Replay anytime — same tours new citizens see.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { key: "world", label: "World Reels" },
+              { key: "pulse", label: "Pulse" },
+              { key: "messages", label: "Connect" },
+              { key: "passport", label: "Passport" },
+            ].map((t_) => (
+              <button
+                key={t_.key}
+                type="button"
+                onClick={() => {
+                  try { localStorage.removeItem(`merveil_coach_v2_${t_.key}`); } catch {}
+                  window.dispatchEvent(new CustomEvent("merveil:coach-force", { detail: { tourKey: t_.key } }));
+                  // Jump to surface so the guide appears on the right tab
+                  try {
+                    window.dispatchEvent(new CustomEvent("merveil:goto-tab", { detail: { tab: t_.key === "messages" ? "messages" : t_.key } }));
+                  } catch {}
+                }}
+                className="text-xs font-bold py-2.5 px-2 rounded-xl"
+                style={{ background: "rgba(14,154,167,0.12)", color: "#0E9AA7", border: "1px solid rgba(14,154,167,0.25)" }}
+              >
+                Replay {t_.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </Card>
 
       {ccLoading && <div className="text-sm mt-8" style={{ color: T.sub }}>{t("settings.loadingCc", settings?.language || "en")}</div>}
@@ -34264,6 +34879,18 @@ function AppInner() {
   }, []);
   // Root-level live call (receiver pickup) — survives tab switches
   const [rootLiveCall, setRootLiveCall] = useState(null); // { callId, mode, role, otherName, initialStream }
+  // Dubai coach — once per surface (all citizens & visitors)
+  const coachKey = tab === "world" ? "world" : tab === "pulse" ? "pulse" : tab === "messages" ? "messages" : tab === "passport" ? "passport" : null;
+  const coach = useMerveilCoach(coachKey, !!coachKey && phase === "main");
+  useEffect(() => {
+    const onGoto = (e) => {
+      const t = e?.detail?.tab;
+      if (t) setTab(t);
+    };
+    window.addEventListener("merveil:goto-tab", onGoto);
+    return () => window.removeEventListener("merveil:goto-tab", onGoto);
+  }, []);
+
   const [acceptingCall, setAcceptingCall] = useState(false);
   useEffect(() => {
     if (!incomingCall) { setIncomingCallerProfile(null); return; }
@@ -34972,7 +35599,7 @@ function AppInner() {
   return (
     <BackStackContext.Provider value={backStack}>
     <div
-      className="merveil-app-frame"
+      className="merveil-app-frame" data-tab={tab}
       style={{ fontFamily: "'Inter', sans-serif", paddingLeft: "var(--safe-left)", paddingRight: "var(--safe-right)" }}
     >
       <a href="#main-content" className="skip-to-main">Skip to main content</a>
@@ -35491,6 +36118,9 @@ function AppInner() {
       )}
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} onAuthed={handleAuthed} />}
       <MerveilToastHost />
+      {coach.open && coachKey && (
+        <MerveilCoachGuide tourKey={coachKey} onDone={coach.dismiss} />
+      )}
       {incomingCall && !rootLiveCall && (
         <IncomingCallBanner
           call={incomingCall}
