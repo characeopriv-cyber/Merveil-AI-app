@@ -1,6 +1,16 @@
 {
   "rewrites": [
     {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "professional-service.junction.technology"
+        }
+      ],
+      "destination": "/professional-service-junction/index.html"
+    },
+    {
       "source": "/interface",
       "destination": "/interface/index.html"
     },
@@ -215,16 +225,6 @@
         }
       ],
       "destination": "/developer-portal/onboarding.html"
-    },
-    {
-      "source": "/",
-      "has": [
-        {
-          "type": "host",
-          "value": "professional-service.junction.technology"
-        }
-      ],
-      "destination": "/professional-service-junction/index.html"
     },
     {
       "source": "/onboarding/",
