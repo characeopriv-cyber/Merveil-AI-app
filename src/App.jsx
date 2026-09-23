@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, useId, startTransition, memo } from "react";
+import OnlineOfficePanel from "./OnlineOfficePanel.jsx";
+import WorkerDashboardPanel from "./WorkerDashboardPanel.jsx";
+import { WorldBoostPicker, CustomPackageBuilder } from "./WorldBoostAndCustomPackage.jsx";
+
 
 /** Prefer concurrent update when available (tab switches, soft list merges). */
 function merveilStartTransition(fn) {
@@ -2578,6 +2582,12 @@ const MERVEIL_FEATURE_UPDATES = {
   plus_arena: { since: "2026-08-01", label: "Arena" },
   plus_ai_call: { since: "2026-08-15", label: "AI Call" },
   plus_wallet: { since: "2026-09-01", label: "Wallet" },
+  // 2026-09-23 packages / office / worker / world boost
+  passport_online_office: { since: "2026-09-23", label: "Online Office (RE)" },
+  passport_worker_desk: { since: "2026-09-23", label: "Services worker desk" },
+  passport_custom_package: { since: "2026-09-23", label: "Custom package builder" },
+  creator_world_boost: { since: "2026-09-23", label: "World reel boosts" },
+  packages_599: { since: "2026-09-23", label: "Packages 599 / 899 / 1299" },
 };
 function featureIsNew(id) {
   const meta = MERVEIL_FEATURE_UPDATES[id];
@@ -28860,6 +28870,7 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
   const tabs = [
     { id: "home", label: "Home" },
     { id: "content", label: "Content" },
+    { id: "boost", label: featureIsNew("creator_world_boost") ? "Boost 🆕" : "Boost" },
     { id: "wallet", label: "Wallet" },
     { id: "partners", label: "Partners" },
     { id: "settings", label: "Settings" },
@@ -28973,6 +28984,23 @@ function CreatorStudioPanel({ currentUser, worldPosts = [], onClose }) {
           </div>
         )}
 
+        {tab === "boost" && (
+          <div className="px-4 pb-8">
+            {(() => { try { featureDismiss("creator_world_boost"); } catch {} return null; })()}
+            <p className="text-[11px] mb-3" style={{ color: "#5C5346" }}>
+              Boost a World reel — Spark · Rise · Surge · Dominate. Package holders get a server-side discount.
+            </p>
+            <WorldBoostPicker
+              postId={(contentList[0] && contentList[0].id) || null}
+              merveilFetch={merveilFetch}
+            />
+            {contentList.length > 1 && (
+              <p className="text-[10px] mt-3" style={{ color: "#5C5346" }}>
+                Default target: your latest reel. Open boost from a specific reel card for others (post id is sent to the API).
+              </p>
+            )}
+          </div>
+        )}
         {tab === "wallet" && (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
@@ -30878,6 +30906,9 @@ function SegmentedTabs({ options, active, onChange, accent = T.signal }) {
             }}
           >
             {Icon && <Icon size={13} strokeWidth={isActive ? 2.25 : 1.75} />} {opt.label}
+            {(opt.isNew || opt.showNew) && (
+              <span className="text-[10px] leading-none" aria-label="New">🆕</span>
+            )}
             {opt.badge != null && opt.badge > 0 && (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                 style={{ background: isActive ? "rgba(4,17,20,0.2)" : "rgba(18,22,28,0.06)", color: isActive ? "#041114" : T.sub }}>
@@ -33059,12 +33090,23 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
         <SegmentedTabs
           accent={T.signal}
           active={subTab}
-          onChange={setSubTab}
+          onChange={(id) => {
+            setSubTab(id);
+            try {
+              if (id === "tier") featureDismiss("packages_599");
+              if (id === "office") featureDismiss("passport_online_office");
+              if (id === "services") featureDismiss("passport_worker_desk");
+              if (id === "custompkg") featureDismiss("passport_custom_package");
+            } catch {}
+          }}
           options={[
             { id: "overview", label: "Overview", icon: UserCheck },
             { id: "wallet", label: "Wallet", icon: CreditCard },
             { id: "verify", label: "Verify", icon: ShieldCheck, badge: pendingCount },
-            { id: "tier", label: "Capabilities", icon: Crown },
+            { id: "tier", label: "Capabilities", icon: Crown, isNew: featureIsNew("packages_599") },
+            { id: "office", label: "Office", icon: Building2, isNew: featureIsNew("passport_online_office") },
+            { id: "services", label: "Services desk", icon: Wrench, isNew: featureIsNew("passport_worker_desk") },
+            { id: "custompkg", label: "Custom pack", icon: Sparkles, isNew: featureIsNew("passport_custom_package") },
             { id: "rewards", label: "Score", icon: Star },
             // Listings list removed from Passport — manage via Pulse / Marketplace
             { id: "lifelink", label: "LifeLink", icon: Link2 },
@@ -33092,6 +33134,7 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
 
       {subTab === "rewards" && <CitizenScorePanel currentUser={currentUser} />}
 
+      {(() => { if (subTab === "tier") { try { featureDismiss("packages_599"); } catch {} } return null; })()}
       {subTab === "tier" && (() => {
         const currentId = passportTierOf(currentUser);
         const current = PASSPORT_TIERS[currentId] || PASSPORT_TIERS.core;
@@ -33349,6 +33392,24 @@ function PassportView({ currentUser, properties, services, statuses, setStatuses
         </div>
       )}
 
+      {subTab === "office" && (
+        <div className="p-0 md:p-2 min-h-[60vh]">
+          {(() => { try { featureDismiss("passport_online_office"); } catch {} return null; })()}
+          <OnlineOfficePanel currentUser={currentUser} merveilFetch={merveilFetch} />
+        </div>
+      )}
+      {subTab === "services" && (
+        <div className="p-0 md:p-2 min-h-[60vh]">
+          {(() => { try { featureDismiss("passport_worker_desk"); } catch {} return null; })()}
+          <WorkerDashboardPanel currentUser={currentUser} merveilFetch={merveilFetch} />
+        </div>
+      )}
+      {subTab === "custompkg" && (
+        <div className="p-4 md:p-6 min-h-[60vh]">
+          {(() => { try { featureDismiss("passport_custom_package"); } catch {} return null; })()}
+          <CustomPackageBuilder currentUser={currentUser} merveilFetch={merveilFetch} />
+        </div>
+      )}
       {subTab === "settings" && <SettingsView settings={settings} setSettings={setSettings} />}
       </div>{/* end paper content surface */}
     </div>
