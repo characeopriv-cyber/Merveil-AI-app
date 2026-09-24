@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/professional-service",
+      "destination": "/professional-service-junction/index.html"
+    },
+    {
+      "source": "/professional-service/",
+      "destination": "/professional-service-junction/index.html"
+    },
+    {
       "source": "/interface",
       "destination": "/interface/index.html"
     },
