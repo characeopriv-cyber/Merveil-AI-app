@@ -77,6 +77,20 @@
         } catch (e) {}
       })();
     </script>
+    <script>
+      // Professional Services is a controlled beta surface. It appears after Interface,
+      // but only a real Merveil admin session may enter; everyone else sees Coming Soon.
+      (function () {
+        const ID="merveil-professional-plus", CSS_ID="merveil-professional-plus-css";
+        function css(){if(document.getElementById(CSS_ID))return;const s=document.createElement("style");s.id=CSS_ID;s.textContent=".merveil-ps-plus{display:flex;align-items:center;gap:10px;width:100%;margin-top:6px;padding:11px 14px;border:0;border-radius:14px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.merveil-ps-plus:hover{background:rgba(0,0,0,.05)}.merveil-ps-plus .ps-plus{font-size:10px;letter-spacing:.08em;padding:3px 6px;border-radius:999px;border:1px solid currentColor;opacity:.65}.merveil-ps-modal{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;background:rgba(15,15,15,.34);backdrop-filter:blur(8px)}.merveil-ps-modal>div{width:min(420px,calc(100vw - 36px));padding:26px;border-radius:24px;background:#f8f5ef;color:#20221f;box-shadow:0 24px 80px rgba(0,0,0,.2)}.merveil-ps-modal h2{margin:0 0 8px;font-size:24px;letter-spacing:-.04em}.merveil-ps-modal p{margin:0 0 18px;color:#716e67;line-height:1.55}.merveil-ps-modal button{border:0;border-radius:12px;padding:11px 15px;background:#20221f;color:#fff;font-weight:700;cursor:pointer}";document.head.appendChild(s)}
+        function txt(e){return(e.innerText||e.textContent||"").trim().toLowerCase()}
+        function find(){return Array.from(document.querySelectorAll("button,a,[role='button'],li")).find(e=>txt(e)==="interface"||txt(e).startsWith("interface\n"))}
+        function modal(){if(document.getElementById("merveil-ps-modal"))return;const w=document.createElement("div");w.id="merveil-ps-modal";w.className="merveil-ps-modal";w.innerHTML='<div role="dialog" aria-modal="true"><h2>Professional Services</h2><p>Coming soon. Professional Services is currently in controlled access and is not open for general entry.</p><button type="button">Close</button></div>';w.onclick=e=>{if(e.target===w||e.target.tagName==="BUTTON")w.remove()};document.body.appendChild(w)}
+        async function allowed(){try{const r=await fetch("/api/session?action=me",{credentials:"include",headers:{Accept:"application/json"}});if(!r.ok)return false;const j=await r.json();return !!(j?.user?.is_admin||j?.profile?.is_admin)}catch(_){return false}}
+        function add(){css();if(document.getElementById(ID))return;const t=find();if(!t)return;const b=document.createElement("button");b.id=ID;b.className="merveil-ps-plus";b.type="button";b.innerHTML="<span>Professional Services</span><span class='ps-plus'>PLUS</span>";b.title="Professional Services — Coming Soon";b.onclick=async()=>{if(await allowed())location.href="/professional-service";else modal()};t.insertAdjacentElement("afterend",b)}
+        new MutationObserver(add).observe(document.documentElement,{subtree:true,childList:true});[0,500,1500,3000].forEach(t=>setTimeout(add,t));
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
