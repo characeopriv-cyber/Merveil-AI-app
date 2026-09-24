@@ -9707,6 +9707,14 @@ return sendJson(res, 404, { error: "Unknown groups action." });
 
       if (!citizenId) return sendJson(res, 401, { error: "Sign in required.", code: "AUTH_REQUIRED" });
 
+      // Professional Services is controlled beta. The Citizen app may show the
+      // Plus entry to everyone, but only the designated Merveil admin can enter
+      // the operational surface until worker/partner onboarding is opened.
+      const { data: psGateProfile } = await svc.from("profiles").select("is_admin").eq("id", citizenId).maybeSingle();
+      if (!psGateProfile?.is_admin) {
+        return sendJson(res, 403, { error: "Professional Services is coming soon.", code: "PS_CONTROLLED_BETA" });
+      }
+
       if (method === "POST" && psAction === "worker-register") {
         const body = await readBody(req);
         const { data: existing } = await svc.from("ps_workers").select("id").eq("profile_id", citizenId).maybeSingle();
