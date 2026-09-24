@@ -9634,6 +9634,13 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
       }
 
+      if (method === "GET" && psAction === "config") {
+        return sendJson(res, 200, {
+          ok: true,
+          mapsKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ""
+        });
+      }
+
       const countRows = async (table, filter) => {
         let q = svc.from(table).select("*", { count: "exact", head: true });
         if (filter) q = filter(q);
@@ -9877,7 +9884,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
         if (gross < 0) return sendJson(res, 400, { error: "Gross price must be non-negative." });
 
         // UAE standard VAT is 5%; the client-entered gross price is VAT-inclusive.
-        const vat = Math.round((gross * 0.05 / 1.05) * 100) / 100;
+        const vatRate = Number(process.env.NEXT_PUBLIC_VAT_RATE || "0.05");\n        const rate = Number.isFinite(vatRate) && vatRate >= 0 && vatRate <= 1 ? vatRate : 0.05;\n        const vat = Math.round((gross * rate / (1 + rate)) * 100) / 100;
         const net = Math.round((gross - vat) * 100) / 100;
 
         const { data, error } = await svc.from("ps_jobs").insert({
