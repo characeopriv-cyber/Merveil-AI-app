@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/professional-service",
-      "destination": "/professional-service-junction/index.html"
+      "destination": "/professional-service-junction-v2/index.html"
     },
     {
       "source": "/professional-service/",
-      "destination": "/professional-service-junction/index.html"
+      "destination": "/professional-service-junction-v2/index.html"
     },
     {
       "source": "/interface",
@@ -387,7 +387,7 @@
           "value": "professional-service.junction.technology"
         }
       ],
-      "destination": "/professional-service-junction/index.html",
+      "destination": "/professional-service-junction-v2/index.html",
       "permanent": false
     },
     {
