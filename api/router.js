@@ -9633,6 +9633,7 @@ return sendJson(res, 404, { error: "Unknown groups action." });
       try { svc = adminClient(); } catch (e) {
         return sendJson(res, 500, { error: e.message || "Server misconfiguration." });
       }
+
       const countRows = async (table, filter) => {
         let q = svc.from(table).select("*", { count: "exact", head: true });
         if (filter) q = filter(q);
@@ -9642,151 +9643,311 @@ return sendJson(res, 404, { error: "Unknown groups action." });
 
       if (method === "GET" && (psAction === "dashboard" || !psAction)) {
         const view = String(req.query.view || "worker").toLowerCase();
+
         if (view === "admin") {
           const admin = await getAdminSession(req);
           if (!admin) return sendJson(res, 401, { error: "Admin sign-in required.", code: "ADMIN_AUTH_REQUIRED" });
           const [workers, activeWorkers, jobs, locations, partners, vehicles, payouts] = await Promise.all([
             countRows("ps_workers"),
-            countRows("ps_workers", q => q.in("current_status", ["available","busy"])),
-            countRows("ps_jobs"), countRows("ps_location_logs"),
-            countRows("ps_partner_companies"), countRows("ps_vehicles"), countRows("ps_payouts")
+            countRows("ps_workers", q => q.in("current_status", ["available", "busy"])),
+            countRows("ps_jobs"),
+            countRows("ps_location_logs"),
+            countRows("ps_partner_companies"),
+            countRows("ps_vehicles"),
+            countRows("ps_payouts")
           ]);
           const { data: workerRows = [] } = await svc.from("ps_workers")
-            .select("id,profile_id,current_status,current_lat,current_lng,last_location_update,partner_id,vehicle_id")
-            .order("last_location_update", { ascending: false, nullsFirst: false }).limit(100);
-          return sendJson(res, 200, { ok:true, role:"admin",
-            metrics:{workers,activeWorkers,jobs,locations,partners,vehicles,payouts}, workers:workerRows });
+            .select("id,profile_id,current_status,current_lat,current_lng,last_location_update,partner_id,vehicle_id,skills")
+            .order("last_location_update", { ascending: false, nullsFirst: false }).limit(200);
+          return sendJson(res, 200, {
+            ok: true, role: "admin",
+            metrics: { workers, activeWorkers, jobs, locations, partners, vehicles, payouts },
+            workers: workerRows
+          });
         }
-        if (!citizenId) return sendJson(res, 401, { error:"Sign in required.", code:"AUTH_REQUIRED" });
+
+        if (!citizenId) return sendJson(res, 401, { error: "Sign in required.", code: "AUTH_REQUIRED" });
 
         if (view === "worker") {
           const { data: worker } = await svc.from("ps_workers").select("*").eq("profile_id", citizenId).maybeSingle();
-          if (!worker) return sendJson(res,200,{ok:true,role:"worker",registered:false,worker:null,jobs:[],payouts:[],locations:[]});
-          const [{data:jobs=[]},{data:payouts=[]},{data:locations=[]}] = await Promise.all([
-            svc.from("ps_jobs").select("id,service_type,description,address,location_lat,location_lng,status,worker_payout,created_at,assigned_at,completed_at,client_id,partner_id").eq("worker_id",worker.id).order("created_at",{ascending:false}).limit(100),
-            svc.from("ps_payouts").select("id,job_id,amount,status,stripe_transfer_id,created_at").eq("worker_id",worker.id).order("created_at",{ascending:false}).limit(100),
-            svc.from("ps_location_logs").select("id,lat,lng,recorded_at").eq("worker_id",worker.id).order("recorded_at",{ascending:false}).limit(20)
+          if (!worker) return sendJson(res, 200, { ok: true, role: "worker", registered: false, worker: null, jobs: [], payouts: [], locations: [] });
+          const [{ data: jobs = [] }, { data: payouts = [] }, { data: locations = [] }] = await Promise.all([
+            svc.from("ps_jobs").select("id,service_type,description,address,location_lat,location_lng,status,worker_payout,client_price_incl_vat,vat_amount,net_revenue,platform_margin,eta_minutes,dispatch_score,created_at,assigned_at,completed_at,client_id,partner_id").eq("worker_id", worker.id).order("created_at", { ascending: false }).limit(100),
+            svc.from("ps_payouts").select("id,job_id,amount,status,stripe_transfer_id,created_at").eq("worker_id", worker.id).order("created_at", { ascending: false }).limit(100),
+            svc.from("ps_location_logs").select("id,lat,lng,recorded_at").eq("worker_id", worker.id).order("recorded_at", { ascending: false }).limit(20)
           ]);
-          return sendJson(res,200,{ok:true,role:"worker",registered:true,worker,jobs,payouts,locations});
+          return sendJson(res, 200, { ok: true, role: "worker", registered: true, worker, jobs, payouts, locations });
         }
 
         if (view === "partner") {
-          const { data: partner } = await svc.from("ps_partner_companies").select("*").eq("profile_id",citizenId).maybeSingle();
-          if (!partner) return sendJson(res,200,{ok:true,role:"partner",registered:false,partner:null,jobs:[],workers:[],vehicles:[]});
-          const [{data:jobs=[]},{data:workers=[]}] = await Promise.all([
-            svc.from("ps_jobs").select("id,client_id,worker_id,service_type,description,address,status,client_price_incl_vat,vat_amount,net_revenue,worker_payout,platform_margin,created_at,assigned_at,completed_at").eq("partner_id",partner.id).order("created_at",{ascending:false}).limit(200),
-            svc.from("ps_workers").select("id,profile_id,skills,vehicle_type,vehicle_id,current_status,current_lat,current_lng,last_location_update").eq("partner_id",partner.id).order("created_at",{ascending:false}).limit(200)
+          const { data: partner } = await svc.from("ps_partner_companies").select("*").eq("profile_id", citizenId).maybeSingle();
+          if (!partner) return sendJson(res, 200, { ok: true, role: "partner", registered: false, partner: null, jobs: [], workers: [], vehicles: [] });
+          const [{ data: jobs = [] }, { data: workers = [] }] = await Promise.all([
+            svc.from("ps_jobs").select("id,client_id,worker_id,service_type,description,address,status,client_price_incl_vat,vat_amount,net_revenue,worker_payout,platform_margin,eta_minutes,dispatch_score,location_lat,location_lng,created_at,assigned_at,completed_at").eq("partner_id", partner.id).order("created_at", { ascending: false }).limit(200),
+            svc.from("ps_workers").select("id,profile_id,skills,vehicle_type,vehicle_id,current_status,current_lat,current_lng,last_location_update").eq("partner_id", partner.id).order("created_at", { ascending: false }).limit(200)
           ]);
-          const ids=workers.map(w=>w.id); let vehicles=[];
-          if(ids.length){const r=await svc.from("ps_vehicles").select("*").in("assigned_to",ids).order("created_at",{ascending:false});vehicles=r.data||[];}
-          return sendJson(res,200,{ok:true,role:"partner",registered:true,partner,jobs,workers,vehicles});
+          const ids = workers.map(w => w.id);
+          let vehicles = [];
+          if (ids.length) {
+            const r = await svc.from("ps_vehicles").select("*").in("assigned_to", ids).order("created_at", { ascending: false });
+            vehicles = r.data || [];
+          }
+          return sendJson(res, 200, { ok: true, role: "partner", registered: true, partner, jobs, workers, vehicles });
         }
-        return sendJson(res,400,{error:"Unknown professional-services view."});
+
+        return sendJson(res, 400, { error: "Unknown professional-services view." });
       }
 
-      if (!citizenId) return sendJson(res,401,{error:"Sign in required.",code:"AUTH_REQUIRED"});
+      if (!citizenId) return sendJson(res, 401, { error: "Sign in required.", code: "AUTH_REQUIRED" });
 
       if (method === "POST" && psAction === "worker-register") {
-        const {data:existing}=await svc.from("ps_workers").select("id").eq("profile_id",citizenId).maybeSingle();
-        if(existing)return sendJson(res,200,{ok:true,worker:existing,existing:true});
-        const body=await readBody(req);
-        const vt=["ebike","motorcycle","car","none"].includes(String(body.vehicleType||"none"))?String(body.vehicleType||"none"):"none";
-        const {data,error}=await svc.from("ps_workers").insert({profile_id:citizenId,skills:Array.isArray(body.skills)?body.skills.slice(0,30):[],vehicle_type:vt,current_status:"offline"}).select("*").single();
-        if(error)return sendJson(res,400,{error:error.message}); return sendJson(res,201,{ok:true,worker:data});
+        const body = await readBody(req);
+        const { data: existing } = await svc.from("ps_workers").select("id").eq("profile_id", citizenId).maybeSingle();
+        if (existing) return sendJson(res, 200, { ok: true, worker: existing, existing: true });
+        const { data: profile } = await svc.from("profiles").select("skills").eq("id", citizenId).maybeSingle();
+        const vt = ["ebike", "motorcycle", "car", "none"].includes(String(body.vehicleType || "none")) ? String(body.vehicleType || "none") : "none";
+        const skills = Array.isArray(body.skills) ? body.skills.slice(0, 30) : (Array.isArray(profile?.skills) ? profile.skills.slice(0, 30) : []);
+        const { data, error } = await svc.from("ps_workers").insert({ profile_id: citizenId, skills, vehicle_type: vt, current_status: "offline" }).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 201, { ok: true, worker: data });
+      }
+
+      if (method === "POST" && psAction === "worker-status") {
+        const body = await readBody(req);
+        const status = String(body.status || "");
+        if (!["available", "offline"].includes(status)) return sendJson(res, 400, { error: "Status must be available or offline." });
+        const { data: worker } = await svc.from("ps_workers").select("id,current_status").eq("profile_id", citizenId).maybeSingle();
+        if (!worker) return sendJson(res, 404, { error: "Worker profile not found." });
+        if (status === "offline") {
+          const { count } = await svc.from("ps_jobs").select("*", { count: "exact", head: true }).eq("worker_id", worker.id).in("status", ["assigned", "in_progress"]);
+          if ((count || 0) > 0) return sendJson(res, 409, { error: "You cannot go offline while you have an active job." });
+        }
+        const { data, error } = await svc.from("ps_workers").update({ current_status: status }).eq("id", worker.id).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { ok: true, worker: data });
       }
 
       if (method === "POST" && psAction === "location") {
-        const body=await readBody(req),lat=Number(body.lat),lng=Number(body.lng);
-        if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180)return sendJson(res,400,{error:"Valid latitude and longitude are required."});
-        const {data:worker}=await svc.from("ps_workers").select("id").eq("profile_id",citizenId).maybeSingle();
-        if(!worker)return sendJson(res,404,{error:"Worker profile not found."});
-        const now=new Date().toISOString();
-        const {error:le}=await svc.from("ps_location_logs").insert({worker_id:worker.id,lat,lng,recorded_at:now});
-        if(le)return sendJson(res,400,{error:le.message});
-        const {data,error}=await svc.from("ps_workers").update({current_lat:lat,current_lng:lng,last_location_update:now}).eq("id",worker.id).select("*").single();
-        if(error)return sendJson(res,400,{error:error.message}); return sendJson(res,200,{ok:true,worker:data});
+        const body = await readBody(req), lat = Number(body.lat), lng = Number(body.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          return sendJson(res, 400, { error: "Valid latitude and longitude are required." });
+        }
+        const { data: worker } = await svc.from("ps_workers").select("id").eq("profile_id", citizenId).maybeSingle();
+        if (!worker) return sendJson(res, 404, { error: "Worker profile not found." });
+        const now = new Date().toISOString();
+        const { error: le } = await svc.from("ps_location_logs").insert({ worker_id: worker.id, lat, lng, recorded_at: now });
+        if (le) return sendJson(res, 400, { error: le.message });
+        const { data, error } = await svc.from("ps_workers").update({ current_lat: lat, current_lng: lng, last_location_update: now }).eq("id", worker.id).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, { ok: true, worker: data });
       }
 
       if (method === "POST" && psAction === "job-status") {
-        const body=await readBody(req),jobId=String(body.jobId||""),next=String(body.status||"");
-        if(!jobId||!["in_progress","completed","cancelled"].includes(next))return sendJson(res,400,{error:"Valid jobId and status are required."});
-        const {data:worker}=await svc.from("ps_workers").select("id").eq("profile_id",citizenId).maybeSingle();
-        if(!worker)return sendJson(res,404,{error:"Worker profile not found."});
-        const {data:job}=await svc.from("ps_jobs").select("*").eq("id",jobId).eq("worker_id",worker.id).maybeSingle();
-        if(!job)return sendJson(res,404,{error:"Job not found for this worker."});
-        const allowed=(job.status==="assigned"&&next==="in_progress")||(job.status==="in_progress"&&next==="completed")||(["pending","assigned","in_progress"].includes(job.status)&&next==="cancelled");
-        if(!allowed)return sendJson(res,409,{error:"Invalid job transition."});
-        const patch={status:next};if(next==="completed")patch.completed_at=new Date().toISOString();if(next==="in_progress")await svc.from("ps_workers").update({current_status:"busy"}).eq("id",worker.id);if(next==="cancelled")await svc.from("ps_workers").update({current_status:"available"}).eq("id",worker.id);
-        const {data:updated,error}=await svc.from("ps_jobs").update(patch).eq("id",job.id).select("*").single();
-        if(error)return sendJson(res,400,{error:error.message});
-        if(next==="completed")await svc.from("ps_workers").update({current_status:"available"}).eq("id",worker.id), if(next==="completed")await svc.from("ps_payouts").upsert({worker_id:worker.id,job_id:job.id,amount:job.worker_payout,status:"pending"},{onConflict:"job_id"});
-        return sendJson(res,200,{ok:true,job:updated});
+        const body = await readBody(req), jobId = String(body.jobId || ""), next = String(body.status || "");
+        if (!jobId || !["in_progress", "completed", "cancelled"].includes(next)) return sendJson(res, 400, { error: "Valid jobId and status are required." });
+        const { data: worker } = await svc.from("ps_workers").select("id").eq("profile_id", citizenId).maybeSingle();
+        if (!worker) return sendJson(res, 404, { error: "Worker profile not found." });
+        const { data: job } = await svc.from("ps_jobs").select("*").eq("id", jobId).eq("worker_id", worker.id).maybeSingle();
+        if (!job) return sendJson(res, 404, { error: "Job not found for this worker." });
+
+        const allowed =
+          (job.status === "assigned" && next === "in_progress") ||
+          (job.status === "in_progress" && next === "completed") ||
+          (["pending", "assigned", "in_progress"].includes(job.status) && next === "cancelled");
+        if (!allowed) return sendJson(res, 409, { error: "Invalid job transition." });
+
+        if (next === "completed") {
+          const { data, error } = await svc.rpc("rpc_ps_settle_job", { p_job_id: job.id });
+          if (error) return sendJson(res, 400, { error: error.message });
+          return sendJson(res, 200, data);
+        }
+
+        const patch = { status: next };
+        if (next === "in_progress") patch.assigned_at = job.assigned_at || new Date().toISOString();
+        const { data: updated, error } = await svc.from("ps_jobs").update(patch).eq("id", job.id).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        if (next === "in_progress") await svc.from("ps_workers").update({ current_status: "busy" }).eq("id", worker.id);
+        if (next === "cancelled") await svc.from("ps_workers").update({ current_status: "available" }).eq("id", worker.id);
+        return sendJson(res, 200, { ok: true, job: updated });
       }
 
       if (method === "POST" && psAction === "partner-register") {
-        const body=await readBody(req),name=String(body.companyName||"").trim().slice(0,160);
-        if(!name)return sendJson(res,400,{error:"Company name is required."});
-        const {data:existing}=await svc.from("ps_partner_companies").select("*").eq("profile_id",citizenId).maybeSingle();
-        if(existing)return sendJson(res,200,{ok:true,partner:existing,existing:true});
-        const tier=["basic","pro"].includes(String(body.subscriptionTier||"basic"))?String(body.subscriptionTier||"basic"):"basic";
-        const {data,error}=await svc.from("ps_partner_companies").insert({profile_id:citizenId,company_name:name,trade_license:String(body.tradeLicense||"").trim().slice(0,120)||null,subscription_tier:tier,subscription_status:"active"}).select("*").single();
-        if(error)return sendJson(res,400,{error:error.message}); return sendJson(res,201,{ok:true,partner:data});
+        const body = await readBody(req), name = String(body.companyName || "").trim().slice(0, 160);
+        if (!name) return sendJson(res, 400, { error: "Company name is required." });
+        const { data: existing } = await svc.from("ps_partner_companies").select("*").eq("profile_id", citizenId).maybeSingle();
+        if (existing) return sendJson(res, 200, { ok: true, partner: existing, existing: true });
+        const tier = ["basic", "pro"].includes(String(body.subscriptionTier || "basic")) ? String(body.subscriptionTier || "basic") : "basic";
+        const { data, error } = await svc.from("ps_partner_companies").insert({
+          profile_id: citizenId, company_name: name,
+          trade_license: String(body.tradeLicense || "").trim().slice(0, 120) || null,
+          subscription_tier: tier, subscription_status: "active"
+        }).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 201, { ok: true, partner: data });
       }
 
       if (method === "POST" && psAction === "staff-add") {
-        const body=await readBody(req);
-        const profileId=String(body.profileId||"");
-        const {data:partner}=await svc.from("ps_partner_companies").select("id").eq("profile_id",citizenId).maybeSingle();
-        if(!partner)return sendJson(res,403,{error:"Partner access required."});
-        if(!profileId)return sendJson(res,400,{error:"Worker profile ID is required."});
-        const {data:profile}=await svc.from("profiles").select("id").eq("id",profileId).maybeSingle();
-        if(!profile)return sendJson(res,404,{error:"Merveil profile not found."});
-        const {data:existing}=await svc.from("ps_workers").select("*").eq("profile_id",profileId).maybeSingle();
-        if(existing){
-          if(existing.partner_id && existing.partner_id!==partner.id)return sendJson(res,409,{error:"Worker already belongs to another partner."});
-          const {data,error}=await svc.from("ps_workers").update({partner_id:partner.id}).eq("id",existing.id).select("*").single();
-          if(error)return sendJson(res,400,{error:error.message}); return sendJson(res,200,{ok:true,worker:data,existing:true});
+        const body = await readBody(req), profileId = String(body.profileId || "");
+        const { data: partner } = await svc.from("ps_partner_companies").select("id").eq("profile_id", citizenId).maybeSingle();
+        if (!partner) return sendJson(res, 403, { error: "Partner access required." });
+        if (!profileId) return sendJson(res, 400, { error: "Worker profile ID is required." });
+        const { data: profile } = await svc.from("profiles").select("id").eq("id", profileId).maybeSingle();
+        if (!profile) return sendJson(res, 404, { error: "Merveil profile not found." });
+        const { data: existing } = await svc.from("ps_workers").select("*").eq("profile_id", profileId).maybeSingle();
+        if (existing) {
+          if (existing.partner_id && existing.partner_id !== partner.id) return sendJson(res, 409, { error: "Worker already belongs to another partner." });
+          const { data, error } = await svc.from("ps_workers").update({ partner_id: partner.id }).eq("id", existing.id).select("*").single();
+          if (error) return sendJson(res, 400, { error: error.message });
+          return sendJson(res, 200, { ok: true, worker: data, existing: true });
         }
-        const {data,error}=await svc.from("ps_workers").insert({profile_id:profileId,partner_id:partner.id,skills:Array.isArray(body.skills)?body.skills.slice(0,30):[],vehicle_type:"none",current_status:"offline"}).select("*").single();
-        if(error)return sendJson(res,400,{error:error.message}); return sendJson(res,201,{ok:true,worker:data});
+        const { data, error } = await svc.from("ps_workers").insert({
+          profile_id: profileId, partner_id: partner.id,
+          skills: Array.isArray(body.skills) ? body.skills.slice(0, 30) : [],
+          vehicle_type: "none", current_status: "offline"
+        }).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 201, { ok: true, worker: data });
       }
 
       if (method === "POST" && psAction === "assign-job") {
-        const admin=await getAdminSession(req);
-        let partnerId=null;
-        if(!admin){const {data:p}=await svc.from("ps_partner_companies").select("id").eq("profile_id",citizenId).maybeSingle();if(!p)return sendJson(res,403,{error:"Partner access required."});partnerId=p.id;}
-        const body=await readBody(req),jobId=String(body.jobId||""),workerId=String(body.workerId||"");
-        if(!jobId||!workerId)return sendJson(res,400,{error:"jobId and workerId are required."});
-        const {data:job}=await svc.from("ps_jobs").select("id,partner_id,status").eq("id",jobId).maybeSingle();
-        const {data:worker}=await svc.from("ps_workers").select("id,partner_id").eq("id",workerId).maybeSingle();
-        if(!job||!worker||job.partner_id!==worker.partner_id||(partnerId&&job.partner_id!==partnerId))return sendJson(res,404,{error:"Job/worker relationship not found."});
-        if(job.status!=="pending")return sendJson(res,409,{error:"Only pending jobs can be assigned."});
-        const {data:updated,error}=await svc.from("ps_jobs").update({worker_id:workerId,status:"assigned",assigned_at:new Date().toISOString()}).eq("id",jobId).select("*").single();
-        if(error)return sendJson(res,400,{error:error.message});return sendJson(res,200,{ok:true,job:updated});
+        const admin = await getAdminSession(req);
+        let partnerId = null;
+        if (!admin) {
+          const { data: p } = await svc.from("ps_partner_companies").select("id").eq("profile_id", citizenId).maybeSingle();
+          if (!p) return sendJson(res, 403, { error: "Partner access required." });
+          partnerId = p.id;
+        }
+        const body = await readBody(req), jobId = String(body.jobId || ""), workerId = String(body.workerId || "");
+        if (!jobId || !workerId) return sendJson(res, 400, { error: "jobId and workerId are required." });
+        const { data: job } = await svc.from("ps_jobs").select("id,partner_id,status").eq("id", jobId).maybeSingle();
+        const { data: worker } = await svc.from("ps_workers").select("id,partner_id,current_status").eq("id", workerId).maybeSingle();
+        if (!job || !worker || job.partner_id !== worker.partner_id || (partnerId && job.partner_id !== partnerId)) return sendJson(res, 404, { error: "Job/worker relationship not found." });
+        if (job.status !== "pending") return sendJson(res, 409, { error: "Only pending jobs can be assigned." });
+        if (worker.current_status !== "available") return sendJson(res, 409, { error: "Worker is not available." });
+        const { data: updated, error } = await svc.from("ps_jobs").update({ worker_id: workerId, status: "assigned", assigned_at: new Date().toISOString() }).eq("id", jobId).eq("status", "pending").select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        await svc.from("ps_workers").update({ current_status: "busy" }).eq("id", workerId).eq("current_status", "available");
+        return sendJson(res, 200, { ok: true, job: updated });
+      }
+
+      if (method === "POST" && psAction === "dispatch-job") {
+        const body = await readBody(req), jobId = String(body.jobId || "");
+        if (!jobId) return sendJson(res, 400, { error: "jobId is required." });
+        const { data: job } = await svc.from("ps_jobs").select("id,partner_id").eq("id", jobId).maybeSingle();
+        if (!job) return sendJson(res, 404, { error: "Job not found." });
+        const { data: partner } = await svc.from("ps_partner_companies").select("id").eq("id", job.partner_id).eq("profile_id", citizenId).maybeSingle();
+        const { data: profile } = await svc.from("profiles").select("is_admin").eq("id", citizenId).maybeSingle();
+        if (!partner && !profile?.is_admin) return sendJson(res, 403, { error: "Partner access required." });
+        const { data, error } = await svc.rpc("rpc_ps_dispatch_job", { p_job_id: jobId });
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 200, data);
       }
 
       if (method === "POST" && psAction === "vehicle") {
-        const body=await readBody(req),{data:partner}=await svc.from("ps_partner_companies").select("id").eq("profile_id",citizenId).maybeSingle();
-        if(!partner)return sendJson(res,403,{error:"Partner access required."});
-        const type=String(body.type||""),workerId=String(body.workerId||"");if(!["ebike","motorcycle","car"].includes(type))return sendJson(res,400,{error:"Vehicle type must be ebike, motorcycle or car."});
-        const {data:worker}=await svc.from("ps_workers").select("id").eq("id",workerId).eq("partner_id",partner.id).maybeSingle();
-        if(!worker)return sendJson(res,404,{error:"Partner worker not found."});
-        const {data,error}=await svc.from("ps_vehicles").insert({type,assigned_to:workerId,plate_number:String(body.plateNumber||"").trim().slice(0,32)||null,gps_tracker_id:String(body.gpsTrackerId||"").trim().slice(0,120)||null,status:"active"}).select("*").single();
-        if(error)return sendJson(res,400,{error:error.message});return sendJson(res,201,{ok:true,vehicle:data});
+        const body = await readBody(req), type = String(body.type || ""), workerId = String(body.workerId || "");
+        const { data: partner } = await svc.from("ps_partner_companies").select("id").eq("profile_id", citizenId).maybeSingle();
+        if (!partner) return sendJson(res, 403, { error: "Partner access required." });
+        if (!["ebike", "motorcycle", "car"].includes(type)) return sendJson(res, 400, { error: "Vehicle type must be ebike, motorcycle or car." });
+        const { data: worker } = await svc.from("ps_workers").select("id").eq("id", workerId).eq("partner_id", partner.id).maybeSingle();
+        if (!worker) return sendJson(res, 404, { error: "Partner worker not found." });
+        const { data, error } = await svc.from("ps_vehicles").insert({
+          type, assigned_to: workerId,
+          plate_number: String(body.plateNumber || "").trim().slice(0, 32) || null,
+          gps_tracker_id: String(body.gpsTrackerId || "").trim().slice(0, 120) || null,
+          status: "active"
+        }).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        await svc.from("ps_workers").update({ vehicle_id: data.id, vehicle_type: type }).eq("id", workerId);
+        return sendJson(res, 201, { ok: true, vehicle: data });
       }
 
       if (method === "POST" && psAction === "job-create") {
-        const body=await readBody(req),{data:partner}=await svc.from("ps_partner_companies").select("id").eq("profile_id",citizenId).maybeSingle();
-        if(!partner)return sendJson(res,403,{error:"Partner access required."});
-        const clientId=String(body.clientId||""),serviceType=String(body.serviceType||"").trim().slice(0,120),lat=Number(body.lat),lng=Number(body.lng);
-        const clientPrice=Number(body.clientPriceInclVat),vat=Number(body.vatAmount),net=Number(body.netRevenue),payout=Number(body.workerPayout);
-        if(!clientId||!serviceType||!Number.isFinite(lat)||!Number.isFinite(lng)||!Number.isFinite(clientPrice)||!Number.isFinite(vat)||!Number.isFinite(net)||![100,200,300].includes(payout))return sendJson(res,400,{error:"Complete client, service, location, price, VAT, net revenue and worker payout are required."});
-        if(clientPrice<0||vat<0||net<0||Math.abs((clientPrice-vat)-net)>0.01)return sendJson(res,400,{error:"Price arithmetic is invalid."});
-        const {data,error}=await svc.from("ps_jobs").insert({client_id:clientId,partner_id:partner.id,service_type:serviceType,description:String(body.description||"").trim().slice(0,2000)||null,location_lat:lat,location_lng:lng,address:String(body.address||"").trim().slice(0,500)||null,status:"pending",client_price_incl_vat:clientPrice,vat_amount:vat,net_revenue:net,worker_payout:payout}).select("*").single();
-        if(error)return sendJson(res,400,{error:error.message});return sendJson(res,201,{ok:true,job:data});
+        const body = await readBody(req);
+        const { data: partner } = await svc.from("ps_partner_companies").select("id").eq("profile_id", citizenId).maybeSingle();
+        if (!partner) return sendJson(res, 403, { error: "Partner access required." });
+
+        const clientId = String(body.clientId || "");
+        const serviceType = String(body.serviceType || "").trim().slice(0, 120);
+        const lat = Number(body.lat), lng = Number(body.lng);
+        const gross = Number(body.clientPriceInclVat);
+        const payout = Number(body.workerPayout);
+        if (!clientId || !serviceType || !Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(gross) || ![100, 200, 300].includes(payout)) {
+          return sendJson(res, 400, { error: "Complete client, service, location, gross price and worker payout are required." });
+        }
+        if (gross < 0) return sendJson(res, 400, { error: "Gross price must be non-negative." });
+
+        // UAE standard VAT is 5%; the client-entered gross price is VAT-inclusive.
+        const vat = Math.round((gross * 0.05 / 1.05) * 100) / 100;
+        const net = Math.round((gross - vat) * 100) / 100;
+
+        const { data, error } = await svc.from("ps_jobs").insert({
+          client_id: clientId, partner_id: partner.id, service_type: serviceType,
+          description: String(body.description || "").trim().slice(0, 2000) || null,
+          location_lat: lat, location_lng: lng,
+          address: String(body.address || "").trim().slice(0, 500) || null,
+          status: "pending", client_price_incl_vat: gross, vat_amount: vat,
+          net_revenue: net, worker_payout: payout,
+          priority: Number.isFinite(Number(body.priority)) ? Math.max(0, Math.min(100, Number(body.priority))) : 0
+        }).select("*").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 201, { ok: true, job: data });
       }
 
-      return sendJson(res,404,{error:"Unknown professional-services action."});
+      if (method === "POST" && psAction === "ai-thread") {
+        const body = await readBody(req);
+        const scope = String(body.scope || "worker").slice(0, 40);
+        const { data, error } = await svc.from("ps_ai_threads").insert({ owner_profile_id: citizenId, scope }).select("id,scope,created_at").single();
+        if (error) return sendJson(res, 400, { error: error.message });
+        return sendJson(res, 201, { ok: true, thread: data });
+      }
+
+      if (method === "POST" && psAction === "ai") {
+        const body = await readBody(req);
+        const threadId = String(body.threadId || "");
+        const message = String(body.message || "").trim().slice(0, 4000);
+        if (!threadId || !message) return sendJson(res, 400, { error: "threadId and message are required." });
+
+        const { data: thread } = await svc.from("ps_ai_threads").select("id,scope,owner_profile_id").eq("id", threadId).eq("owner_profile_id", citizenId).maybeSingle();
+        if (!thread) return sendJson(res, 404, { error: "AI thread not found." });
+
+        const { data: profile } = await svc.from("profiles").select("name,profession,skills,kyc_status,trust_score").eq("id", citizenId).maybeSingle();
+        const { data: history = [] } = await svc.from("ps_ai_messages").select("role,content").eq("thread_id", threadId).order("created_at", { ascending: false }).limit(20);
+        await svc.from("ps_ai_messages").insert({ thread_id: threadId, role: "user", content: message });
+
+        const key = process.env.XAI_API_KEY;
+        if (!key) return sendJson(res, 503, { error: "Grok provider is not configured.", code: "AI_PROVIDER_UNAVAILABLE" });
+
+        const system = [
+          "You are Merveil AI inside the UAE Professional Services platform.",
+          "Be concise, warm, operational and factual. Reply in the user's language.",
+          "Currency is AED. UAE standard VAT is 5% and job gross prices are VAT-inclusive.",
+          "Do not invent workers, jobs, locations, payouts, balances, providers or operational activity.",
+          "If data is missing, say so. Never claim a payout is externally transferred unless the system provides a transfer id.",
+          "Current user profile: " + JSON.stringify(profile || {})
+        ].join("\n");
+
+        const response = await fetch("https://api.x.ai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          body: JSON.stringify({
+            model: "grok-4.7",
+            messages: [
+              { role: "system", content: system },
+              ...(history || []).reverse(),
+              { role: "user", content: message }
+            ]
+          })
+        });
+
+        const j = await response.json().catch(() => ({}));
+        if (!response.ok) return sendJson(res, 502, { error: j?.error?.message || "Grok request failed.", code: "AI_PROVIDER_ERROR" });
+        const reply = j.choices?.[0]?.message?.content;
+        if (!reply) return sendJson(res, 502, { error: "Grok returned no response.", code: "AI_EMPTY_RESPONSE" });
+        await svc.from("ps_ai_messages").insert({ thread_id: threadId, role: "assistant", content: reply });
+        return sendJson(res, 200, { ok: true, reply });
+      }
+
+      return sendJson(res, 404, { error: "Unknown professional-services action." });
     }
 
     // ----------------------------------------------------- /api/analytics
